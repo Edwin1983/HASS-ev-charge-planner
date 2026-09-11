@@ -168,17 +168,26 @@ The planner reads the technical limits from its central configuration.
 
 ## Data sources
 
-The integration is deliberately generic about the configured price and Solcast entities. The default setup was developed around Zonneplan price data and Solcast forecast sensors, but the entity IDs can be changed through the config flow.
+EV Planner currently integrates with data provided by other Home Assistant integrations:
+
+- **Solcast** — provides the predicted hourly solar/PV production used by EV Planner to determine when solar energy is available.
+- **Zonneplan** — provides the electricity price forecast used by EV Planner to calculate the cost of grid charging.
+
+These integrations are therefore part of the current recommended setup for EV Planner. The EV Planner configuration does not hard-code their entity IDs: you select the relevant Home Assistant sensors during configuration, so the entity names can differ between installations.
+
+The planner is deliberately separated from these data providers. Solcast and Zonneplan provide the forecast data; EV Planner combines that data with the required charging energy, departure time and charging constraints to produce a charging plan.
 
 ## Troubleshooting
 
 1. Open **Settings → Devices & services → EV Planner**.
 2. Verify all configured input entities exist.
-3. Check that departure time/day and required energy contain valid values.
-4. Call `ev_planner.create_plan` manually.
-5. Inspect `sensor.ev_planner_state` and `sensor.ev_planner_data`.
-6. Check Home Assistant logs for `EV Planner`.
-7. Verify that your automations, not the integration, operate the physical charger.
+3. Check that the Solcast forecast sensors contain hourly forecast data.
+4. Check that the Zonneplan price sensor contains the expected price forecast.
+5. Check that departure time/day and required energy contain valid values.
+6. Call `ev_planner.create_plan` manually.
+7. Inspect `sensor.ev_planner_state` and `sensor.ev_planner_data`.
+8. Check Home Assistant logs for `EV Planner`.
+9. Verify that your automations, not the integration, operate the physical charger.
 
 ## Development
 
