@@ -16,7 +16,6 @@ from .const import (
     CONF_ENTITY_MIN_PV_KWH,
     CONF_ENTITY_PLANNER_MODE,
     CONF_ENTITY_PRICES,
-    CONF_ENTITY_SOLAR_ENABLED,
     CONF_ENTITY_SOLCAST_TODAY,
     CONF_ENTITY_SOLCAST_TOMORROW,
     CONF_MAX_CHARGE_POWER_KW,
@@ -28,17 +27,12 @@ from .const import (
     DEFAULT_ENTITY_MIN_PV_KWH,
     DEFAULT_ENTITY_PLANNER_MODE,
     DEFAULT_ENTITY_PRICES,
-    DEFAULT_ENTITY_SOLAR_ENABLED,
     DEFAULT_ENTITY_SOLCAST_TODAY,
     DEFAULT_ENTITY_SOLCAST_TOMORROW,
     DEFAULT_MAX_CHARGE_POWER_KW,
     DOMAIN,
 )
 
-
-##############################################################################
-# Standaardwaarden voor een nieuwe entry
-##############################################################################
 
 _DEFAULTS = {
     CONF_ENTITY_DEPARTURE: DEFAULT_ENTITY_DEPARTURE,
@@ -48,7 +42,6 @@ _DEFAULTS = {
     CONF_ENTITY_MIN_PV_KWH: DEFAULT_ENTITY_MIN_PV_KWH,
     CONF_ENTITY_MAX_PHASE_SWITCHES: DEFAULT_ENTITY_MAX_PHASE_SWITCHES,
     CONF_ENTITY_PLANNER_MODE: DEFAULT_ENTITY_PLANNER_MODE,
-    CONF_ENTITY_SOLAR_ENABLED: DEFAULT_ENTITY_SOLAR_ENABLED,
     CONF_ENTITY_PRICES: DEFAULT_ENTITY_PRICES,
     CONF_ENTITY_SOLCAST_TODAY: DEFAULT_ENTITY_SOLCAST_TODAY,
     CONF_ENTITY_SOLCAST_TOMORROW: DEFAULT_ENTITY_SOLCAST_TOMORROW,
@@ -56,14 +49,8 @@ _DEFAULTS = {
 }
 
 
-##############################################################################
-# Schema
-##############################################################################
-
-
 def _build_schema(defaults: dict) -> vol.Schema:
-    """Bouwt het EV Planner configuratieschema."""
-
+    """Build the EV Planner configuration schema."""
     return vol.Schema(
         {
             vol.Required(
@@ -109,12 +96,6 @@ def _build_schema(defaults: dict) -> vol.Schema:
                 selector.EntitySelectorConfig(domain="input_select")
             ),
             vol.Required(
-                CONF_ENTITY_SOLAR_ENABLED,
-                default=defaults[CONF_ENTITY_SOLAR_ENABLED],
-            ): selector.EntitySelector(
-                selector.EntitySelectorConfig(domain="input_boolean")
-            ),
-            vol.Required(
                 CONF_ENTITY_PRICES,
                 default=defaults[CONF_ENTITY_PRICES],
             ): selector.EntitySelector(
@@ -138,7 +119,7 @@ def _build_schema(defaults: dict) -> vol.Schema:
             ): selector.NumberSelector(
                 selector.NumberSelectorConfig(
                     min=1,
-                    max=50,
+                    max=11.04,
                     step=0.01,
                     mode=selector.NumberSelectorMode.BOX,
                     unit_of_measurement="kW",
@@ -146,11 +127,6 @@ def _build_schema(defaults: dict) -> vol.Schema:
             ),
         }
     )
-
-
-##############################################################################
-# Config flow
-##############################################################################
 
 
 class EVPlannerConfigFlow(
@@ -166,11 +142,8 @@ class EVPlannerConfigFlow(
         user_input=None,
     ) -> FlowResult:
         """Create the EV Planner integration."""
-
         if self._async_current_entries():
-            return self.async_abort(
-                reason="single_instance_allowed"
-            )
+            return self.async_abort(reason="single_instance_allowed")
 
         if user_input is not None:
             return self.async_create_entry(
@@ -189,30 +162,14 @@ class EVPlannerConfigFlow(
         config_entry: config_entries.ConfigEntry,
     ) -> "EVPlannerOptionsFlow":
         """Return the options flow for this entry."""
-
         return EVPlannerOptionsFlow(config_entry)
 
 
-##############################################################################
-# Options flow
-##############################################################################
-
-
 class EVPlannerOptionsFlow(config_entries.OptionsFlow):
-    """
-    Options flow for EV Planner.
+    """Options flow for EV Planner."""
 
-    Hiermee kunnen de entity-ID's en het laadvermogen na installatie
-    nog worden aangepast, via Instellingen -> Apparaten & diensten ->
-    EV Planner -> Configureren.
-    """
-
-    def __init__(
-        self,
-        config_entry: config_entries.ConfigEntry,
-    ) -> None:
+    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         """Initialize the options flow."""
-
         self._config_entry = config_entry
 
     async def async_step_init(
@@ -220,18 +177,13 @@ class EVPlannerOptionsFlow(config_entries.OptionsFlow):
         user_input=None,
     ) -> FlowResult:
         """Manage the options."""
-
         if user_input is not None:
-            return self.async_create_entry(
-                title="",
-                data=user_input,
-            )
+            return self.async_create_entry(title="", data=user_input)
 
         current = {
             **self._config_entry.data,
             **self._config_entry.options,
         }
-
         defaults = {
             key: current.get(key, default)
             for key, default in _DEFAULTS.items()
