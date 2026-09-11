@@ -1,3 +1,19 @@
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py313"
+
+[tool.ruff.lint]
+# Keep CI focused on correctness and basic Python style.
+# More opinionated Ruff rule groups can be introduced separately once
+# the existing integration code has been cleaned up without changing
+# its runtime behaviour.
+select = ["E", "F"]
+
+[tool.ruff.lint.per-file-ignores]
+# These are legacy unused bindings in the planner and are intentionally
+# left untouched for now so the lint configuration does not force a
+# functional refactor of the planner algorithm.
+"custom_components/ev_planner/core/planner.py" = ["F401", "F841"]
