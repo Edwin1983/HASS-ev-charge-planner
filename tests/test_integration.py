@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta
+
 import pytest
 
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -13,7 +15,6 @@ from custom_components.ev_planner.const import (
     CONF_ENTITY_MIN_PV_KWH,
     CONF_ENTITY_PLANNER_MODE,
     CONF_ENTITY_PRICES,
-    CONF_ENTITY_SOLAR_ENABLED,
     CONF_ENTITY_SOLCAST_TODAY,
     CONF_ENTITY_SOLCAST_TOMORROW,
     CONF_MAX_CHARGE_POWER_KW,
@@ -30,7 +31,6 @@ def make_config():
         CONF_ENTITY_MIN_PV_KWH: "input_number.ev_min_pv_kwh",
         CONF_ENTITY_MAX_PHASE_SWITCHES: "input_number.ev_max_fasewisselingen",
         CONF_ENTITY_PLANNER_MODE: "input_select.ev_planner_mode",
-        CONF_ENTITY_SOLAR_ENABLED: "input_boolean.alleen_zonneladen",
         CONF_ENTITY_PRICES: "sensor.zonneplan_current_electricity_tariff",
         CONF_ENTITY_SOLCAST_TODAY: "sensor.solcast_pv_forecast_forecast_today",
         CONF_ENTITY_SOLCAST_TOMORROW: "sensor.solcast_pv_forecast_forecast_tomorrow",
@@ -89,3 +89,102 @@ async def test_full_integration_setup_and_unload(hass):
 
     assert entry.entry_id not in hass.data.get(DOMAIN, {})
     assert not hass.services.has_service(DOMAIN, "update")
+
+
+@pytest.mark.usefixtures("enable_custom_integrations")
+async def test_full_planning_chain(hass):
+    """Exercise config -> readers -> planner -> scheduler -> native output."""
+    now = datetime.now().astimezone()
+    base = now.replace(minute=0, second=0, microsecond=0)
+    departure = base + timedelta(hours=4)
+
+    hass.states.async_set(
+        "input_datetime.ev_vertrektijd",
+        departure.strftime("%H:%M:%S"),
+    )
+    hass.states.async_set("input_select.ev_vertrekdag", "Vandaag")
+    hass.states.async_set("input_number.ev_kwh_nodig", "2.0")
+    hass.states.async_set("input_number.ev_max_prijs", "0.20")
+    hass.states.async_set("input_number.ev_min_pv_kwh", "0.0")
+    hass.states.async_set("input_number.ev_max_fasewisselingen", "8")
+    hass.states.async_set("input_select.ev_planner_mode", "Auto")
+
+    forecast = []
+    solcast = []
+    for index in range(6):
+        start = base + timedelta(hours=index)
+        forecast.append(
+            {
+                "start_date": start.isoformat(),
+                "electricity_price": 1_000_000,
+            }
+        )
+        solcast.append(
+            {
+                "period_start": start.isoformat(),
+                "pv_estimate": 0.0,
+                "pv_estimate10": 0.0,
+                "pv_estimate90": 0.0,
+            }
+        )
+
+    hass.states.async_set(
+        "sensor.zonneplan_current_electricity_tariff",
+        "0.10",
+        {"forecast": forecast},
+    )
+    hass.states.async_set(
+        "sensor.solcast_pv_forecast_forecast_today",
+        "0",
+        {"detailedHourly": solcast},
+    )
+    hass.states.async_set(
+        "sensor.solcast_pv_forecast_forecast_tomorrow",
+        "0",
+        {"detailedHourly": []},
+    )
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="EV Planner",
+        data=make_config(),
+        unique_id="planning-chain",
+    )
+    entry.add_to_hass(hass)
+
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    await hass.services.async_call(
+        "switch",
+        "turn_on",
+        {"entity_id": "switch.ev_planner_smart_charging"},
+        blocking=True,
+    )
+    await hass.async_block_till_done()
+
+    controller = hass.data[DOMAIN][entry.entry_id]["controller"]
+    controller.update(now)
+    await hass.async_block_till_done()
+
+    assert controller.last_plan is not None
+    assert controller.last_plan.complete is True
+    assert controller.last_plan.energy_planned_kwh > 0
+    assert controller.scheduler.plan is controller.last_plan
+
+    data_state = hass.states.get("sensor.ev_planner_data")
+    assert data_state is not None
+    assert data_state.attributes["decisions"]
+    assert data_state.attributes["energy_planned_kwh"] > 0
+
+    state = hass.states.get("sensor.ev_planner_state")
+    assert state is not None
+    assert state.state not in {
+        "Geen prijsdata",
+        "Geen PV-data",
+        "Fout bij plannen",
+        "Ongeldige plannerinstellingen",
+    }
+
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
