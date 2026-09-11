@@ -232,6 +232,7 @@ def test_status_manager_reflects_scheduler():
 
     scheduler = EVScheduler(SchedulerSettings(), DummyLogger())
     scheduler.set_plan(plan)
+    scheduler.update(now)
     manager = EVStatusManager(scheduler, DummyLogger())
 
     status = manager.update(now)
