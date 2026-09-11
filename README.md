@@ -2,6 +2,10 @@
 
 Native Home Assistant custom integration for EV charging planning using electricity prices and PV forecasts.
 
+## Dashboard
+
+![EV Planner Home Assistant dashboard](images/Dashboard.png)
+
 ## What it does
 
 EV Planner calculates **when and how much** an EV should charge before a configured departure time.
