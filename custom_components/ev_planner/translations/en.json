@@ -2,8 +2,8 @@
   "config": {
     "step": {
       "user": {
-        "title": "Configure EV Planner",
-        "description": "Select the Home Assistant entities used as planner inputs. EV Planner does not control a charger.",
+        "title": "Configure EV Charge Planner",
+        "description": "Select the Home Assistant entities used as planner inputs. EV Charge Planner does not control a charger.",
         "data": {
           "entity_departure": "Departure time",
           "entity_departure_day": "Departure day",
@@ -20,13 +20,13 @@
       }
     },
     "abort": {
-      "single_instance_allowed": "Only one EV Planner configuration is allowed."
+      "single_instance_allowed": "Only one EV Charge Planner configuration is allowed."
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "Configure EV Planner",
+        "title": "Configure EV Charge Planner",
         "description": "Change the input entities and maximum charging power.",
         "data": {
           "entity_departure": "Departure time",
