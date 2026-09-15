@@ -2,8 +2,8 @@
   "config": {
     "step": {
       "user": {
-        "title": "EV Planner configureren",
-        "description": "Kies de Home Assistant-entities die de planner als invoer gebruikt. EV Planner bestuurt geen laadpaal.",
+        "title": "EV Charge Planner configureren",
+        "description": "Kies de Home Assistant-entities die de planner als invoer gebruikt. EV Charge Planner bestuurt geen laadpaal.",
         "data": {
           "entity_departure": "Vertrektijd",
           "entity_departure_day": "Vertrekdag",
@@ -20,13 +20,13 @@
       }
     },
     "abort": {
-      "single_instance_allowed": "Er kan maar één EV Planner-configuratie worden toegevoegd."
+      "single_instance_allowed": "Er kan maar één EV Charge Planner-configuratie worden toegevoegd."
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "EV Planner configureren",
+        "title": "EV Charge Planner configureren",
         "description": "Pas de invoer-entities en het maximale laadvermogen aan.",
         "data": {
           "entity_departure": "Vertrektijd",
