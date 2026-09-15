@@ -1,14 +1,14 @@
-# EV Planner
+# EV Charge Planner
 
 Native Home Assistant custom integration for EV charging planning using electricity prices and PV forecasts.
 
 ## Dashboard
 
-![EV Planner Home Assistant dashboard](images/Dashboard.png)
+![EV Charge Planner Home Assistant dashboard](images/Dashboard.png)
 
 ## What it does
 
-EV Planner calculates **when and how much** an EV should charge before a configured departure time.
+EV Charge Planner calculates **when and how much** an EV should charge before a configured departure time.
 
 It combines:
 
@@ -20,7 +20,7 @@ It combines:
 - a configurable phase-switch budget;
 - the electrical limits configured for the planner.
 
-**EV Planner does not control the physical charger.** It does not switch a charger on/off, set charging current, change phases, or detect whether an EV is connected. Those actions remain Home Assistant automation responsibilities.
+**EV Charge Planner does not control the physical charger.** It does not switch a charger on/off, set charging current, change phases, or detect whether an EV is connected. Those actions remain Home Assistant automation responsibilities.
 
 ## Installation
 
@@ -30,7 +30,7 @@ Add this GitHub repository as a custom HACS repository with category **Integrati
 
 After installation, restart Home Assistant. The integration will be available under:
 
-**Settings → Devices & services → Add integration → EV Planner**
+**Settings → Devices & services → Add integration → EV Charge Planner**
 
 ### Manual
 
@@ -46,11 +46,11 @@ to:
 /config/custom_components/ev_planner/
 ```
 
-Restart Home Assistant and add **EV Planner** from the integration UI.
+Restart Home Assistant and add **EV Charge Planner** from the integration UI.
 
 ## Configuration
 
-EV Planner uses a config flow and options flow. The following existing Home Assistant entities are selected during configuration:
+EV Charge Planner uses a config flow and options flow. The following existing Home Assistant entities are selected during configuration:
 
 | Setting | Entity type |
 |---|---|
@@ -117,31 +117,31 @@ Home Assistant automation
         └── ev_planner.create_plan
                     │
                     ▼
-             ┌─────────────┐
-             │  EV Planner │
-             └──────┬──────┘
-                    │
-             planner outputs
-                    │
-        ┌───────────┴───────────┐
-        ▼                       ▼
-sensor.ev_planner_data   charging_allowed
-                                │
-                                ▼
-                       Your HA automation
-                                │
-                    ┌───────────┴───────────┐
-                    ▼                       ▼
-               charger on/off         current / phase
+             ┌───────────────────┐
+             │ EV Charge Planner │
+             └─────────┬─────────┘
+                       │
+                planner outputs
+                       │
+        ┌──────────────┴──────────────┐
+        ▼                             ▼
+sensor.ev_planner_data       charging_allowed
+                                      │
+                                      ▼
+                             Your HA automation
+                                      │
+                           ┌──────────┴──────────┐
+                           ▼                     ▼
+                      charger on/off      current / phase
 ```
 
 This separation is intentional. The planner is the decision layer; Home Assistant automations are the physical charger control layer.
 
 ## Dashboard example
 
-EV Planner can be combined with standard Home Assistant cards and, optionally, custom dashboard cards. The example below deliberately uses **generic placeholder entity IDs** so it can be adapted to different EVs, chargers and Home Assistant installations.
+EV Charge Planner can be combined with standard Home Assistant cards and, optionally, custom dashboard cards. The example below deliberately uses **generic placeholder entity IDs** so it can be adapted to different EVs, chargers and Home Assistant installations.
 
-The example assumes that the EV Planner entities have the following names after entity-registry configuration:
+The example assumes that the EV Charge Planner entities have the following names after entity-registry configuration:
 
 - `sensor.ev_planner_data`
 - `sensor.ev_planner_state`
@@ -199,7 +199,7 @@ views:
             name: Vertrekdag
 
       - type: entities
-        title: 🚗 EV Planner
+        title: 🚗 EV Charge Planner
         show_header_toggle: false
         entities:
           - entity: sensor.ev_planner_state
@@ -288,11 +288,11 @@ views:
 The dashboard example is intentionally split into two layers:
 
 1. **EV/charger information** — battery, range, charging power and charger state come from the user's own EV and charger integrations.
-2. **EV Planner information** — planner state, charging permission, planning inputs and `sensor.ev_planner_data` come from EV Planner.
+2. **EV Charge Planner information** — planner state, charging permission, planning inputs and `sensor.ev_planner_data` come from EV Charge Planner.
 
 The `charging_allowed` entity is an **advisory planner output**. It is not a command to the charger. Your own Home Assistant automation decides how that output is translated into charger on/off, current or phase control.
 
-If you use custom cards such as Mushroom or ApexCharts, they can be added around the same generic EV Planner entities. They are not required for EV Planner itself.
+If you use custom cards such as Mushroom or ApexCharts, they can be added around the same generic EV Charge Planner entities. They are not required for EV Charge Planner itself.
 
 ## Planner output
 
@@ -328,25 +328,25 @@ The planner reads the technical limits from its central configuration.
 
 ## Data sources
 
-EV Planner currently integrates with data provided by other Home Assistant integrations:
+EV Charge Planner currently integrates with data provided by other Home Assistant integrations:
 
-- **Solcast** — provides the predicted hourly solar/PV production used by EV Planner to determine when solar energy is available.
-- **Zonneplan** — provides the electricity price forecast used by EV Planner to calculate the cost of grid charging.
+- **Solcast** — provides the predicted hourly solar/PV production used by EV Charge Planner to determine when solar energy is available.
+- **Zonneplan** — provides the electricity price forecast used by EV Charge Planner to calculate the cost of grid charging.
 
-These integrations are therefore part of the current recommended setup for EV Planner. The EV Planner configuration does not hard-code their entity IDs: you select the relevant Home Assistant sensors during configuration, so the entity names can differ between installations.
+These integrations are therefore part of the current recommended setup for EV Charge Planner. The EV Charge Planner configuration does not hard-code their entity IDs: you select the relevant Home Assistant sensors during configuration, so the entity names can differ between installations.
 
-The planner is deliberately separated from these data providers. Solcast and Zonneplan provide the forecast data; EV Planner combines that data with the required charging energy, departure time and charging constraints to produce a charging plan.
+The planner is deliberately separated from these data providers. Solcast and Zonneplan provide the forecast data; EV Charge Planner combines that data with the required charging energy, departure time and charging constraints to produce a charging plan.
 
 ## Troubleshooting
 
-1. Open **Settings → Devices & services → EV Planner**.
+1. Open **Settings → Devices & services → EV Charge Planner**.
 2. Verify all configured input entities exist.
 3. Check that the Solcast forecast sensors contain hourly forecast data.
 4. Check that the price sensor contains the expected price forecast.
 5. Check that departure time/day and required energy contain valid values.
 6. Call `ev_planner.create_plan` manually.
 7. Inspect `sensor.ev_planner_state` and `sensor.ev_planner_data`.
-8. Check Home Assistant logs for `EV Planner`.
+8. Check Home Assistant logs for `EV Charge Planner`.
 9. Verify that your automations, not the integration, operate the physical charger.
 
 ## Development
@@ -395,7 +395,6 @@ The repository contains both core unit tests and Home Assistant integration test
 ├── LICENSE
 ├── pyproject.toml
 └── requirements_test.txt
-```
 
 ## License
 
