@@ -1,6 +1,6 @@
 {
   "domain": "ev_planner",
-  "name": "EV Planner",
+  "name": "EV Charge Planner",
   "codeowners": ["@Edwin1983"],
   "config_flow": true,
   "documentation": "https://github.com/Edwin1983/HASS-ev-planner",
