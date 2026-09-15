@@ -76,6 +76,10 @@ The integration provides:
 - **State sensor** — reports the current planner state.
 - **Data sensor** — exposes the complete current plan as state attributes.
 - **Charging Allowed binary sensor** — read-only indication that the current planner window permits charging.
+- **Desired charging current sensor** — reports the charging current in amperes (`A`) from the currently active planner decision. It reports `0 A` when there is no active charging decision.
+- **Desired phase sensor** — reports the number of phases from the currently active planner decision (`1` or `3`). It reports `0` when there is no active charging decision.
+
+The desired current and desired phase sensors are **planner outputs**. They do not directly change the charger settings. Your Home Assistant automations can use them to control the physical charger's current and phase.
 
 Home Assistant may assign the final entity IDs through its entity registry. Use the registry/UI when referencing entities from automations.
 
@@ -123,16 +127,17 @@ Home Assistant automation
                        │
                 planner outputs
                        │
-        ┌──────────────┴──────────────┐
-        ▼                             ▼
-sensor.ev_planner_data       charging_allowed
-                                      │
-                                      ▼
-                             Your HA automation
-                                      │
-                           ┌──────────┴──────────┐
-                           ▼                     ▼
-                      charger on/off      current / phase
+        ┌──────────────┼────────────────┐
+        ▼              ▼                ▼
+sensor.ev_planner_data  desired current  desired phase
+        │
+        └──────────────┬────────────────┘
+                       ▼
+              Your HA automation
+                       │
+             ┌─────────┴─────────┐
+             ▼                   ▼
+        charger on/off      current / phase
 ```
 
 This separation is intentional. The planner is the decision layer; Home Assistant automations are the physical charger control layer.
@@ -146,6 +151,8 @@ The example assumes that the EV Charge Planner entities have the following names
 - `sensor.ev_planner_data`
 - `sensor.ev_planner_state`
 - `binary_sensor.ev_planner_charging_allowed`
+- `sensor.ev_planner_gewenste_laadstroom`
+- `sensor.ev_planner_gewenste_fase`
 - `switch.ev_planner_smart_charging`
 
 The other entities are examples only. Replace them with the entities provided by your own EV, charger and Home Assistant helpers.
@@ -208,6 +215,12 @@ views:
           - entity: binary_sensor.ev_planner_charging_allowed
             name: Laden toegestaan
             icon: mdi:ev-station
+          - entity: sensor.ev_planner_gewenste_laadstroom
+            name: Gewenste laadstroom
+            icon: mdi:current-ac
+          - entity: sensor.ev_planner_gewenste_fase
+            name: Gewenste fase
+            icon: mdi:sine-wave
           - entity: input_select.ev_planner_mode
             name: Planner modus
             icon: mdi:state-machine
@@ -288,9 +301,9 @@ views:
 The dashboard example is intentionally split into two layers:
 
 1. **EV/charger information** — battery, range, charging power and charger state come from the user's own EV and charger integrations.
-2. **EV Charge Planner information** — planner state, charging permission, planning inputs and `sensor.ev_planner_data` come from EV Charge Planner.
+2. **EV Charge Planner information** — planner state, charging permission, desired charging current, desired phase, planning inputs and `sensor.ev_planner_data` come from EV Charge Planner.
 
-The `charging_allowed` entity is an **advisory planner output**. It is not a command to the charger. Your own Home Assistant automation decides how that output is translated into charger on/off, current or phase control.
+The `charging_allowed`, desired current and desired phase entities are **advisory planner outputs**. They are not commands to the charger. Your own Home Assistant automation decides how those outputs are translated into charger on/off, current or phase control.
 
 If you use custom cards such as Mushroom or ApexCharts, they can be added around the same generic EV Charge Planner entities. They are not required for EV Charge Planner itself.
 
@@ -312,7 +325,7 @@ If you use custom cards such as Mushroom or ApexCharts, they can be added around
 - total charging minutes;
 - individual charging decisions.
 
-Each decision contains the source hour and the charging settings calculated by the planner.
+Each decision contains the source hour and the charging settings calculated by the planner, including the planned charging current and number of phases.
 
 ## Electrical limits
 
@@ -345,7 +358,7 @@ The planner is deliberately separated from these data providers. Solcast and Zon
 4. Check that the price sensor contains the expected price forecast.
 5. Check that departure time/day and required energy contain valid values.
 6. Call `ev_planner.create_plan` manually.
-7. Inspect `sensor.ev_planner_state` and `sensor.ev_planner_data`.
+7. Inspect `sensor.ev_planner_state`, `sensor.ev_planner_data`, the desired charging current sensor and the desired phase sensor.
 8. Check Home Assistant logs for `EV Charge Planner`.
 9. Verify that your automations, not the integration, operate the physical charger.
 
@@ -395,6 +408,7 @@ The repository contains both core unit tests and Home Assistant integration test
 ├── LICENSE
 ├── pyproject.toml
 └── requirements_test.txt
+```
 
 ## License
 
