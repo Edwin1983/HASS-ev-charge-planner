@@ -1,0 +1,115 @@
+alias: EV Planner - Laadregeling
+description: >
+  Beheert centraal de laadtoestemming, laadstroom en fasewisseling van de EV op
+  basis van de planner.
+triggers:
+  - trigger: state
+    entity_id:
+      - sensor.ev_planner_gewenste_fase
+      - sensor.ev_planner_gewenste_laadstroom
+conditions:
+  - condition: state
+    entity_id: sensor.de_groot_charger_mode
+    state:
+      - connected_charging
+      - connected_finished
+      - connected_requesting
+actions:
+  - variables:
+      gewenste_fase: |
+        {{ states('sensor.ev_planner_gewenste_fase') | int(0) }}
+      gewenste_stroom: |
+        {{ states('sensor.ev_planner_gewenste_laadstroom') | int(0) }}
+      huidige_stroom: |
+        {{ states('number.de_groot_charger_max_current') | int(0) }}
+      fase_schakelaar: >
+        {{ states('number.weezenhof_2666_3_to_1_phase_switch_current') | int(32)
+        }}
+      huidige_fase: |
+        {% if fase_schakelaar == 32 %}
+          1
+        {% elif fase_schakelaar == 0 %}
+          3
+        {% else %}
+          0
+        {% endif %}
+      fase_veranderen: |
+        {{ gewenste_fase in [1, 3] and gewenste_fase != huidige_fase }}
+      stroom_veranderen: |
+        {{ gewenste_stroom >= 6 and gewenste_stroom <= 16
+           and gewenste_stroom != huidige_stroom }}
+  - condition: template
+    value_template: |
+      {{ gewenste_fase in [1, 3] }}
+  - condition: template
+    value_template: |
+      {{ gewenste_stroom >= 6 and gewenste_stroom <= 16 }}
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: '{{ fase_veranderen }}'
+        sequence:
+          - action: input_boolean.turn_off
+            target:
+              entity_id: input_boolean.ev_laden_toestaan
+          - wait_template: |
+              {{ states('sensor.de_groot_charger_mode') != 'charging' }}
+            timeout: '00:00:30'
+            continue_on_timeout: false
+          - delay:
+              seconds: 2
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: |
+                      {{ gewenste_fase == 1 }}
+                sequence:
+                  - action: number.set_value
+                    target:
+                      entity_id: number.weezenhof_2666_3_to_1_phase_switch_current
+                    data:
+                      value: 32
+              - conditions:
+                  - condition: template
+                    value_template: |
+                      {{ gewenste_fase == 3 }}
+                sequence:
+                  - action: number.set_value
+                    target:
+                      entity_id: number.weezenhof_2666_3_to_1_phase_switch_current
+                    data:
+                      value: 0
+          - delay:
+              seconds: 5
+          - wait_template: |
+              {{
+                (
+                  gewenste_fase == 1
+                  and states('number.weezenhof_2666_3_to_1_phase_switch_current') | int(0) == 32
+                )
+                or
+                (
+                  gewenste_fase == 3
+                  and states('number.weezenhof_2666_3_to_1_phase_switch_current') | int(0) == 0
+                )
+              }}
+            timeout: '00:00:15'
+            continue_on_timeout: false
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: '{{ stroom_veranderen or fase_veranderen }}'
+        sequence:
+          - action: number.set_value
+            target:
+              entity_id: number.de_groot_charger_max_current
+            data:
+              value: '{{ gewenste_stroom }}'
+          - delay:
+              seconds: 2
+  - action: input_boolean.turn_on
+    target:
+      entity_id: input_boolean.ev_laden_toestaan
+mode: queued
+max: 3
+max_exceeded: silent
