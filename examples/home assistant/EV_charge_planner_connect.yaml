@@ -1,0 +1,115 @@
+alias: EV Planner - Kia SoC en benodigde energie
+description: >
+  Ververs de Kia Niro bij aansluiten, wacht op nieuwe voertuigdata, bereken de
+  benodigde energie en start de EV Planner opnieuw.
+triggers:
+  - trigger: state
+    entity_id:
+      - sensor.de_groot_charger_mode
+    to:
+      - connected
+    enabled: true
+    from:
+      - disconnected
+  - trigger: state
+    entity_id: sensor.de_groot_charger_mode
+    from: disconnected
+    to: connected_finished
+conditions:
+  - condition: state
+    entity_id: switch.ev_planner_smart_charging
+    state: 'on'
+actions:
+  - action: input_text.set_value
+    target:
+      entity_id: input_text.ev_kia_timestamp_before
+    data:
+      value: >-
+        {{ state_attr('sensor.e_niro_data',
+        'vehicle_data')['vehicleStatus']['time'] | string }}
+  - action: button.press
+    target:
+      entity_id: button.e_niro_force_refresh
+  - wait_for_trigger:
+      - trigger: state
+        entity_id: sensor.e_niro_data
+    timeout: '00:01:00'
+    continue_on_timeout: true
+  - if:
+      - condition: template
+        value_template: |-
+          {{
+            state_attr(
+              'sensor.e_niro_data',
+              'vehicle_data'
+            )['vehicleStatus']['time'] | string
+            !=
+            states('input_text.ev_kia_timestamp_before')
+          }}
+    then:
+      - variables:
+          current_kia_soc: |-
+            {{
+              state_attr(
+                'sensor.e_niro_data',
+                'vehicle_data'
+              )['vehicleStatus']['evStatus']['batteryStatus']
+              | float
+            }}
+          max_soc: '{{ states(''input_number.ev_max_soc'') | float(100) }}'
+      - if:
+          - condition: template
+            value_template: '{{ current_kia_soc >= 0 and current_kia_soc <= 100 }}'
+        then:
+          - variables:
+              required_energy_kwh: |-
+                {% if max_soc > current_kia_soc %}
+                  {{ 1.15 * (64 * (max_soc - current_kia_soc) / 100) | round(2) }}
+                {% else %}
+                  0
+                {% endif %}
+          - action: input_number.set_value
+            target:
+              entity_id: input_number.ev_kwh_nodig
+            data:
+              value: '{{ required_energy_kwh }}'
+          - action: ev_planner.create_plan
+            data: {}
+          - action: system_log.write
+            data:
+              level: info
+              logger: ev_planner
+              message: >-
+                Kia refresh geslaagd. Oude timestamp={{
+                states('input_text.ev_kia_timestamp_before') }}. Nieuwe
+                timestamp={{
+                  state_attr(
+                    'sensor.e_niro_data',
+                    'vehicle_data'
+                  )['vehicleStatus']['time']
+                }}. SoC={{ current_kia_soc }}%. Max SoC={{ max_soc }}%.
+                Benodigde energie={{ required_energy_kwh }} kWh. EV Planner
+                opnieuw gepland.
+        else:
+          - action: system_log.write
+            data:
+              level: error
+              logger: ev_planner
+              message: >-
+                Kia refresh geslaagd, maar SoC is ongeldig: {{ current_kia_soc
+                }}
+    else:
+      - action: system_log.write
+        data:
+          level: error
+          logger: ev_planner
+          message: |-
+            Kia Niro kon niet tijdig worden ververst. Oude timestamp={{
+              states('input_text.ev_kia_timestamp_before')
+            }}. Nieuwe timestamp={{
+              state_attr(
+                'sensor.e_niro_data',
+                'vehicle_data'
+              )['vehicleStatus']['time']
+            }}. EV kWh nodig wordt NIET gewijzigd.
+mode: single
