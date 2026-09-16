@@ -1,54 +1,92 @@
-alias: EV Planner - Laadtoestemming
-description: Stuurt het laden van de EV op basis van de laadtoestemming van de planner.
+# EV Charge Planner – charging permission example
+#
+# This example translates the planner's read-only `charging_allowed` output
+# into the actual charger on/off control.
+#
+# IMPORTANT:
+# - Replace all example entity IDs with the entities from your own installation.
+# - EV Charge Planner does NOT switch the physical charger itself.
+# - The charger status, charger switch, stop button and current number below
+#   are installation-specific and must be adapted to your charger integration.
+# - This automation is an example of the recommended separation:
+#       EV Charge Planner -> planner advice
+#       Home Assistant automation -> physical charger control
+
+alias: EV Charge Planner - Charging permission example
+description: >-
+  Example automation that starts or stops an EV charger according to the
+  read-only charging permission reported by EV Charge Planner.
+
 triggers:
+  # React when the planner changes its charging permission.
   - trigger: state
     entity_id:
-      - binary_sensor.ev_planner_charging_allowed_2
+      - binary_sensor.ev_planner_charging_allowed
+
+  # Re-apply the current permission after a Home Assistant restart.
   - trigger: homeassistant
     event: start
+
 conditions:
+  # Only operate the charger while an EV is connected according to the
+  # charger's own status entity. Replace this entity and states as needed.
   - condition: state
-    entity_id: sensor.de_groot_charger_mode
+    entity_id: sensor.ev_charger_status
     state:
       - connected_charging
       - connected_finished
       - connected_requesting
+
 actions:
   - choose:
       - conditions:
+          # Planner says that the current time is inside an allowed charging
+          # window.
           - condition: state
-            entity_id: binary_sensor.ev_planner_charging_allowed_2
-            state:
-              - 'on'
+            entity_id: binary_sensor.ev_planner_charging_allowed
+            state: "on"
         sequence:
+          # Avoid sending a start command when the charger is already charging.
           - condition: not
             conditions:
               - condition: state
-                entity_id: sensor.de_groot_charger_mode
+                entity_id: sensor.ev_charger_status
                 state: charging
+
+          # Start the physical charger. This is deliberately done by the
+          # automation, not by EV Charge Planner.
           - action: switch.turn_on
             target:
-              entity_id: switch.de_groot_charging
+              entity_id: switch.ev_charger_charging
+
       - conditions:
+          # Planner says that charging is currently not allowed.
           - condition: state
-            entity_id: binary_sensor.ev_planner_charging_allowed_2
-            state:
-              - 'off'
+            entity_id: binary_sensor.ev_planner_charging_allowed
+            state: "off"
         sequence:
+          # If the charger is currently charging, stop it first.
           - if:
               - condition: state
-                entity_id: sensor.de_groot_charger_mode
+                entity_id: sensor.ev_charger_status
                 state: charging
             then:
               - action: button.press
                 target:
-                  entity_id: button.de_groot_stop_charging
-                data: {}
+                  entity_id: button.ev_charger_stop_charging
+
+          # Optional: reset the charger current while it is stopped.
+          # Remove this action if your charger does not need it.
           - action: number.set_value
             target:
-              entity_id: number.de_groot_charger_max_current
+              entity_id: number.ev_charger_max_current
             data:
               value: 0
+
+          # Clear the planner's current plan when charging is no longer allowed.
+          # Remove this action if you want the plan to remain available for
+          # inspection or later reuse.
           - action: ev_planner.clear_plan
             data: {}
+
 mode: single
