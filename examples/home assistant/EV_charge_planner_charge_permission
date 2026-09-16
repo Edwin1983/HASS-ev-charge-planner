@@ -1,0 +1,54 @@
+alias: EV Planner - Laadtoestemming
+description: Stuurt het laden van de EV op basis van de laadtoestemming van de planner.
+triggers:
+  - trigger: state
+    entity_id:
+      - binary_sensor.ev_planner_charging_allowed_2
+  - trigger: homeassistant
+    event: start
+conditions:
+  - condition: state
+    entity_id: sensor.de_groot_charger_mode
+    state:
+      - connected_charging
+      - connected_finished
+      - connected_requesting
+actions:
+  - choose:
+      - conditions:
+          - condition: state
+            entity_id: binary_sensor.ev_planner_charging_allowed_2
+            state:
+              - 'on'
+        sequence:
+          - condition: not
+            conditions:
+              - condition: state
+                entity_id: sensor.de_groot_charger_mode
+                state: charging
+          - action: switch.turn_on
+            target:
+              entity_id: switch.de_groot_charging
+      - conditions:
+          - condition: state
+            entity_id: binary_sensor.ev_planner_charging_allowed_2
+            state:
+              - 'off'
+        sequence:
+          - if:
+              - condition: state
+                entity_id: sensor.de_groot_charger_mode
+                state: charging
+            then:
+              - action: button.press
+                target:
+                  entity_id: button.de_groot_stop_charging
+                data: {}
+          - action: number.set_value
+            target:
+              entity_id: number.de_groot_charger_max_current
+            data:
+              value: 0
+          - action: ev_planner.clear_plan
+            data: {}
+mode: single
