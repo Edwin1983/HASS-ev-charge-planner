@@ -1,115 +1,164 @@
-alias: EV Planner - Laadregeling
-description: >
-  Beheert centraal de laadtoestemming, laadstroom en fasewisseling van de EV op
-  basis van de planner.
+# EV Charge Planner – charger control example
+#
+# This is an example automation showing how EV Charge Planner outputs can be
+# translated into physical charger settings.
+#
+# IMPORTANT:
+# - Replace all example entity IDs with the entities from your own installation.
+# - EV Charge Planner itself does NOT control the physical charger.
+# - This example assumes a charger integration that exposes a charging-current
+#   number entity and a separate 1-phase / 3-phase selection entity.
+# - In this example the phase selector uses 32 = 1 phase and 0 = 3 phases.
+#   Your charger/integration may use completely different values.
+#
+# The automation reacts to the two native EV Charge Planner output sensors:
+#   sensor.ev_planner_desired_phase
+#   sensor.ev_planner_desired_current
+#
+# The example also uses a local boolean as the physical charging permission.
+# That boolean is deliberately NOT part of EV Charge Planner.
+
+alias: EV Charge Planner - Charger control example
+description: >-
+  Example automation that applies the planner's desired charging current and
+  phase to a compatible EV charger.
+
 triggers:
+  # Re-evaluate the charger whenever the planner changes its desired current
+  # or phase.
   - trigger: state
     entity_id:
-      - sensor.ev_planner_gewenste_fase
-      - sensor.ev_planner_gewenste_laadstroom
+      - sensor.ev_planner_desired_phase
+      - sensor.ev_planner_desired_current
+
 conditions:
+  # Only operate the charger while the EV is connected according to the
+  # charger's own status entity.
+  # Replace this entity and states with those provided by your charger.
   - condition: state
-    entity_id: sensor.de_groot_charger_mode
+    entity_id: sensor.ev_charger_status
     state:
       - connected_charging
       - connected_finished
       - connected_requesting
+
 actions:
   - variables:
-      gewenste_fase: |
-        {{ states('sensor.ev_planner_gewenste_fase') | int(0) }}
-      gewenste_stroom: |
-        {{ states('sensor.ev_planner_gewenste_laadstroom') | int(0) }}
-      huidige_stroom: |
-        {{ states('number.de_groot_charger_max_current') | int(0) }}
-      fase_schakelaar: >
-        {{ states('number.weezenhof_2666_3_to_1_phase_switch_current') | int(32)
-        }}
-      huidige_fase: |
-        {% if fase_schakelaar == 32 %}
+      # Desired values produced by EV Charge Planner.
+      desired_phase: "{{ states('sensor.ev_planner_desired_phase') | int(0) }}"
+      desired_current: "{{ states('sensor.ev_planner_desired_current') | int(0) }}"
+
+      # Current charger settings.
+      current_current: "{{ states('number.ev_charger_max_current') | int(0) }}"
+      phase_selector: "{{ states('number.ev_charger_phase_switch') | int(32) }}"
+
+      # Translate the example phase-selector values into a phase count.
+      # IMPORTANT: adapt this mapping to your charger integration.
+      current_phase: >-
+        {% if phase_selector == 32 %}
           1
-        {% elif fase_schakelaar == 0 %}
+        {% elif phase_selector == 0 %}
           3
         {% else %}
           0
         {% endif %}
-      fase_veranderen: |
-        {{ gewenste_fase in [1, 3] and gewenste_fase != huidige_fase }}
-      stroom_veranderen: |
-        {{ gewenste_stroom >= 6 and gewenste_stroom <= 16
-           and gewenste_stroom != huidige_stroom }}
+
+      phase_change_required: >-
+        {{ desired_phase in [1, 3] and desired_phase != current_phase }}
+
+      current_change_required: >-
+        {{ desired_current >= 6 and desired_current <= 16
+           and desired_current != current_current }}
+
+  # The example only applies valid planner output values.
+  # The planner normally produces 6–16 A and either 1 or 3 phases.
   - condition: template
-    value_template: |
-      {{ gewenste_fase in [1, 3] }}
+    value_template: "{{ desired_phase in [1, 3] }}"
+
   - condition: template
-    value_template: |
-      {{ gewenste_stroom >= 6 and gewenste_stroom <= 16 }}
+    value_template: "{{ desired_current >= 6 and desired_current <= 16 }}"
+
   - choose:
       - conditions:
           - condition: template
-            value_template: '{{ fase_veranderen }}'
+            value_template: "{{ phase_change_required }}"
         sequence:
+          # Stop charging permission before changing phases. This is a local
+          # installation-specific helper and is NOT controlled by the planner.
           - action: input_boolean.turn_off
             target:
-              entity_id: input_boolean.ev_laden_toestaan
-          - wait_template: |
-              {{ states('sensor.de_groot_charger_mode') != 'charging' }}
-            timeout: '00:00:30'
+              entity_id: input_boolean.ev_charging_allowed
+
+          # Wait until the charger has stopped delivering energy before changing
+          # the electrical phase configuration.
+          - wait_template: >-
+              {{ states('sensor.ev_charger_status') != 'charging' }}
+            timeout: "00:00:30"
             continue_on_timeout: false
+
           - delay:
               seconds: 2
+
           - choose:
               - conditions:
                   - condition: template
-                    value_template: |
-                      {{ gewenste_fase == 1 }}
+                    value_template: "{{ desired_phase == 1 }}"
                 sequence:
+                  # Example: 32 means 1 phase on this type of phase selector.
                   - action: number.set_value
                     target:
-                      entity_id: number.weezenhof_2666_3_to_1_phase_switch_current
+                      entity_id: number.ev_charger_phase_switch
                     data:
                       value: 32
+
               - conditions:
                   - condition: template
-                    value_template: |
-                      {{ gewenste_fase == 3 }}
+                    value_template: "{{ desired_phase == 3 }}"
                 sequence:
+                  # Example: 0 means 3 phases on this type of phase selector.
                   - action: number.set_value
                     target:
-                      entity_id: number.weezenhof_2666_3_to_1_phase_switch_current
+                      entity_id: number.ev_charger_phase_switch
                     data:
                       value: 0
+
+          # Allow the charger integration a moment to apply the phase change.
           - delay:
               seconds: 5
-          - wait_template: |
+
+          # Verify that the requested phase selector value was accepted.
+          - wait_template: >-
               {{
-                (
-                  gewenste_fase == 1
-                  and states('number.weezenhof_2666_3_to_1_phase_switch_current') | int(0) == 32
-                )
+                (desired_phase == 1 and
+                  states('number.ev_charger_phase_switch') | int(0) == 32)
                 or
-                (
-                  gewenste_fase == 3
-                  and states('number.weezenhof_2666_3_to_1_phase_switch_current') | int(0) == 0
-                )
+                (desired_phase == 3 and
+                  states('number.ev_charger_phase_switch') | int(0) == 0)
               }}
-            timeout: '00:00:15'
+            timeout: "00:00:15"
             continue_on_timeout: false
+
   - choose:
       - conditions:
+          # Change the current when required. A phase change also causes the
+          # current to be written again so both planner outputs are applied.
           - condition: template
-            value_template: '{{ stroom_veranderen or fase_veranderen }}'
+            value_template: "{{ current_change_required or phase_change_required }}"
         sequence:
           - action: number.set_value
             target:
-              entity_id: number.de_groot_charger_max_current
+              entity_id: number.ev_charger_max_current
             data:
-              value: '{{ gewenste_stroom }}'
+              value: "{{ desired_current }}"
+
           - delay:
               seconds: 2
+
+  # Finally restore the local charging permission.
   - action: input_boolean.turn_on
     target:
-      entity_id: input_boolean.ev_laden_toestaan
+      entity_id: input_boolean.ev_charging_allowed
+
 mode: queued
 max: 3
 max_exceeded: silent
