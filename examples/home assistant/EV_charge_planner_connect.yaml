@@ -1,115 +1,149 @@
-alias: EV Planner - Kia SoC en benodigde energie
-description: >
-  Ververs de Kia Niro bij aansluiten, wacht op nieuwe voertuigdata, bereken de
-  benodigde energie en start de EV Planner opnieuw.
+# EV Charge Planner – EV connection and energy example
+#
+# This is an OPTIONAL example showing how a Home Assistant automation can
+# refresh vehicle data when an EV is connected, calculate the energy required
+# before departure, and ask EV Charge Planner to create a new plan.
+#
+# IMPORTANT:
+# - This automation is intentionally generic. It does not belong to
+#   EV Charge Planner itself.
+# - Replace all example entity IDs and vehicle-data paths with those provided
+#   by your own EV integration.
+# - The vehicle integration must expose a current battery SoC and a way to
+#   request/force a data refresh if you want to use this pattern.
+# - The battery capacity and charging-loss factor below are examples. Adjust
+#   them for your vehicle and installation.
+# - EV Charge Planner does not detect the EV connection itself. Your charger
+#   or EV integration provides that trigger to this automation.
+
+alias: EV Charge Planner - EV connection and required energy example
+description: >-
+  Example automation that refreshes EV data on connection, calculates the
+  required charging energy and creates a new EV Charge Planner plan.
+
 triggers:
+  # Example charger status transition: the EV has just connected.
+  # Replace the entity and states with those provided by your charger.
   - trigger: state
-    entity_id:
-      - sensor.de_groot_charger_mode
-    to:
-      - connected
-    enabled: true
-    from:
-      - disconnected
+    entity_id: sensor.ev_charger_status
+    from: disconnected
+    to: connected
+
+  # Some charger integrations use a different connected state after a previous
+  # charging session. Keep this trigger only if your integration needs it.
   - trigger: state
-    entity_id: sensor.de_groot_charger_mode
+    entity_id: sensor.ev_charger_status
     from: disconnected
     to: connected_finished
+
 conditions:
+  # Only create plans when the EV Charge Planner switch is enabled.
   - condition: state
     entity_id: switch.ev_planner_smart_charging
-    state: 'on'
+    state: "on"
+
 actions:
-  - action: input_text.set_value
-    target:
-      entity_id: input_text.ev_kia_timestamp_before
-    data:
-      value: >-
-        {{ state_attr('sensor.e_niro_data',
-        'vehicle_data')['vehicleStatus']['time'] | string }}
+  # Store the vehicle data timestamp before requesting a refresh.
+  # Replace this example path with the timestamp exposed by your EV integration.
+  - variables:
+      timestamp_before: >-
+        {{ state_attr('sensor.ev_vehicle_data', 'vehicle_data')
+           ['vehicleStatus']['timestamp'] | string }}
+
+  # Request fresh vehicle data. Replace this with your integration's refresh
+  # service/button, or remove this step if the data is refreshed automatically.
   - action: button.press
     target:
-      entity_id: button.e_niro_force_refresh
+      entity_id: button.ev_vehicle_force_refresh
+
+  # Wait for the vehicle entity to update after the refresh request.
   - wait_for_trigger:
       - trigger: state
-        entity_id: sensor.e_niro_data
-    timeout: '00:01:00'
+        entity_id: sensor.ev_vehicle_data
+    timeout: "00:01:00"
     continue_on_timeout: true
+
+  # Only continue when the vehicle integration actually returned a new
+  # timestamp. This prevents stale SoC data from changing the charging plan.
   - if:
       - condition: template
-        value_template: |-
-          {{
-            state_attr(
-              'sensor.e_niro_data',
-              'vehicle_data'
-            )['vehicleStatus']['time'] | string
-            !=
-            states('input_text.ev_kia_timestamp_before')
-          }}
+        value_template: >-
+          {{ state_attr('sensor.ev_vehicle_data', 'vehicle_data')
+             ['vehicleStatus']['timestamp'] | string != timestamp_before }}
     then:
       - variables:
-          current_kia_soc: |-
-            {{
-              state_attr(
-                'sensor.e_niro_data',
-                'vehicle_data'
-              )['vehicleStatus']['evStatus']['batteryStatus']
-              | float
-            }}
-          max_soc: '{{ states(''input_number.ev_max_soc'') | float(100) }}'
+          # Read the current battery state of charge.
+          # Replace the attribute path with your EV integration's SoC path.
+          current_soc: >-
+            {{ state_attr('sensor.ev_vehicle_data', 'vehicle_data')
+               ['vehicleStatus']['evStatus']['batteryStatus'] | float(-1) }}
+
+          # Maximum desired SoC can be supplied by a Home Assistant helper.
+          # This keeps the example independent of a particular vehicle.
+          max_soc: "{{ states('input_number.ev_max_soc') | float(100) }}"
+
       - if:
           - condition: template
-            value_template: '{{ current_kia_soc >= 0 and current_kia_soc <= 100 }}'
+            value_template: "{{ current_soc >= 0 and current_soc <= 100 }}"
         then:
           - variables:
-              required_energy_kwh: |-
-                {% if max_soc > current_kia_soc %}
-                  {{ 1.15 * (64 * (max_soc - current_kia_soc) / 100) | round(2) }}
+              # Example calculation:
+              # required energy = battery capacity × SoC difference ×
+              # charging-loss factor.
+              #
+              # Replace these values for your own vehicle.
+              battery_capacity_kwh: 64
+              charging_loss_factor: 1.15
+              required_energy_kwh: >-
+                {% if max_soc > current_soc %}
+                  {{ (charging_loss_factor * battery_capacity_kwh
+                      * (max_soc - current_soc) / 100) | round(2) }}
                 {% else %}
                   0
                 {% endif %}
+
+          # Store the calculated energy in the helper selected during
+          # EV Charge Planner configuration.
           - action: input_number.set_value
             target:
-              entity_id: input_number.ev_kwh_nodig
+              entity_id: input_number.ev_kwh_needed
             data:
-              value: '{{ required_energy_kwh }}'
+              value: "{{ required_energy_kwh }}"
+
+          # Ask EV Charge Planner to create a plan using the updated energy
+          # requirement and the other configured planner inputs.
           - action: ev_planner.create_plan
             data: {}
+
           - action: system_log.write
             data:
               level: info
               logger: ev_planner
               message: >-
-                Kia refresh geslaagd. Oude timestamp={{
-                states('input_text.ev_kia_timestamp_before') }}. Nieuwe
-                timestamp={{
-                  state_attr(
-                    'sensor.e_niro_data',
-                    'vehicle_data'
-                  )['vehicleStatus']['time']
-                }}. SoC={{ current_kia_soc }}%. Max SoC={{ max_soc }}%.
-                Benodigde energie={{ required_energy_kwh }} kWh. EV Planner
-                opnieuw gepland.
+                EV data refreshed successfully. SoC={{ current_soc }}%.
+                Maximum SoC={{ max_soc }}%. Required energy={{
+                required_energy_kwh }} kWh. EV Charge Planner plan created.
+
         else:
+          # Invalid SoC: do not overwrite the required-energy helper and do not
+          # create a new plan from invalid vehicle data.
           - action: system_log.write
             data:
               level: error
               logger: ev_planner
               message: >-
-                Kia refresh geslaagd, maar SoC is ongeldig: {{ current_kia_soc
-                }}
+                EV data refresh succeeded, but the reported SoC is invalid:
+                {{ current_soc }}%. No new charging plan was created.
+
     else:
+      # The vehicle integration did not provide a new timestamp in time.
+      # The existing required-energy value is deliberately left unchanged.
       - action: system_log.write
         data:
           level: error
           logger: ev_planner
-          message: |-
-            Kia Niro kon niet tijdig worden ververst. Oude timestamp={{
-              states('input_text.ev_kia_timestamp_before')
-            }}. Nieuwe timestamp={{
-              state_attr(
-                'sensor.e_niro_data',
-                'vehicle_data'
-              )['vehicleStatus']['time']
-            }}. EV kWh nodig wordt NIET gewijzigd.
+          message: >-
+            EV data could not be refreshed within the timeout. Existing required
+            charging energy was not changed and no new plan was created.
+
 mode: single
