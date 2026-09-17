@@ -65,6 +65,41 @@ def test_solar_rounding_grid_is_not_blocked_by_max_price():
     assert abs(plan.paid_energy_kwh - 0.2) < 0.000001
 
 
+def test_solar_rounding_up_does_not_create_grid_only_charging():
+    plan = make_planner(
+        0.02,
+        PLANNER_MODE_SOLAR_ONLY,
+        PV_ROUNDING_UP,
+        46.0,
+        price=0.40,
+        max_price=0.0,
+    ).create_plan()
+    assert not plan.decisions
+    assert plan.energy_planned_kwh == 0.0
+    assert plan.paid_energy_kwh == 0.0
+
+
+def test_solar_only_ignores_energy_target():
+    low_target = make_planner(
+        2.1,
+        PLANNER_MODE_SOLAR_ONLY,
+        PV_ROUNDING_DOWN,
+        1.0,
+    ).create_plan()
+    high_target = make_planner(
+        2.1,
+        PLANNER_MODE_SOLAR_ONLY,
+        PV_ROUNDING_DOWN,
+        46.0,
+    ).create_plan()
+
+    assert len(low_target.decisions) == len(high_target.decisions) == 1
+    assert abs(low_target.energy_planned_kwh - 2.07) < 0.000001
+    assert abs(high_target.energy_planned_kwh - 2.07) < 0.000001
+    assert low_target.decisions[0].charge_current_a == 9
+    assert high_target.decisions[0].charge_current_a == 9
+
+
 def test_min_pv_filters_solar_only():
     plan = make_planner(
         0.5, PLANNER_MODE_SOLAR_ONLY, PV_ROUNDING_DOWN, 1.38, min_pv=1.0
