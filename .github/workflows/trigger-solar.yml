@@ -1,0 +1,19 @@
+name: Trigger solar implementation
+
+on:
+  push:
+    branches:
+      - feature/solar-charging
+
+permissions:
+  actions: write
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch implementation workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run implement-solar.yml --repo Edwin1983/HASS-ev-charge-planner --ref feature/solar-charging
