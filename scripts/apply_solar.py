@@ -149,8 +149,8 @@ def apply_solar_only(planner, hours):
 '''
 (ROOT / 'custom_components/ev_planner/core/solar.py').write_text(solar, encoding='utf-8')
 
-planner = ROOT / 'custom_components/ev_planner/core/planner.py'
-text = planner.read_text(encoding='utf-8')
+planner_path = ROOT / 'custom_components/ev_planner/core/planner.py'
+text = planner_path.read_text(encoding='utf-8')
 text = text.replace('from .logger import Logger\n\nfrom .models import Hour', 'from .logger import Logger\nfrom .solar import apply_solar_only\n\nfrom .models import Hour', 1)
 text = text.replace('    PHASE_CHANGE_POWER,\n)', '    PHASE_CHANGE_POWER,\n)\n\nfrom ..const import (\n    PLANNER_MODE_NORMAL,\n    PLANNER_MODE_SOLAR_ONLY,\n    PV_ROUNDING_DOWN,\n    PV_ROUNDING_UP,\n)', 1)
 text = text.replace('        max_phase_switches: int = 2,\n    ) -> None:', '        max_phase_switches: int = 2,\n        planner_mode: str = PLANNER_MODE_NORMAL,\n        pv_rounding: str = PV_ROUNDING_DOWN,\n    ) -> None:', 1)
@@ -159,15 +159,18 @@ text = text.replace('        if self.max_phase_switches < 0:\n\n            rais
 text = text.replace('        self._optimize_hours(\n            hours\n        )', '        if self.settings.planner_mode == PLANNER_MODE_SOLAR_ONLY:\n            apply_solar_only(self, hours)\n        else:\n            self._optimize_hours(\n                hours\n            )', 1)
 text = text.replace('            if pv < float(\n                self.settings.min_pv_kwh\n            ):\n\n                pv = 0.0', '            if (self.settings.planner_mode == PLANNER_MODE_SOLAR_ONLY and pv < float(self.settings.min_pv_kwh)):\n                pv = 0.0', 1)
 text = text.replace('        if pv < float(\n            self.settings.min_pv_kwh\n        ):\n\n            pv = 0.0', '        if (self.settings.planner_mode == PLANNER_MODE_SOLAR_ONLY and pv < float(self.settings.min_pv_kwh)):\n            pv = 0.0', 1)
-planner.write_text(text, encoding='utf-8')
+old = '''            if (\n                float(hour.price) > max_price + TOLERANCE\n                and float(decision.paid_energy_kwh) > TOLERANCE\n            ):'''
+new = '''            if (\n                float(hour.price) > max_price + TOLERANCE\n                and float(decision.paid_energy_kwh) > TOLERANCE\n                and not (\n                    self.settings.planner_mode == PLANNER_MODE_SOLAR_ONLY\n                    and self.settings.pv_rounding == PV_ROUNDING_UP\n                )\n            ):'''
+text = text.replace(old, new, 1)
+planner_path.write_text(text, encoding='utf-8')
 
-controller = ROOT / 'custom_components/ev_planner/core/ev_planner.py'
-text = controller.read_text(encoding='utf-8')
+controller_path = ROOT / 'custom_components/ev_planner/core/ev_planner.py'
+text = controller_path.read_text(encoding='utf-8')
 text = text.replace('    CONF_ENTITY_PLANNER_MODE,\n', '    CONF_ENTITY_PLANNER_MODE,\n    CONF_ENTITY_PV_ROUNDING,\n', 1)
 text = text.replace('    DEFAULT_ENTITY_PLANNER_MODE,\n', '    DEFAULT_ENTITY_PLANNER_MODE,\n    DEFAULT_ENTITY_PV_ROUNDING,\n', 1)
 text = text.replace('            "planner_mode": self.config.get(\n                CONF_ENTITY_PLANNER_MODE,\n                DEFAULT_ENTITY_PLANNER_MODE,\n            ),\n', '            "planner_mode": self.config.get(\n                CONF_ENTITY_PLANNER_MODE,\n                DEFAULT_ENTITY_PLANNER_MODE,\n            ),\n            "pv_rounding": self.config.get(\n                CONF_ENTITY_PV_ROUNDING,\n                DEFAULT_ENTITY_PV_ROUNDING,\n            ),\n', 1)
 text = text.replace('        # ------------------------------------------------------------------\n        # Fasewisselingen\n', '        # ------------------------------------------------------------------\n        # Planner mode\n        # ------------------------------------------------------------------\n\n        planner_mode = self.hass.get_state(self.entities["planner_mode"])\n\n        # ------------------------------------------------------------------\n        # PV afronding\n        # ------------------------------------------------------------------\n\n        pv_rounding = self.hass.get_state(self.entities["pv_rounding"])\n\n        # ------------------------------------------------------------------\n        # Fasewisselingen\n', 1)
 text = text.replace('                max_phase_switches=max_phase_switches,\n            )', '                max_phase_switches=max_phase_switches,\n                planner_mode=planner_mode,\n                pv_rounding=pv_rounding,\n            )', 1)
-controller.write_text(text, encoding='utf-8')
+controller_path.write_text(text, encoding='utf-8')
 
 print('Solar implementation applied')
