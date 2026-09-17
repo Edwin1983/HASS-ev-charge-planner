@@ -31,14 +31,11 @@ def _option(planner, hour, phases):
                 chosen = (current_a, power)
 
     elif planner.settings.pv_rounding == PV_ROUNDING_UP:
-        # Naar boven afronden mag alleen een kleine netaanvulling geven.
-        # Als de PV zelfs de minimale laadstroom niet kan dragen, is er
-        # geen geldige solar-only laadoptie. Anders zou bijvoorbeeld
-        # 20 W PV leiden tot 6 A laden (1F = 1.38 kW, 3F = 4.14 kW).
-        min_power = planner._actual_power_for_current(valid[0], phases)
-        if pv_rate + EPS < min_power:
-            return None
-
+        # Naar boven afronden kiest altijd de eerstvolgende geldige
+        # laadinstelling. Ook als de PV lager is dan het vermogen van de
+        # minimale laadinstelling, mag het verschil uit het net komen.
+        # De min_pv_kwh-instelling bepaalt afzonderlijk of het PV-uur
+        # überhaupt mag worden gebruikt.
         for current_a in valid:
             power = planner._actual_power_for_current(current_a, phases)
             if power + EPS >= pv_rate:
