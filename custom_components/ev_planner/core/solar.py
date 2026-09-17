@@ -13,6 +13,8 @@ def _option(planner, hour, phases):
     if duration <= 0:
         return None
     pv = max(0.0, float(hour.pv_estimate))
+    if pv <= EPS:
+        return None
     pv_rate = pv / duration
     valid = planner._valid_currents(phases)
     if not valid:
@@ -63,7 +65,7 @@ def apply_solar_only(planner, hours):
     options_by_index = []
     for hour in ordered:
         pv = max(0.0, float(hour.pv_estimate))
-        if pv < float(planner.settings.min_pv_kwh):
+        if pv <= EPS or pv < float(planner.settings.min_pv_kwh):
             options_by_index.append([])
             continue
         options = []
