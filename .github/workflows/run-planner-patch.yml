@@ -1,0 +1,30 @@
+name: Run planner patch
+
+on:
+  push:
+    paths:
+      - ".planner-mode-trigger"
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Apply patch and test
+        run: |
+          python .github/apply_planner_modes.py
+          python -m pip install --upgrade pip
+          pip install -r requirements_test.txt
+          pytest -q
+          ruff check custom_components tests
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/apply_planner_modes.py .github/workflows/run-planner-patch.yml .github/workflows/apply-planner-modes.yml .planner-mode-trigger
+          git add custom_components/ev_planner/core/planner.py custom_components/ev_planner/core/ev_planner.py tests/test_core.py tests/test_config_flow.py
+          git commit -m "feat: add normal and solar-only planner modes"
+          git push
