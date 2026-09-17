@@ -16,7 +16,7 @@ It combines:
 - Solcast PV forecasts;
 - required charging energy;
 - a maximum grid-price limit;
-- a minimum usable PV-energy setting;
+- a minimum usable PV-energy setting for solar-only planning;
 - a configurable phase-switch budget;
 - the electrical limits configured for the planner.
 
@@ -61,12 +61,30 @@ EV Charge Planner uses a config flow and options flow. The following existing Ho
 | Minimum usable PV | `input_number` |
 | Maximum phase switches | `input_number` |
 | Planner mode | `input_select` |
+| PV charging-current rounding | `input_select` |
 | Electricity prices | `sensor` |
 | Solcast today | `sensor` |
 | Solcast tomorrow | `sensor` |
 | Maximum charging power | numeric setting |
 
 The default entity IDs are compatible with the original EV Planner/Pyscript setup. They can be changed through the integration configuration.
+
+### Planner modes
+
+**Normaal laden** uses the normal price/PV optimizer. It plans the required charging energy as cheaply as possible before departure. PV energy is treated as free, while grid charging is only used when the configured price limit permits it.
+
+**Alleen zonneladen** uses only periods with usable PV production. The planner maximizes useful PV charging and does not create grid-only charging periods. The `Minimale PV voor zonneladen` setting filters out small PV periods in this mode; it does not restrict normal price-based charging.
+
+### PV-laadstroom afronden
+
+In **Alleen zonneladen**, the planner derives a charging current from the available PV power:
+
+- **Naar beneden — geen netenergie**: selects the highest valid current that does not exceed the available PV power. If the available PV is below the minimum 6 A charging current, that period is not selected. This prevents planned grid energy caused by rounding.
+- **Naar boven — kleine netaanvulling toegestaan**: selects the lowest valid current that reaches or exceeds the available PV power. The small difference between PV production and charging power is treated as paid grid energy. This intentional rounding supplement is not blocked by the configured maximum grid-price limit.
+
+For example, with 2.1 kW of available PV on 1 phase, rounding down selects 9 A (2.07 kW), while rounding up selects 10 A (2.30 kW), with approximately 0.23 kW of additional grid power during that period.
+
+The planner still respects its electrical limits: 6–16 A integer current, 1-phase/3-phase operation, the configured maximum charging power, and the hard phase-switch safety cap.
 
 ## Entities
 
