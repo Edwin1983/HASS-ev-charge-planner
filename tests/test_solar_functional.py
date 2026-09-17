@@ -111,13 +111,23 @@ def test_solar_rounding_up_below_6a_uses_6a():
 
 
 def test_solar_uses_3ph_when_pv_exceeds_1ph_capacity():
-    plan = build_planner([5.5], 5.52, rounding=PV_ROUNDING_DOWN).create_plan()
+    plan = build_planner([5.5], 4.83, rounding=PV_ROUNDING_DOWN).create_plan()
+    decision = plan.decisions[0]
+
+    assert decision.phases == 3
+    assert decision.charge_current_a == 7
+    assert abs(decision.charge_power_kw - 4.83) < 0.000001
+    assert decision.paid_energy_kwh == 0.0
+
+
+def test_solar_rounding_up_can_reach_5_52kw_with_8a_3ph():
+    plan = build_planner([5.5], 5.52, rounding=PV_ROUNDING_UP).create_plan()
     decision = plan.decisions[0]
 
     assert decision.phases == 3
     assert decision.charge_current_a == 8
     assert abs(decision.charge_power_kw - 5.52) < 0.000001
-    assert decision.paid_energy_kwh == 0.0
+    assert abs(decision.paid_energy_kwh - 0.02) < 0.000001
 
 
 def test_solar_never_exceeds_16a_3ph_maximum():
@@ -164,7 +174,7 @@ def test_solar_can_finish_partway_through_final_hour():
 
 def test_solar_gap_resets_phase_switch_counter():
     plan = build_planner(
-        [5.5, 0.0, 5.5],
+        [5.52, 0.0, 5.52],
         11.04,
         rounding=PV_ROUNDING_DOWN,
         max_phase_switches=0,
