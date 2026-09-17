@@ -75,6 +75,7 @@ def apply_solar_only(planner, hours):
     """
 
     if not hours:
+        planner.settings.energy_needed_kwh = 0.0
         return
 
     max_switches = min(
@@ -182,6 +183,7 @@ def apply_solar_only(planner, hours):
             best = state
 
     if best is None:
+        planner.settings.energy_needed_kwh = 0.0
         return
 
     state = best
@@ -194,6 +196,8 @@ def apply_solar_only(planner, hours):
 
         if state is None:
             break
+
+    planned_energy = 0.0
 
     for index, action in enumerate(actions):
         if action is None or action[0] == "skip":
@@ -211,3 +215,11 @@ def apply_solar_only(planner, hours):
         hour.free_energy = float(free)
         hour.paid_energy = float(paid)
         hour.reason = "Alleen zonneladen"
+
+        planned_energy += float(amount)
+
+    # Vanaf dit punt is het energiedoel niet meer de helperwaarde. Het
+    # plan representeert uitsluitend de PV-kansen die daadwerkelijk zijn
+    # geselecteerd. Daardoor kan de algemene ChargingPlan-structuur blijven
+    # werken zonder solar-only alsnog aan input_number.ev_kwh_nodig te koppelen.
+    planner.settings.energy_needed_kwh = float(planned_energy)
