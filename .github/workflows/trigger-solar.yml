@@ -1,0 +1,23 @@
+name: Trigger solar implementation
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  actions: write
+  contents: write
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch solar implementation
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api --method POST \
+            -H "Accept: application/vnd.github+json" \
+            /repos/Edwin1983/HASS-ev-charge-planner/actions/workflows/apply-solar.yml/dispatches \
+            -f ref=main
