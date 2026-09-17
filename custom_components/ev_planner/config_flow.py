@@ -15,6 +15,7 @@ from .const import (
     CONF_ENTITY_MAX_PRICE,
     CONF_ENTITY_MIN_PV_KWH,
     CONF_ENTITY_PLANNER_MODE,
+    CONF_ENTITY_PV_ROUNDING,
     CONF_ENTITY_PRICES,
     CONF_ENTITY_SOLCAST_TODAY,
     CONF_ENTITY_SOLCAST_TOMORROW,
@@ -26,6 +27,7 @@ from .const import (
     DEFAULT_ENTITY_MAX_PRICE,
     DEFAULT_ENTITY_MIN_PV_KWH,
     DEFAULT_ENTITY_PLANNER_MODE,
+    DEFAULT_ENTITY_PV_ROUNDING,
     DEFAULT_ENTITY_PRICES,
     DEFAULT_ENTITY_SOLCAST_TODAY,
     DEFAULT_ENTITY_SOLCAST_TOMORROW,
@@ -42,6 +44,7 @@ _DEFAULTS = {
     CONF_ENTITY_MIN_PV_KWH: DEFAULT_ENTITY_MIN_PV_KWH,
     CONF_ENTITY_MAX_PHASE_SWITCHES: DEFAULT_ENTITY_MAX_PHASE_SWITCHES,
     CONF_ENTITY_PLANNER_MODE: DEFAULT_ENTITY_PLANNER_MODE,
+    CONF_ENTITY_PV_ROUNDING: DEFAULT_ENTITY_PV_ROUNDING,
     CONF_ENTITY_PRICES: DEFAULT_ENTITY_PRICES,
     CONF_ENTITY_SOLCAST_TODAY: DEFAULT_ENTITY_SOLCAST_TODAY,
     CONF_ENTITY_SOLCAST_TOMORROW: DEFAULT_ENTITY_SOLCAST_TOMORROW,
@@ -50,7 +53,7 @@ _DEFAULTS = {
 
 
 def _build_schema(defaults: dict) -> vol.Schema:
-    """Build the EV Planner configuration schema."""
+    """Build the EV Charge Planner configuration schema."""
     return vol.Schema(
         {
             vol.Required(
@@ -96,6 +99,12 @@ def _build_schema(defaults: dict) -> vol.Schema:
                 selector.EntitySelectorConfig(domain="input_select")
             ),
             vol.Required(
+                CONF_ENTITY_PV_ROUNDING,
+                default=defaults[CONF_ENTITY_PV_ROUNDING],
+            ): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="input_select")
+            ),
+            vol.Required(
                 CONF_ENTITY_PRICES,
                 default=defaults[CONF_ENTITY_PRICES],
             ): selector.EntitySelector(
@@ -133,7 +142,7 @@ class EVPlannerConfigFlow(
     config_entries.ConfigFlow,
     domain=DOMAIN,
 ):
-    """Config flow for EV Planner."""
+    """Config flow for EV Charge Planner."""
 
     VERSION = 1
 
@@ -141,13 +150,13 @@ class EVPlannerConfigFlow(
         self,
         user_input=None,
     ) -> FlowResult:
-        """Create the EV Planner integration."""
+        """Create the EV Charge Planner integration."""
         if self._async_current_entries():
             return self.async_abort(reason="single_instance_allowed")
 
         if user_input is not None:
             return self.async_create_entry(
-                title="EV Planner",
+                title="EV Charge Planner",
                 data=user_input,
             )
 
@@ -166,7 +175,7 @@ class EVPlannerConfigFlow(
 
 
 class EVPlannerOptionsFlow(config_entries.OptionsFlow):
-    """Options flow for EV Planner."""
+    """Options flow for EV Charge Planner."""
 
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         """Initialize the options flow."""
