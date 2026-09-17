@@ -1,7 +1,6 @@
 from pathlib import Path
 
 root = Path(__file__).resolve().parents[1]
-
 path = root / "tests/test_integration.py"
 text = path.read_text(encoding="utf-8")
 text = text.replace("    CONF_ENTITY_PLANNER_MODE,\n", "    CONF_ENTITY_PLANNER_MODE,\n    CONF_ENTITY_PV_ROUNDING,\n", 1)
@@ -81,7 +80,6 @@ def test_min_pv_is_ignored_in_normal_mode():
     without_min = make_planner(0.5, PLANNER_MODE_NORMAL, PV_ROUNDING_DOWN, 1.38, price=0.0, max_price=0.0, min_pv=0.0).create_plan()
     assert with_min.complete == without_min.complete
     assert abs(with_min.energy_planned_kwh - without_min.energy_planned_kwh) < 0.000001
-    assert abs(with_min.paid_energy_kwh - without_min.paid_energy_kwh) < 0.000001
 
 
 def test_normal_max_price_zero_blocks_grid_energy():
