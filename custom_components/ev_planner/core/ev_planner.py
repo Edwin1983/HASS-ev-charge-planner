@@ -68,6 +68,7 @@ from ..const import (
     CONF_ENTITY_MAX_PRICE,
     CONF_ENTITY_MIN_PV_KWH,
     CONF_ENTITY_PLANNER_MODE,
+    CONF_ENTITY_PV_ROUNDING,
     CONF_ENTITY_PRICES,
     CONF_ENTITY_SOLAR_ENABLED,
     CONF_ENTITY_SOLCAST_TODAY,
@@ -80,6 +81,7 @@ from ..const import (
     DEFAULT_ENTITY_MAX_PRICE,
     DEFAULT_ENTITY_MIN_PV_KWH,
     DEFAULT_ENTITY_PLANNER_MODE,
+    DEFAULT_ENTITY_PV_ROUNDING,
     DEFAULT_ENTITY_PRICES,
     DEFAULT_ENTITY_SOLAR_ENABLED,
     DEFAULT_ENTITY_SOLCAST_TODAY,
@@ -133,9 +135,7 @@ class EVPlannerController:
         self._hass = hass
 
         if entry_id is None:
-            raise ValueError(
-                "EVPlannerController vereist een entry_id."
-            )
+            raise ValueError("EVPlannerController vereist een entry_id.")
 
         self.entry_id = entry_id
 
@@ -178,6 +178,10 @@ class EVPlannerController:
             "planner_mode": self.config.get(
                 CONF_ENTITY_PLANNER_MODE,
                 DEFAULT_ENTITY_PLANNER_MODE,
+            ),
+            "pv_rounding": self.config.get(
+                CONF_ENTITY_PV_ROUNDING,
+                DEFAULT_ENTITY_PV_ROUNDING,
             ),
             "solar_enabled": self.config.get(
                 CONF_ENTITY_SOLAR_ENABLED,
@@ -262,14 +266,9 @@ class EVPlannerController:
 
         self.last_published_state = None
 
-        self.logger.debug(
-            "EV Planner controller geïnitialiseerd."
-        )
+        self.logger.debug("EV Planner controller geïnitialiseerd.")
 
-        self.logger.debug(
-            "Smart Charging: "
-            f"{'aan' if self.enabled else 'uit'}"
-        )
+        self.logger.debug(f"Smart Charging: {'aan' if self.enabled else 'uit'}")
 
     ##########################################################################
     # Native sensor data
@@ -371,9 +370,7 @@ class EVPlannerController:
         stilletjes breken zodra de gebruiker de entity hernoemt.
         """
 
-        registry = er.async_get(
-            self._hass
-        )
+        registry = er.async_get(self._hass)
 
         return registry.async_get_entity_id(
             "switch",
@@ -396,12 +393,7 @@ class EVPlannerController:
         if entity_id is None:
             return False
 
-        return (
-            self.hass.get_state(
-                entity_id
-            )
-            == "on"
-        )
+        return self.hass.get_state(entity_id) == "on"
 
     def _get_max_phase_switches(self) -> int:
         """
@@ -412,9 +404,7 @@ class EVPlannerController:
         De planner voert de fasewisselingen zelf NIET uit.
         """
 
-        raw_value = self.hass.get_state(
-            self.entities["max_phase_switches"]
-        )
+        raw_value = self.hass.get_state(self.entities["max_phase_switches"])
 
         try:
             value = int(float(raw_value))
@@ -439,68 +429,63 @@ class EVPlannerController:
         # Benodigde energie
         # ------------------------------------------------------------------
 
-        raw_energy = self.hass.get_state(
-            self.entities["energy_needed"]
-        )
+        raw_energy = self.hass.get_state(self.entities["energy_needed"])
 
         try:
             energy_needed_kwh = float(raw_energy)
         except (TypeError, ValueError):
-            self.logger.warning(
-                f"Ongeldige benodigde energie: {raw_energy}"
-            )
+            self.logger.warning(f"Ongeldige benodigde energie: {raw_energy}")
             return None
 
         if energy_needed_kwh <= 0:
-            self.logger.warning(
-                "Benodigde energie moet groter zijn dan 0 kWh."
-            )
+            self.logger.warning("Benodigde energie moet groter zijn dan 0 kWh.")
             return None
 
         # ------------------------------------------------------------------
         # Maximale prijs
         # ------------------------------------------------------------------
 
-        raw_max_price = self.hass.get_state(
-            self.entities["max_price"]
-        )
+        raw_max_price = self.hass.get_state(self.entities["max_price"])
 
         try:
             max_price = float(raw_max_price)
         except (TypeError, ValueError):
             self.logger.warning(
-                "Ongeldige maximale elektriciteitsprijs: "
-                f"{raw_max_price}"
+                f"Ongeldige maximale elektriciteitsprijs: {raw_max_price}"
             )
             return None
 
         if max_price < 0:
-            self.logger.warning(
-                "Maximale elektriciteitsprijs kan niet negatief zijn."
-            )
+            self.logger.warning("Maximale elektriciteitsprijs kan niet negatief zijn.")
             return None
 
         # ------------------------------------------------------------------
         # Minimale PV
         # ------------------------------------------------------------------
 
-        raw_min_pv = self.hass.get_state(
-            self.entities["min_pv_kwh"]
-        )
+        raw_min_pv = self.hass.get_state(self.entities["min_pv_kwh"])
 
         try:
             min_pv_kwh = float(raw_min_pv)
         except (TypeError, ValueError):
-            self.logger.warning(
-                f"Ongeldige minimale PV-energie: {raw_min_pv}"
-            )
+            self.logger.warning(f"Ongeldige minimale PV-energie: {raw_min_pv}")
             return None
 
         if min_pv_kwh < 0:
-            self.logger.warning(
-                "Minimale PV-energie kan niet negatief zijn."
-            )
+            self.logger.warning("Minimale PV-energie kan niet negatief zijn.")
             return None
+
+        # ------------------------------------------------------------------
+        # Planner mode
+        # ------------------------------------------------------------------
+
+        planner_mode = self.hass.get_state(self.entities["planner_mode"])
+
+        # ------------------------------------------------------------------
+        # PV afronding
+        # ------------------------------------------------------------------
+
+        pv_rounding = self.hass.get_state(self.entities["pv_rounding"])
 
         # ------------------------------------------------------------------
         # Fasewisselingen
@@ -511,13 +496,10 @@ class EVPlannerController:
         )
 
         try:
-            max_phase_switches = int(
-                float(raw_max_phase_switches)
-            )
+            max_phase_switches = int(float(raw_max_phase_switches))
         except (TypeError, ValueError):
             self.logger.warning(
-                "Ongeldig maximaal aantal fasewisselingen: "
-                f"{raw_max_phase_switches}"
+                f"Ongeldig maximaal aantal fasewisselingen: {raw_max_phase_switches}"
             )
             return None
 
@@ -531,28 +513,20 @@ class EVPlannerController:
         # Vertrektijd
         # ------------------------------------------------------------------
 
-        raw_departure = self.hass.get_state(
-            self.entities["departure"]
-        )
+        raw_departure = self.hass.get_state(self.entities["departure"])
 
         if not raw_departure:
-            self.logger.warning(
-                "Geen vertrektijd ingesteld."
-            )
+            self.logger.warning("Geen vertrektijd ingesteld.")
             return None
 
         # ------------------------------------------------------------------
         # Vertrekdag
         # ------------------------------------------------------------------
 
-        departure_day = self.hass.get_state(
-            self.entities["departure_day"]
-        )
+        departure_day = self.hass.get_state(self.entities["departure_day"])
 
         if departure_day not in ("Vandaag", "Morgen"):
-            self.logger.warning(
-                f"Ongeldige vertrekdag: {departure_day}"
-            )
+            self.logger.warning(f"Ongeldige vertrekdag: {departure_day}")
             return None
 
         # ------------------------------------------------------------------
@@ -562,9 +536,7 @@ class EVPlannerController:
         departure_datetime = None
 
         try:
-            departure_datetime = datetime.fromisoformat(
-                raw_departure
-            )
+            departure_datetime = datetime.fromisoformat(raw_departure)
         except (TypeError, ValueError):
             pass
 
@@ -574,16 +546,12 @@ class EVPlannerController:
 
         if departure_datetime is None:
             try:
-                departure_clock = time.fromisoformat(
-                    raw_departure
-                )
+                departure_clock = time.fromisoformat(raw_departure)
 
                 if departure_day == "Vandaag":
                     departure_date = now.date()
                 else:
-                    departure_date = (
-                        now.date() + timedelta(days=1)
-                    )
+                    departure_date = now.date() + timedelta(days=1)
 
                 departure_datetime = datetime.combine(
                     departure_date,
@@ -592,9 +560,7 @@ class EVPlannerController:
                 )
 
             except (TypeError, ValueError):
-                self.logger.warning(
-                    f"Ongeldige vertrektijd: {raw_departure}"
-                )
+                self.logger.warning(f"Ongeldige vertrektijd: {raw_departure}")
                 return None
 
         # ------------------------------------------------------------------
@@ -602,9 +568,7 @@ class EVPlannerController:
         # ------------------------------------------------------------------
 
         if departure_datetime.tzinfo is None:
-            departure_datetime = departure_datetime.replace(
-                tzinfo=now.tzinfo
-            )
+            departure_datetime = departure_datetime.replace(tzinfo=now.tzinfo)
 
         # ------------------------------------------------------------------
         # PlannerSettings
@@ -619,41 +583,30 @@ class EVPlannerController:
                 solar_is_free=True,
                 max_charge_power_kw=self.max_charge_power_kw,
                 max_phase_switches=max_phase_switches,
+                planner_mode=planner_mode,
+                pv_rounding=pv_rounding,
             )
 
         except (TypeError, ValueError) as err:
-            self.logger.warning(
-                f"Ongeldige PlannerSettings: {err}"
-            )
+            self.logger.warning(f"Ongeldige PlannerSettings: {err}")
             return None
 
         # ------------------------------------------------------------------
         # Debug logging
         # ------------------------------------------------------------------
 
-        self.logger.debug(
-            "Planner instellingen:"
-        )
+        self.logger.debug("Planner instellingen:")
+
+        self.logger.debug(f"Benodigd: {energy_needed_kwh:.2f} kWh")
+
+        self.logger.debug(f"Max prijs: €{max_price:.3f}/kWh")
+
+        self.logger.debug(f"Min PV: {min_pv_kwh:.2f} kWh")
+
+        self.logger.debug(f"Max fasewisselingen: {max_phase_switches}")
 
         self.logger.debug(
-            f"Benodigd: {energy_needed_kwh:.2f} kWh"
-        )
-
-        self.logger.debug(
-            f"Max prijs: €{max_price:.3f}/kWh"
-        )
-
-        self.logger.debug(
-            f"Min PV: {min_pv_kwh:.2f} kWh"
-        )
-
-        self.logger.debug(
-            f"Max fasewisselingen: {max_phase_switches}"
-        )
-
-        self.logger.debug(
-            f"Vertrek: {departure_day} "
-            f"{departure_datetime:%d-%m-%Y %H:%M}"
+            f"Vertrek: {departure_day} {departure_datetime:%d-%m-%Y %H:%M}"
         )
 
         return settings
@@ -684,9 +637,7 @@ class EVPlannerController:
         # ------------------------------------------------------------------
 
         if not self.enabled:
-            self.logger.debug(
-                "Smart Charging staat uit."
-            )
+            self.logger.debug("Smart Charging staat uit.")
 
             self.scheduler.clear_plan()
 
@@ -695,9 +646,7 @@ class EVPlannerController:
 
             self._publish_plan_data()
 
-            self._publish_planner_state(
-                "Planner uitgeschakeld"
-            )
+            self._publish_planner_state("Planner uitgeschakeld")
 
             return None
 
@@ -705,14 +654,10 @@ class EVPlannerController:
         # Planner instellingen
         # ------------------------------------------------------------------
 
-        settings = self._get_settings(
-            now
-        )
+        settings = self._get_settings(now)
 
         if settings is None:
-            self.logger.warning(
-                "PlannerSettings konden niet worden opgebouwd."
-            )
+            self.logger.warning("PlannerSettings konden niet worden opgebouwd.")
 
             self.scheduler.clear_plan()
 
@@ -721,9 +666,7 @@ class EVPlannerController:
 
             self._publish_plan_data()
 
-            self._publish_planner_state(
-                "Ongeldige plannerinstellingen"
-            )
+            self._publish_planner_state("Ongeldige plannerinstellingen")
 
             return None
 
@@ -734,13 +677,9 @@ class EVPlannerController:
         price_data = self.prices.read()
 
         if not price_data.hours:
-            self.logger.warning(
-                "Geen prijsdata beschikbaar."
-            )
+            self.logger.warning("Geen prijsdata beschikbaar.")
 
-            self._publish_planner_state(
-                "Geen prijsdata"
-            )
+            self._publish_planner_state("Geen prijsdata")
 
             return None
 
@@ -751,13 +690,9 @@ class EVPlannerController:
         solcast_data = self.solcast.read()
 
         if solcast_data is None:
-            self.logger.warning(
-                "Geen Solcast-data beschikbaar."
-            )
+            self.logger.warning("Geen Solcast-data beschikbaar.")
 
-            self._publish_planner_state(
-                "Geen PV-data"
-            )
+            self._publish_planner_state("Geen PV-data")
 
             return None
 
@@ -786,8 +721,7 @@ class EVPlannerController:
 
         except Exception as err:
             self.logger.error(
-                "Onverwachte fout tijdens het maken van "
-                f"het laadplan: {err}"
+                f"Onverwachte fout tijdens het maken van het laadplan: {err}"
             )
 
             self.scheduler.clear_plan()
@@ -797,16 +731,12 @@ class EVPlannerController:
 
             self._publish_plan_data()
 
-            self._publish_planner_state(
-                "Fout bij plannen"
-            )
+            self._publish_planner_state("Fout bij plannen")
 
             return None
 
         if plan is None:
-            self.logger.warning(
-                "Planner kon geen laadplan maken."
-            )
+            self.logger.warning("Planner kon geen laadplan maken.")
 
             self.scheduler.clear_plan()
 
@@ -815,9 +745,7 @@ class EVPlannerController:
 
             self._publish_plan_data()
 
-            self._publish_planner_state(
-                "Geen laadplan"
-            )
+            self._publish_planner_state("Geen laadplan")
 
             return None
 
@@ -828,9 +756,7 @@ class EVPlannerController:
         self.last_plan = plan
         self.last_plan_time = now
 
-        self.scheduler.set_plan(
-            plan
-        )
+        self.scheduler.set_plan(plan)
 
         # ------------------------------------------------------------------
         # Plannerdata publiceren
@@ -846,17 +772,11 @@ class EVPlannerController:
         # Geen charger-aansturing.
         # ------------------------------------------------------------------
 
-        current_decision = self._get_current_decision(
-            now
-        )
+        current_decision = self._get_current_decision(now)
 
-        self._publish_planner_decision(
-            current_decision
-        )
+        self._publish_planner_decision(current_decision)
 
-        self.logger.info(
-            "Nieuwe EV laadplanning gemaakt."
-        )
+        self.logger.info("Nieuwe EV laadplanning gemaakt.")
 
         return plan
 
@@ -900,9 +820,7 @@ class EVPlannerController:
 
             self._publish_plan_data()
 
-            self._publish_planner_state(
-                "Planner uitgeschakeld"
-            )
+            self._publish_planner_state("Planner uitgeschakeld")
 
             self.status.update(now)
             self._publish_charging_allowed()
@@ -914,9 +832,7 @@ class EVPlannerController:
         # ------------------------------------------------------------------
 
         if self.last_plan is None:
-            plan = self.create_plan(
-                now
-            )
+            plan = self.create_plan(now)
 
             if plan is None:
                 self.status.update(now)
@@ -927,29 +843,21 @@ class EVPlannerController:
         # Scheduler update
         # ------------------------------------------------------------------
 
-        changed = self.scheduler.update(
-            now
-        )
+        changed = self.scheduler.update(now)
 
         # ------------------------------------------------------------------
         # Actuele plannerbeslissing
         # ------------------------------------------------------------------
 
-        current_decision = self._get_current_decision(
-            now
-        )
+        current_decision = self._get_current_decision(now)
 
-        self._publish_planner_decision(
-            current_decision
-        )
+        self._publish_planner_decision(current_decision)
 
         # ------------------------------------------------------------------
         # Status
         # ------------------------------------------------------------------
 
-        self.status.update(
-            now
-        )
+        self.status.update(now)
 
         self._publish_charging_allowed()
 
@@ -972,15 +880,11 @@ class EVPlannerController:
         self.last_plan = None
         self.last_plan_time = None
 
-        self._publish_planner_state(
-            "Geen planning"
-        )
+        self._publish_planner_state("Geen planning")
 
         self._publish_plan_data()
 
-        self.logger.info(
-            "EV Planner: planning volledig gewist."
-        )
+        self.logger.info("EV Planner: planning volledig gewist.")
 
     ##########################################################################
     # Opnieuw plannen
@@ -1004,29 +908,20 @@ class EVPlannerController:
         self.last_plan = None
         self.last_plan_time = None
 
-        self._publish_planner_state(
-            "Planning wordt vernieuwd"
-        )
+        self._publish_planner_state("Planning wordt vernieuwd")
 
         self._publish_plan_data()
 
         self.logger.info(
-            "EV Planner: oude planning verwijderd, "
-            "nieuwe planning wordt gemaakt."
+            "EV Planner: oude planning verwijderd, nieuwe planning wordt gemaakt."
         )
 
-        plan = self.create_plan(
-            now
-        )
+        plan = self.create_plan(now)
 
         if plan is None:
-            self.logger.warning(
-                "EV Planner: nieuwe planning kon niet worden gemaakt."
-            )
+            self.logger.warning("EV Planner: nieuwe planning kon niet worden gemaakt.")
         else:
-            self.logger.info(
-                "EV Planner: nieuwe planning succesvol gemaakt."
-            )
+            self.logger.info("EV Planner: nieuwe planning succesvol gemaakt.")
 
         return plan
 
@@ -1049,14 +944,10 @@ class EVPlannerController:
 
         switches = 0
 
-        previous_phases = int(
-            plan.decisions[0].phases
-        )
+        previous_phases = int(plan.decisions[0].phases)
 
         for decision in plan.decisions[1:]:
-            current_phases = int(
-                decision.phases
-            )
+            current_phases = int(decision.phases)
 
             if current_phases != previous_phases:
                 switches += 1
@@ -1085,11 +976,7 @@ class EVPlannerController:
             return None
 
         for decision in self.last_plan.decisions:
-            if (
-                decision.hour.start
-                <= now
-                < decision.hour.end
-            ):
+            if decision.hour.start <= now < decision.hour.end:
                 return decision
 
         return None
@@ -1112,9 +999,7 @@ class EVPlannerController:
         """
 
         try:
-            pv_estimate = float(
-                decision.hour.pv_estimate
-            )
+            pv_estimate = float(decision.hour.pv_estimate)
         except (
             AttributeError,
             TypeError,
@@ -1123,9 +1008,7 @@ class EVPlannerController:
             pv_estimate = 0.0
 
         try:
-            usable_pv = float(
-                decision.hour.usable_pv
-            )
+            usable_pv = float(decision.hour.usable_pv)
         except (
             AttributeError,
             TypeError,
@@ -1136,52 +1019,20 @@ class EVPlannerController:
         return {
             "start": decision.hour.start.isoformat(),
             "end": decision.hour.end.isoformat(),
-
-            "energy_kwh": float(
-                decision.energy_kwh
-            ),
-
-            "free_energy_kwh": float(
-                decision.free_energy_kwh
-            ),
-
-            "paid_energy_kwh": float(
-                decision.paid_energy_kwh
-            ),
-
-            "price": float(
-                decision.price
-            ),
-
-            "cost": float(
-                decision.cost
-            ),
-
+            "energy_kwh": float(decision.energy_kwh),
+            "free_energy_kwh": float(decision.free_energy_kwh),
+            "paid_energy_kwh": float(decision.paid_energy_kwh),
+            "price": float(decision.price),
+            "cost": float(decision.cost),
             # Planneradvies.
             #
             # Deze waarden worden NIET naar de charger gestuurd.
-            "charge_power_kw": float(
-                decision.charge_power_kw
-            ),
-
-            "charge_current_a": int(
-                decision.charge_current_a
-            ),
-
-            "phases": int(
-                decision.phases
-            ),
-
-            "selected": bool(
-                decision.selected
-            ),
-
-            "reason": str(
-                decision.reason
-            ),
-
+            "charge_power_kw": float(decision.charge_power_kw),
+            "charge_current_a": int(decision.charge_current_a),
+            "phases": int(decision.phases),
+            "selected": bool(decision.selected),
+            "reason": str(decision.reason),
             "pv_estimate_kwh": pv_estimate,
-
             "usable_pv_kwh": usable_pv,
         }
 
@@ -1197,90 +1048,36 @@ class EVPlannerController:
         Zet een ChargingPlan om naar gewone Python-datatypen.
         """
 
-        phase_switches = (
-            self._count_plan_phase_switches(
-                plan
-            )
-        )
+        phase_switches = self._count_plan_phase_switches(plan)
 
-        max_phase_switches = (
-            self._get_max_phase_switches()
-        )
+        max_phase_switches = self._get_max_phase_switches()
 
         total_charging_minutes = 0.0
 
         decisions = []
 
         for decision in plan.decisions:
-            duration_seconds = (
-                decision.hour.end
-                - decision.hour.start
-            ).total_seconds()
+            duration_seconds = (decision.hour.end - decision.hour.start).total_seconds()
 
             if duration_seconds > 0:
-                total_charging_minutes += (
-                    float(duration_seconds) / 60.0
-                )
+                total_charging_minutes += float(duration_seconds) / 60.0
 
-            decisions.append(
-                self._decision_to_dict(
-                    decision
-                )
-            )
+            decisions.append(self._decision_to_dict(decision))
 
         return {
-            "energy_needed_kwh": float(
-                plan.energy_needed_kwh
-            ),
-
-            "energy_planned_kwh": float(
-                plan.energy_planned_kwh
-            ),
-
-            "missing_energy_kwh": float(
-                plan.missing_energy_kwh
-            ),
-
-            "free_energy_kwh": float(
-                plan.free_energy_kwh
-            ),
-
-            "paid_energy_kwh": float(
-                plan.paid_energy_kwh
-            ),
-
-            "estimated_cost": float(
-                plan.estimated_cost
-            ),
-
-            "complete": bool(
-                plan.complete
-            ),
-
-            "departure_time": (
-                plan.departure_time.isoformat()
-            ),
-
-            "max_price": float(
-                plan.max_price
-            ),
-
-            "charging_windows": len(
-                plan.decisions
-            ),
-
-            "phase_switches": int(
-                phase_switches
-            ),
-
-            "max_phase_switches": int(
-                max_phase_switches
-            ),
-
-            "total_charging_minutes": float(
-                total_charging_minutes
-            ),
-
+            "energy_needed_kwh": float(plan.energy_needed_kwh),
+            "energy_planned_kwh": float(plan.energy_planned_kwh),
+            "missing_energy_kwh": float(plan.missing_energy_kwh),
+            "free_energy_kwh": float(plan.free_energy_kwh),
+            "paid_energy_kwh": float(plan.paid_energy_kwh),
+            "estimated_cost": float(plan.estimated_cost),
+            "complete": bool(plan.complete),
+            "departure_time": (plan.departure_time.isoformat()),
+            "max_price": float(plan.max_price),
+            "charging_windows": len(plan.decisions),
+            "phase_switches": int(phase_switches),
+            "max_phase_switches": int(max_phase_switches),
+            "total_charging_minutes": float(total_charging_minutes),
             "decisions": decisions,
         }
 
@@ -1323,9 +1120,7 @@ class EVPlannerController:
 
         plan = self.last_plan
 
-        attributes = self._plan_to_dict(
-            plan
-        )
+        attributes = self._plan_to_dict(plan)
 
         if plan.complete:
             state = "Planning compleet"
@@ -1362,15 +1157,10 @@ class EVPlannerController:
 
         state = str(state)
 
-        if (
-            self.last_published_state is not None
-            and self.last_published_state == state
-        ):
+        if self.last_published_state is not None and self.last_published_state == state:
             return
 
-        self._update_native_sensor_state(
-            state
-        )
+        self._update_native_sensor_state(state)
 
         self.last_published_state = state
 
@@ -1399,51 +1189,27 @@ class EVPlannerController:
         """
 
         if decision is None:
-            self._publish_planner_state(
-                "Geen actieve laadbeslissing"
-            )
+            self._publish_planner_state("Geen actieve laadbeslissing")
             return
 
-        selected = bool(
-            decision.selected
-        )
+        selected = bool(decision.selected)
 
-        current_a = int(
-            decision.charge_current_a
-        )
+        current_a = int(decision.charge_current_a)
 
-        phases = int(
-            decision.phases
-        )
+        phases = int(decision.phases)
 
-        power_kw = float(
-            decision.charge_power_kw
-        )
+        power_kw = float(decision.charge_power_kw)
 
-        power_w = int(
-            round(
-                power_kw * 1000.0
-            )
-        )
+        power_w = int(round(power_kw * 1000.0))
 
-        reason = str(
-            decision.reason
-        )
+        reason = str(decision.reason)
 
         if selected:
-            state = (
-                f"Laden gepland: {current_a} A / "
-                f"{phases} fase(n) / "
-                f"{power_w} W"
-            )
+            state = f"Laden gepland: {current_a} A / {phases} fase(n) / {power_w} W"
         else:
-            state = (
-                f"Niet laden: {reason}"
-            )
+            state = f"Niet laden: {reason}"
 
-        self._publish_planner_state(
-            state
-        )
+        self._publish_planner_state(state)
 
         self.logger.debug(
             "Planner-beslissing: "
@@ -1472,12 +1238,8 @@ class EVPlannerController:
         self.enabled = self._is_enabled()
 
         data = {
-            "enabled": bool(
-                self.enabled
-            ),
-
+            "enabled": bool(self.enabled),
             "has_plan": self.last_plan is not None,
-
             "last_plan_time": (
                 self.last_plan_time.isoformat()
                 if self.last_plan_time is not None
@@ -1486,14 +1248,9 @@ class EVPlannerController:
         }
 
         try:
-            data["status"] = (
-                self.status.as_dict()
-            )
+            data["status"] = self.status.as_dict()
         except Exception as err:
-            self.logger.warning(
-                "Dashboard: status kon niet worden "
-                f"gelezen: {err}"
-            )
+            self.logger.warning(f"Dashboard: status kon niet worden gelezen: {err}")
 
             data["status"] = {}
 
@@ -1508,40 +1265,22 @@ class EVPlannerController:
 
         plan = self.last_plan
 
-        plan_data = self._plan_to_dict(
-            plan
-        )
+        plan_data = self._plan_to_dict(plan)
 
-        data["plan"] = dict(
-            plan_data
-        )
+        data["plan"] = dict(plan_data)
 
-        data["decisions"] = list(
-            plan_data["decisions"]
-        )
+        data["decisions"] = list(plan_data["decisions"])
 
-        current_decision = (
-            self._get_current_decision(
-                now
-            )
-        )
+        current_decision = self._get_current_decision(now)
 
         if current_decision is None:
             data["current_decision"] = None
         else:
-            data["current_decision"] = (
-                self._decision_to_dict(
-                    current_decision
-                )
-            )
+            data["current_decision"] = self._decision_to_dict(current_decision)
 
-        data["phase_switches"] = int(
-            plan_data["phase_switches"]
-        )
+        data["phase_switches"] = int(plan_data["phase_switches"])
 
-        data["max_phase_switches"] = int(
-            plan_data["max_phase_switches"]
-        )
+        data["max_phase_switches"] = int(plan_data["max_phase_switches"])
 
         return data
 

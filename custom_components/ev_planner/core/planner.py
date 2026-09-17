@@ -112,7 +112,6 @@ phases). scheduler.py en status.py lezen deze rechtstreeks van
 het actieve Hour-object — daar wordt niets herberekend.
 """
 
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -120,6 +119,7 @@ from datetime import datetime, timedelta
 import math
 
 from .logger import Logger
+from .solar import apply_solar_only
 
 from .models import Hour
 from .models import PriceData
@@ -132,6 +132,13 @@ from .config import (
     MAX_POWER_1PH,
     MAX_POWER_3PH,
     PHASE_CHANGE_POWER,
+)
+
+from ..const import (
+    PLANNER_MODE_NORMAL,
+    PLANNER_MODE_SOLAR_ONLY,
+    PV_ROUNDING_DOWN,
+    PV_ROUNDING_UP,
 )
 
 
@@ -150,33 +157,19 @@ from .config import (
 # bestaande interne aanroepen gewoon werken.
 ##############################################################################
 
-MIN_CHARGE_CURRENT_A = int(
-    MIN_CURRENT
-)
+MIN_CHARGE_CURRENT_A = int(MIN_CURRENT)
 
-MAX_CHARGE_CURRENT_A = int(
-    MAX_CURRENT_1PH
-)
+MAX_CHARGE_CURRENT_A = int(MAX_CURRENT_1PH)
 
-VOLTAGE_V = float(
-    VOLTAGE
-)
+VOLTAGE_V = float(VOLTAGE)
 
-MAX_POWER_1PH_KW = float(
-    MAX_POWER_1PH
-)
+MAX_POWER_1PH_KW = float(MAX_POWER_1PH)
 
-MAX_POWER_3PH_KW = float(
-    MAX_POWER_3PH
-)
+MAX_POWER_3PH_KW = float(MAX_POWER_3PH)
 
-PHASE_CHANGE_POWER_KW = float(
-    PHASE_CHANGE_POWER
-)
+PHASE_CHANGE_POWER_KW = float(PHASE_CHANGE_POWER)
 
-ABSOLUTE_MAX_POWER_KW = float(
-    MAX_POWER_3PH_KW
-)
+ABSOLUTE_MAX_POWER_KW = float(MAX_POWER_3PH_KW)
 
 # Harde bovengrens op het aantal fasewisselingen dat de planner
 # ooit overweegt, ongeacht wat de gebruiker instelt.
@@ -225,33 +218,26 @@ class PlannerSettings:
         solar_is_free: bool = True,
         max_charge_power_kw: float = 11.04,
         max_phase_switches: int = 2,
+        planner_mode: str = PLANNER_MODE_NORMAL,
+        pv_rounding: str = PV_ROUNDING_DOWN,
     ) -> None:
 
-        self.energy_needed_kwh = float(
-            energy_needed_kwh
-        )
+        self.energy_needed_kwh = float(energy_needed_kwh)
 
         self.departure_time = departure_time
 
-        self.max_price = float(
-            max_price
-        )
+        self.max_price = float(max_price)
 
-        self.min_pv_kwh = float(
-            min_pv_kwh
-        )
+        self.min_pv_kwh = float(min_pv_kwh)
 
-        self.solar_is_free = bool(
-            solar_is_free
-        )
+        self.solar_is_free = bool(solar_is_free)
 
-        self.max_charge_power_kw = float(
-            max_charge_power_kw
-        )
+        self.max_charge_power_kw = float(max_charge_power_kw)
 
-        self.max_phase_switches = int(
-            max_phase_switches
-        )
+        self.max_phase_switches = int(max_phase_switches)
+
+        self.planner_mode = str(planner_mode)
+        self.pv_rounding = str(pv_rounding)
 
         self._validate()
 
@@ -262,65 +248,46 @@ class PlannerSettings:
     def _validate(self) -> None:
 
         if self.energy_needed_kwh <= 0:
-
-            raise ValueError(
-                "energy_needed_kwh moet groter zijn dan 0."
-            )
+            raise ValueError("energy_needed_kwh moet groter zijn dan 0.")
 
         if not isinstance(
             self.departure_time,
             datetime,
         ):
-
-            raise TypeError(
-                "departure_time moet een datetime zijn."
-            )
+            raise TypeError("departure_time moet een datetime zijn.")
 
         if self.departure_time.tzinfo is None:
-
-            raise ValueError(
-                "departure_time moet timezone-aware zijn."
-            )
+            raise ValueError("departure_time moet timezone-aware zijn.")
 
         if self.max_price < 0:
-
-            raise ValueError(
-                "max_price mag niet negatief zijn."
-            )
+            raise ValueError("max_price mag niet negatief zijn.")
 
         if self.min_pv_kwh < 0:
-
-            raise ValueError(
-                "min_pv_kwh mag niet negatief zijn."
-            )
+            raise ValueError("min_pv_kwh mag niet negatief zijn.")
 
         if not isinstance(
             self.solar_is_free,
             bool,
         ):
-
-            raise TypeError(
-                "solar_is_free moet een boolean zijn."
-            )
+            raise TypeError("solar_is_free moet een boolean zijn.")
 
         if self.max_charge_power_kw <= 0:
-
-            raise ValueError(
-                "max_charge_power_kw moet groter zijn dan 0."
-            )
+            raise ValueError("max_charge_power_kw moet groter zijn dan 0.")
 
         if self.max_charge_power_kw > ABSOLUTE_MAX_POWER_KW:
-
             raise ValueError(
                 "max_charge_power_kw mag niet groter zijn dan "
                 f"{ABSOLUTE_MAX_POWER_KW:.2f} kW."
             )
 
         if self.max_phase_switches < 0:
+            raise ValueError("max_phase_switches mag niet negatief zijn.")
 
-            raise ValueError(
-                "max_phase_switches mag niet negatief zijn."
-            )
+        if self.planner_mode not in (PLANNER_MODE_NORMAL, PLANNER_MODE_SOLAR_ONLY):
+            raise ValueError("Ongeldige planner_mode.")
+
+        if self.pv_rounding not in (PV_ROUNDING_DOWN, PV_ROUNDING_UP):
+            raise ValueError("Ongeldige pv_rounding.")
 
 
 ##############################################################################
@@ -330,7 +297,6 @@ class PlannerSettings:
 
 @dataclass
 class ChargingDecision:
-
     hour: Hour
 
     energy_kwh: float
@@ -361,7 +327,6 @@ class ChargingDecision:
 
 @dataclass
 class ChargingPlan:
-
     decisions: list[ChargingDecision]
 
     energy_needed_kwh: float
@@ -444,35 +409,26 @@ class EVPlanner:
         # Alleen werkelijk beschikbare tijd
         ######################################################################
 
-        hours = self._filter_available_time(
-            hours
-        )
+        hours = self._filter_available_time(hours)
 
         ######################################################################
         # Beschikbare PV bepalen
         ######################################################################
 
-        hours = self._calculate_available_energy(
-            hours
-        )
+        hours = self._calculate_available_energy(hours)
 
         ######################################################################
         # Ieder uur voorbereiden
         ######################################################################
 
         for hour in hours:
-
-            self._prepare_hour(
-                hour
-            )
+            self._prepare_hour(hour)
 
         ######################################################################
         # Haalbaarheid controleren
         ######################################################################
 
-        self._check_feasibility(
-            hours
-        )
+        self._check_feasibility(hours)
 
         ######################################################################
         # Uren, fase, stroom en venster gezamenlijk optimaliseren
@@ -486,52 +442,40 @@ class EVPlanner:
         ######################################################################
 
         for hour in hours:
-
             hour.original_start = hour.start
 
             hour.original_end = hour.end
 
-        self._optimize_hours(
-            hours
-        )
+        if self.settings.planner_mode == PLANNER_MODE_SOLAR_ONLY:
+            apply_solar_only(self, hours)
+        else:
+            self._optimize_hours(hours)
 
         selected = []
 
         for hour in hours:
-
             if hour.selected:
+                selected.append(hour)
 
-                selected.append(
-                    hour
-                )
-
-        selected.sort(
-            key=lambda hour: hour.start
-        )
+        selected.sort(key=lambda hour: hour.start)
 
         ######################################################################
         # Eindresultaat maken
         ######################################################################
 
-        plan = self._build_plan(
-            selected
-        )
+        plan = self._build_plan(selected)
 
         ######################################################################
         # Eindcontrole
         ######################################################################
 
-        self._validate_final_plan(
-            plan
-        )
+        self._validate_final_plan(plan)
 
         ######################################################################
         # Logging
         ######################################################################
 
-        self._log_plan(
-            plan
-        )
+        self._log_plan(plan)
 
         return plan
 
@@ -543,67 +487,40 @@ class EVPlanner:
         self,
     ) -> None:
 
-        energy_needed = float(
-            self.settings.energy_needed_kwh
-        )
+        energy_needed = float(self.settings.energy_needed_kwh)
 
-        max_price = float(
-            self.settings.max_price
-        )
+        max_price = float(self.settings.max_price)
 
-        max_power = float(
-            self.settings.max_charge_power_kw
-        )
+        max_power = float(self.settings.max_charge_power_kw)
 
-        max_phase_switches = int(
-            self.settings.max_phase_switches
-        )
+        max_phase_switches = int(self.settings.max_phase_switches)
 
         if energy_needed <= 0:
-
-            raise ValueError(
-                "Benodigde energie moet groter dan 0 kWh zijn."
-            )
+            raise ValueError("Benodigde energie moet groter dan 0 kWh zijn.")
 
         if max_price < 0:
-
-            raise ValueError(
-                "Maximale prijs mag niet negatief zijn."
-            )
+            raise ValueError("Maximale prijs mag niet negatief zijn.")
 
         if max_power <= 0:
-
-            raise ValueError(
-                "Maximaal laadvermogen moet groter dan 0 kW zijn."
-            )
+            raise ValueError("Maximaal laadvermogen moet groter dan 0 kW zijn.")
 
         if max_power > ABSOLUTE_MAX_POWER_KW:
-
             raise ValueError(
                 "Maximaal laadvermogen mag niet groter zijn dan "
                 f"{ABSOLUTE_MAX_POWER_KW:.2f} kW."
             )
 
         if max_phase_switches < 0:
-
-            raise ValueError(
-                "Maximaal aantal fasewisselingen mag niet negatief zijn."
-            )
+            raise ValueError("Maximaal aantal fasewisselingen mag niet negatief zijn.")
 
         if not isinstance(
             self.settings.departure_time,
             datetime,
         ):
-
-            raise TypeError(
-                "Vertrektijd moet een datetime zijn."
-            )
+            raise TypeError("Vertrektijd moet een datetime zijn.")
 
         if self.settings.departure_time.tzinfo is None:
-
-            raise ValueError(
-                "Vertrektijd moet timezone-aware zijn."
-            )
+            raise ValueError("Vertrektijd moet timezone-aware zijn.")
 
     ##########################################################################
     # Uurduur
@@ -614,14 +531,9 @@ class EVPlanner:
         hour: Hour,
     ) -> float:
 
-        seconds = (
-            hour.end
-            - hour.start
-        ).total_seconds()
+        seconds = (hour.end - hour.start).total_seconds()
 
-        return float(
-            seconds / 3600.0
-        )
+        return float(seconds / 3600.0)
 
     ##########################################################################
     # Solcast uur zoeken
@@ -635,12 +547,7 @@ class EVPlanner:
         solar_hours = self.solcast.hours
 
         for solar_hour in solar_hours:
-
-            if (
-                solar_hour.start <= moment
-                and moment < solar_hour.end
-            ):
-
+            if solar_hour.start <= moment and moment < solar_hour.end:
                 return solar_hour
 
         return None
@@ -658,21 +565,14 @@ class EVPlanner:
         price_hours = self.prices.hours
 
         for price_hour in price_hours:
-
-            solar_hour = self._find_solcast_hour(
-                price_hour.start
-            )
+            solar_hour = self._find_solcast_hour(price_hour.start)
 
             if solar_hour is None:
-
                 self.logger.debug(
-                    f"PV KOPPELING: "
-                    f"{price_hour.start:%d-%m %H:%M} "
-                    f"| GEEN SOLCAST UUR"
+                    f"PV KOPPELING: {price_hour.start:%d-%m %H:%M} | GEEN SOLCAST UUR"
                 )
 
             else:
-
                 self.logger.debug(
                     f"PV KOPPELING: "
                     f"{price_hour.start:%d-%m %H:%M} "
@@ -687,9 +587,7 @@ class EVPlanner:
                 solar_hour,
             )
 
-            hours.append(
-                hour
-            )
+            hours.append(hour)
 
         return hours
 
@@ -704,48 +602,23 @@ class EVPlanner:
     ) -> Hour:
 
         hour = Hour(
-
             start=price_hour.start,
-
             end=price_hour.end,
-
-            price=float(
-                price_hour.price
-            ),
-
-            price_raw=float(
-                price_hour.price_raw
-            ),
-
-            tariff_group=str(
-                price_hour.tariff_group
-            ),
-
-            sustainability_score=float(
-                price_hour.sustainability_score
-            ),
-
-            hour_index=int(
-                price_hour.hour_index
-            ),
+            price=float(price_hour.price),
+            price_raw=float(price_hour.price_raw),
+            tariff_group=str(price_hour.tariff_group),
+            sustainability_score=float(price_hour.sustainability_score),
+            hour_index=int(price_hour.hour_index),
         )
 
         if solar_hour is not None:
+            hour.pv_estimate = float(solar_hour.pv_estimate)
 
-            hour.pv_estimate = float(
-                solar_hour.pv_estimate
-            )
+            hour.pv_estimate10 = float(solar_hour.pv_estimate10)
 
-            hour.pv_estimate10 = float(
-                solar_hour.pv_estimate10
-            )
-
-            hour.pv_estimate90 = float(
-                solar_hour.pv_estimate90
-            )
+            hour.pv_estimate90 = float(solar_hour.pv_estimate90)
 
         else:
-
             hour.pv_estimate = 0.0
 
             hour.pv_estimate10 = 0.0
@@ -762,7 +635,6 @@ class EVPlanner:
         self,
         hours: list[Hour],
     ) -> list[Hour]:
-
         """
         Beperkt de planning tot de werkelijk beschikbare tijd.
 
@@ -785,20 +657,16 @@ class EVPlanner:
         # Gebruik dezelfde timezone als de planning.
         ######################################################################
 
-        now = datetime.now(
-            departure.tzinfo
-        )
+        now = datetime.now(departure.tzinfo)
 
         filtered_hours = []
 
         for source_hour in hours:
-
             ##################################################################
             # Uur ligt volledig vóór NU
             ##################################################################
 
             if source_hour.end <= now:
-
                 continue
 
             ##################################################################
@@ -806,7 +674,6 @@ class EVPlanner:
             ##################################################################
 
             if source_hour.start >= departure:
-
                 continue
 
             ##################################################################
@@ -816,7 +683,6 @@ class EVPlanner:
             new_start = source_hour.start
 
             if source_hour.start < now:
-
                 new_start = now
 
             ##################################################################
@@ -826,7 +692,6 @@ class EVPlanner:
             new_end = source_hour.end
 
             if source_hour.end > departure:
-
                 new_end = departure
 
             ##################################################################
@@ -834,21 +699,14 @@ class EVPlanner:
             ##################################################################
 
             if new_start >= new_end:
-
                 continue
 
             ##################################################################
             # Volledig origineel uur?
             ##################################################################
 
-            if (
-                new_start == source_hour.start
-                and new_end == source_hour.end
-            ):
-
-                filtered_hours.append(
-                    source_hour
-                )
+            if new_start == source_hour.start and new_end == source_hour.end:
+                filtered_hours.append(source_hour)
 
                 continue
 
@@ -857,51 +715,26 @@ class EVPlanner:
             ##################################################################
 
             partial_hour = Hour(
-
                 start=new_start,
-
                 end=new_end,
-
-                price=float(
-                    source_hour.price
-                ),
-
-                price_raw=float(
-                    source_hour.price_raw
-                ),
-
-                tariff_group=str(
-                    source_hour.tariff_group
-                ),
-
-                sustainability_score=float(
-                    source_hour.sustainability_score
-                ),
-
-                hour_index=int(
-                    source_hour.hour_index
-                ),
+                price=float(source_hour.price),
+                price_raw=float(source_hour.price_raw),
+                tariff_group=str(source_hour.tariff_group),
+                sustainability_score=float(source_hour.sustainability_score),
+                hour_index=int(source_hour.hour_index),
             )
 
             ##################################################################
             # Solcastgegevens behouden
             ##################################################################
 
-            partial_hour.pv_estimate = float(
-                source_hour.pv_estimate
-            )
+            partial_hour.pv_estimate = float(source_hour.pv_estimate)
 
-            partial_hour.pv_estimate10 = float(
-                source_hour.pv_estimate10
-            )
+            partial_hour.pv_estimate10 = float(source_hour.pv_estimate10)
 
-            partial_hour.pv_estimate90 = float(
-                source_hour.pv_estimate90
-            )
+            partial_hour.pv_estimate90 = float(source_hour.pv_estimate90)
 
-            filtered_hours.append(
-                partial_hour
-            )
+            filtered_hours.append(partial_hour)
 
             ##################################################################
             # Logging
@@ -927,41 +760,28 @@ class EVPlanner:
         hours: list[Hour],
     ) -> list[Hour]:
 
-        max_power = float(
-            self.settings.max_charge_power_kw
-        )
+        max_power = float(self.settings.max_charge_power_kw)
 
         ######################################################################
         # Nooit boven het absolute technische maximum.
         ######################################################################
 
         if max_power > ABSOLUTE_MAX_POWER_KW:
-
             max_power = ABSOLUTE_MAX_POWER_KW
 
         for hour in hours:
-
-            duration = self._hour_duration(
-                hour
-            )
+            duration = self._hour_duration(hour)
 
             if duration <= 0:
-
                 hour.usable_pv = 0.0
 
                 continue
 
-            max_charge_energy = (
-                max_power
-                * duration
-            )
+            max_charge_energy = max_power * duration
 
-            original_pv = float(
-                hour.pv_estimate
-            )
+            original_pv = float(hour.pv_estimate)
 
             if original_pv < 0:
-
                 original_pv = 0.0
 
             pv = original_pv
@@ -970,10 +790,9 @@ class EVPlanner:
             # Minimale bruikbare PV
             ##################################################################
 
-            if pv < float(
+            if self.settings.planner_mode == PLANNER_MODE_SOLAR_ONLY and pv < float(
                 self.settings.min_pv_kwh
             ):
-
                 pv = 0.0
 
             ##################################################################
@@ -982,12 +801,9 @@ class EVPlanner:
             ##################################################################
 
             if pv > max_charge_energy:
-
                 pv = max_charge_energy
 
-            hour.usable_pv = float(
-                pv
-            )
+            hour.usable_pv = float(pv)
 
             self.logger.debug(
                 f"PV BEREKENING: "
@@ -1028,48 +844,32 @@ class EVPlanner:
 
         hour.reason = ""
 
-        max_power = float(
-            self.settings.max_charge_power_kw
-        )
+        max_power = float(self.settings.max_charge_power_kw)
 
         if max_power > ABSOLUTE_MAX_POWER_KW:
-
             max_power = ABSOLUTE_MAX_POWER_KW
 
-        duration = self._hour_duration(
-            hour
-        )
+        duration = self._hour_duration(hour)
 
         if duration <= 0:
-
             return
 
-        max_charge_energy = (
-            max_power
-            * duration
-        )
+        max_charge_energy = max_power * duration
 
         ######################################################################
         # Gratis PV
         ######################################################################
 
         if self.settings.solar_is_free:
-
-            usable_pv = float(
-                hour.usable_pv
-            )
+            usable_pv = float(hour.usable_pv)
 
             if usable_pv < 0:
-
                 usable_pv = 0.0
 
             if usable_pv > max_charge_energy:
-
                 usable_pv = max_charge_energy
 
-            hour.free_energy = float(
-                usable_pv
-            )
+            hour.free_energy = float(usable_pv)
 
         ######################################################################
         # Betaalde capaciteit
@@ -1077,40 +877,24 @@ class EVPlanner:
 
         hour.paid_energy = max(
             0.0,
-            max_charge_energy
-            - float(hour.free_energy),
+            max_charge_energy - float(hour.free_energy),
         )
 
-        hour.charge_energy = (
-            float(hour.free_energy)
-            + float(hour.paid_energy)
-        )
+        hour.charge_energy = float(hour.free_energy) + float(hour.paid_energy)
 
         ######################################################################
         # Effectieve prijs
         ######################################################################
 
         if hour.charge_energy > 0:
+            paid_cost = float(hour.paid_energy) * float(hour.price)
 
-            paid_cost = (
-                float(hour.paid_energy)
-                * float(hour.price)
-            )
-
-            hour.effective_price = (
-                paid_cost
-                / float(hour.charge_energy)
-            )
+            hour.effective_price = paid_cost / float(hour.charge_energy)
 
         else:
+            hour.effective_price = float(hour.price)
 
-            hour.effective_price = float(
-                hour.price
-            )
-
-        hour.score = float(
-            hour.effective_price
-        )
+        hour.score = float(hour.effective_price)
 
     ##########################################################################
     # Totale beschikbare energie
@@ -1130,26 +914,15 @@ class EVPlanner:
 
         total = 0.0
 
-        maximum_power = self._maximum_power_for_phases(
-            3
-        )
+        maximum_power = self._maximum_power_for_phases(3)
 
         for hour in hours:
-
-            duration = self._hour_duration(
-                hour
-            )
+            duration = self._hour_duration(hour)
 
             if duration > 0:
+                total += maximum_power * duration
 
-                total += (
-                    maximum_power
-                    * duration
-                )
-
-        return float(
-            total
-        )
+        return float(total)
 
     ##########################################################################
     # Haalbaarheid
@@ -1160,16 +933,11 @@ class EVPlanner:
         hours: list[Hour],
     ) -> None:
 
-        available = self._total_available_energy(
-            hours
-        )
+        available = self._total_available_energy(hours)
 
-        needed = float(
-            self.settings.energy_needed_kwh
-        )
+        needed = float(self.settings.energy_needed_kwh)
 
         if available < needed:
-
             self.logger.warning(
                 "Laadopdracht kan niet volledig "
                 "worden ingepland. "
@@ -1187,16 +955,13 @@ class EVPlanner:
         phases: int,
     ) -> float:
 
-        configured_max = float(
-            self.settings.max_charge_power_kw
-        )
+        configured_max = float(self.settings.max_charge_power_kw)
 
         ######################################################################
         # Absolute veiligheidsbegrenzing.
         ######################################################################
 
         if configured_max > ABSOLUTE_MAX_POWER_KW:
-
             configured_max = ABSOLUTE_MAX_POWER_KW
 
         ######################################################################
@@ -1204,7 +969,6 @@ class EVPlanner:
         ######################################################################
 
         if phases == 3:
-
             return float(
                 min(
                     MAX_POWER_3PH_KW,
@@ -1237,21 +1001,14 @@ class EVPlanner:
         faseconfiguratie.
         """
 
-        duration = self._hour_duration(
-            hour
-        )
+        duration = self._hour_duration(hour)
 
         if duration <= 0:
-
             return 0.0
 
-        power = self._maximum_power_for_phases(
-            phases
-        )
+        power = self._maximum_power_for_phases(phases)
 
-        return float(
-            power * duration
-        )
+        return float(power * duration)
 
     def _hour_free_energy(
         self,
@@ -1270,30 +1027,22 @@ class EVPlanner:
         )
 
         if cap <= 0:
-
             return 0.0
 
-        pv = float(
-            hour.pv_estimate
-        )
+        pv = float(hour.pv_estimate)
 
         if pv < 0:
-
             pv = 0.0
 
-        if pv < float(
+        if self.settings.planner_mode == PLANNER_MODE_SOLAR_ONLY and pv < float(
             self.settings.min_pv_kwh
         ):
-
             pv = 0.0
 
         if pv > cap:
-
             pv = cap
 
-        return float(
-            pv
-        )
+        return float(pv)
 
     ##########################################################################
     # Gezamenlijke optimalisatie: uren, fase, stroom en venster
@@ -1357,31 +1106,20 @@ class EVPlanner:
         "gelijkmatig uitgesmeerd"-aanname.
         """
 
-        duration = self._hour_duration(
-            hour
-        )
+        duration = self._hour_duration(hour)
 
         if duration <= 0:
-
             return 0.0
 
-        pv = float(
-            hour.pv_estimate
-        )
+        pv = float(hour.pv_estimate)
 
         if pv < 0:
-
             pv = 0.0
 
-        if pv < float(
-            self.settings.min_pv_kwh
-        ):
-
+        if pv < float(self.settings.min_pv_kwh):
             pv = 0.0
 
-        return float(
-            pv / duration
-        )
+        return float(pv / duration)
 
     def _valid_currents(
         self,
@@ -1393,9 +1131,7 @@ class EVPlanner:
         laadvermogen.
         """
 
-        maximum_power = self._maximum_power_for_phases(
-            phases
-        )
+        maximum_power = self._maximum_power_for_phases(phases)
 
         result = []
 
@@ -1403,17 +1139,13 @@ class EVPlanner:
             MIN_CHARGE_CURRENT_A,
             MAX_CHARGE_CURRENT_A + 1,
         ):
-
             power = self._actual_power_for_current(
                 current_a,
                 phases,
             )
 
             if power <= maximum_power + 0.000001:
-
-                result.append(
-                    current_a
-                )
+                result.append(current_a)
 
         return result
 
@@ -1432,7 +1164,6 @@ class EVPlanner:
         """
 
         if not hours:
-
             return
 
         ######################################################################
@@ -1442,27 +1173,16 @@ class EVPlanner:
         ordered_hours = []
 
         for hour in hours:
+            ordered_hours.append(hour)
 
-            ordered_hours.append(
-                hour
-            )
+        ordered_hours.sort(key=lambda hour: hour.start)
 
-        ordered_hours.sort(
-            key=lambda hour: hour.start
-        )
+        count = len(ordered_hours)
 
-        count = len(
-            ordered_hours
-        )
-
-        target = float(
-            self.settings.energy_needed_kwh
-        )
+        target = float(self.settings.energy_needed_kwh)
 
         if target <= 0:
-
             for hour in ordered_hours:
-
                 hour.selected = False
                 hour.charge_energy = 0.0
                 hour.free_energy = 0.0
@@ -1476,23 +1196,18 @@ class EVPlanner:
         # Max fasewisselingen, met harde bovengrens.
         ######################################################################
 
-        max_switches = int(
-            self.settings.max_phase_switches
-        )
+        max_switches = int(self.settings.max_phase_switches)
 
         if max_switches < 0:
-
             max_switches = 0
 
         if max_switches > count - 1:
-
             max_switches = max(
                 0,
                 count - 1,
             )
 
         if max_switches > MAX_PHASE_SWITCHES_HARD_CAP:
-
             self.logger.warning(
                 "Maximaal aantal fasewisselingen begrensd van "
                 f"{max_switches} naar "
@@ -1500,13 +1215,9 @@ class EVPlanner:
                 "responsief te houden."
             )
 
-            max_switches = (
-                MAX_PHASE_SWITCHES_HARD_CAP
-            )
+            max_switches = MAX_PHASE_SWITCHES_HARD_CAP
 
-        max_price = float(
-            self.settings.max_price
-        )
+        max_price = float(self.settings.max_price)
 
         ######################################################################
         # Per uur, per fase: beschikbare duur, zonvermogen, geldige
@@ -1531,43 +1242,27 @@ class EVPlanner:
         }
 
         for index in range(count):
-
             hour = ordered_hours[index]
 
-            duration = self._hour_duration(
-                hour
-            )
+            duration = self._hour_duration(hour)
 
-            durations.append(
-                duration
-            )
+            durations.append(duration)
 
-            pv_rates.append(
-                self._pv_rate_kw(hour)
-            )
+            pv_rates.append(self._pv_rate_kw(hour))
 
-            prices.append(
-                float(hour.price)
-            )
+            prices.append(float(hour.price))
 
             for phase in (1, 3):
-
                 options = []
 
                 if duration > 0:
-
-                    for current_a in valid_currents_by_phase[
-                        phase
-                    ]:
-
+                    for current_a in valid_currents_by_phase[phase]:
                         power = self._actual_power_for_current(
                             current_a,
                             phase,
                         )
 
-                        amount = float(
-                            power * duration
-                        )
+                        amount = float(power * duration)
 
                         free = float(
                             min(
@@ -1580,7 +1275,6 @@ class EVPlanner:
                         paid = amount - free
 
                         if paid < 0:
-
                             paid = 0.0
 
                         ##########################################################
@@ -1591,11 +1285,7 @@ class EVPlanner:
                         # zonvermogen ligt).
                         ##########################################################
 
-                        if (
-                            prices[index] > max_price
-                            and paid > 0.000001
-                        ):
-
+                        if prices[index] > max_price and paid > 0.000001:
                             continue
 
                         options.append(
@@ -1607,9 +1297,7 @@ class EVPlanner:
                             )
                         )
 
-                full_options[
-                    (index, phase)
-                ] = options
+                full_options[(index, phase)] = options
 
         ######################################################################
         # Dynamic programming.
@@ -1657,7 +1345,6 @@ class EVPlanner:
         ]
 
         for index in range(count):
-
             prev_layer = layers[index]
 
             next_layer = {}
@@ -1667,16 +1354,12 @@ class EVPlanner:
             ):
 
                 if state not in next_layer:
-
                     next_layer[state] = {}
 
                 return next_layer[state]
 
             for state, energies in prev_layer.items():
-
-                phase_prev, switches_prev = (
-                    state
-                )
+                phase_prev, switches_prev = state
 
                 for energy_k, (
                     cost,
@@ -1684,29 +1367,18 @@ class EVPlanner:
                     _parent_energy,
                     _action,
                 ) in energies.items():
-
-                    remaining = (
-                        target - energy_k
-                    )
+                    remaining = target - energy_k
 
                     ##############################################################
                     # Overslaan: altijd toegestaan, ook als het doel
                     # al bereikt is.
                     ##############################################################
 
-                    bucket = ensure(
-                        state
-                    )
+                    bucket = ensure(state)
 
-                    existing = bucket.get(
-                        energy_k
-                    )
+                    existing = bucket.get(energy_k)
 
-                    if (
-                        existing is None
-                        or cost < existing[0]
-                    ):
-
+                    if existing is None or cost < existing[0]:
                         bucket[energy_k] = (
                             cost,
                             state,
@@ -1715,31 +1387,19 @@ class EVPlanner:
                         )
 
                     if remaining <= 0.000001:
-
                         continue
 
                     for phase in (1, 3):
-
-                        if (
-                            phase_prev == NONE_PHASE
-                        ):
-
+                        if phase_prev == NONE_PHASE:
                             switches_new = 0
 
                         elif phase_prev == phase:
-
-                            switches_new = (
-                                switches_prev
-                            )
+                            switches_new = switches_prev
 
                         else:
-
-                            switches_new = (
-                                switches_prev + 1
-                            )
+                            switches_new = switches_prev + 1
 
                         if switches_new > max_switches:
-
                             continue
 
                         out_state = (
@@ -1757,50 +1417,26 @@ class EVPlanner:
                             amount,
                             free,
                             paid,
-                        ) in full_options[
-                            (index, phase)
-                        ]:
-
-                            if (
-                                amount
-                                > remaining + 0.000001
-                            ):
-
+                        ) in full_options[(index, phase)]:
+                            if amount > remaining + 0.000001:
                                 continue
 
-                            new_energy = (
-                                energy_k + amount
-                            )
+                            new_energy = energy_k + amount
 
                             new_cost = (
                                 cost
-                                + paid
-                                * prices[index]
-                                - CURRENT_TIEBREAK_EPSILON
-                                * current_a
+                                + paid * prices[index]
+                                - CURRENT_TIEBREAK_EPSILON * current_a
                             )
 
-                            new_key = energy_key(
-                                new_energy
-                            )
+                            new_key = energy_key(new_energy)
 
-                            out_bucket = ensure(
-                                out_state
-                            )
+                            out_bucket = ensure(out_state)
 
-                            existing = out_bucket.get(
-                                new_key
-                            )
+                            existing = out_bucket.get(new_key)
 
-                            if (
-                                existing is None
-                                or new_cost
-                                < existing[0]
-                            ):
-
-                                out_bucket[
-                                    new_key
-                                ] = (
+                            if existing is None or new_cost < existing[0]:
+                                out_bucket[new_key] = (
                                     new_cost,
                                     state,
                                     energy_k,
@@ -1822,40 +1458,24 @@ class EVPlanner:
                         # hoeveelheid.
                         ##########################################################
 
-                        duration = durations[
-                            index
-                        ]
+                        duration = durations[index]
 
                         if duration <= 0:
-
                             continue
 
-                        pv_rate = pv_rates[
-                            index
-                        ]
+                        pv_rate = pv_rates[index]
 
-                        price_ok_currents = (
-                            valid_currents_by_phase[
-                                phase
-                            ]
-                        )
+                        price_ok_currents = valid_currents_by_phase[phase]
 
                         best_current = None
 
                         for current_a in price_ok_currents:
-
                             power = self._actual_power_for_current(
                                 current_a,
                                 phase,
                             )
 
-                            if (
-                                prices[index]
-                                > max_price
-                                and power
-                                > pv_rate + 0.000001
-                            ):
-
+                            if prices[index] > max_price and power > pv_rate + 0.000001:
                                 ####################################################
                                 # Boven de maximumprijs mag dit uur
                                 # nooit sneller laden dan de zon zelf
@@ -1864,19 +1484,12 @@ class EVPlanner:
 
                                 continue
 
-                            if (
-                                power * duration
-                                >= remaining - 0.000001
-                            ):
-
-                                best_current = (
-                                    current_a
-                                )
+                            if power * duration >= remaining - 0.000001:
+                                best_current = current_a
 
                                 break
 
                         if best_current is None:
-
                             continue
 
                         power = self._actual_power_for_current(
@@ -1884,20 +1497,12 @@ class EVPlanner:
                             phase,
                         )
 
-                        finish_duration = (
-                            remaining / power
-                        )
+                        finish_duration = remaining / power
 
                         if finish_duration > duration:
+                            finish_duration = duration
 
-                            finish_duration = (
-                                duration
-                            )
-
-                        finish_amount = (
-                            power
-                            * finish_duration
-                        )
+                        finish_amount = power * finish_duration
 
                         finish_free = float(
                             min(
@@ -1907,46 +1512,23 @@ class EVPlanner:
                             * finish_duration
                         )
 
-                        finish_paid = (
-                            finish_amount
-                            - finish_free
-                        )
+                        finish_paid = finish_amount - finish_free
 
                         if finish_paid < 0:
-
                             finish_paid = 0.0
 
-                        new_energy = (
-                            energy_k
-                            + finish_amount
-                        )
+                        new_energy = energy_k + finish_amount
 
-                        new_cost = (
-                            cost
-                            + finish_paid
-                            * prices[index]
-                        )
+                        new_cost = cost + finish_paid * prices[index]
 
-                        new_key = energy_key(
-                            new_energy
-                        )
+                        new_key = energy_key(new_energy)
 
-                        out_bucket = ensure(
-                            out_state
-                        )
+                        out_bucket = ensure(out_state)
 
-                        existing = out_bucket.get(
-                            new_key
-                        )
+                        existing = out_bucket.get(new_key)
 
-                        if (
-                            existing is None
-                            or new_cost < existing[0]
-                        ):
-
-                            out_bucket[
-                                new_key
-                            ] = (
+                        if existing is None or new_cost < existing[0]:
+                            out_bucket[new_key] = (
                                 new_cost,
                                 state,
                                 energy_k,
@@ -1958,9 +1540,7 @@ class EVPlanner:
                                 ),
                             )
 
-            layers.append(
-                next_layer
-            )
+            layers.append(next_layer)
 
         ######################################################################
         # Beste eindstate: maximale energie, dan minimale kosten,
@@ -1978,7 +1558,6 @@ class EVPlanner:
         best_switches = None
 
         for state, energies in last_layer.items():
-
             _phase, switches = state
 
             for energy_k, (
@@ -1987,32 +1566,18 @@ class EVPlanner:
                 _pe,
                 _a,
             ) in energies.items():
-
                 if (
                     best_state is None
-                    or energy_k
-                    > best_energy_key + 0.000001
+                    or energy_k > best_energy_key + 0.000001
                     or (
-                        abs(
-                            energy_k
-                            - best_energy_key
-                        )
-                        <= 0.000001
-                        and cost < best_cost
+                        abs(energy_k - best_energy_key) <= 0.000001 and cost < best_cost
                     )
                     or (
-                        abs(
-                            energy_k
-                            - best_energy_key
-                        )
-                        <= 0.000001
-                        and abs(cost - best_cost)
-                        <= 0.000001
-                        and switches
-                        < best_switches
+                        abs(energy_k - best_energy_key) <= 0.000001
+                        and abs(cost - best_cost) <= 0.000001
+                        and switches < best_switches
                     )
                 ):
-
                     best_state = state
 
                     best_energy_key = energy_k
@@ -2022,9 +1587,7 @@ class EVPlanner:
                     best_switches = switches
 
         if best_state is None:
-
             for hour in ordered_hours:
-
                 hour.selected = False
                 hour.charge_energy = 0.0
                 hour.free_energy = 0.0
@@ -2032,14 +1595,11 @@ class EVPlanner:
                 hour.charge_power_w = 0.0
                 hour.charge_current_a = 0.0
 
-            self.logger.warning(
-                "Geen enkele haalbare laadplanning gevonden."
-            )
+            self.logger.warning("Geen enkele haalbare laadplanning gevonden.")
 
             return
 
         if best_energy_key < target - 0.001:
-
             self.logger.warning(
                 "Laadopdracht kan niet volledig worden ingepland. "
                 f"Benodigd: {target:.2f} kWh, maximaal haalbaar: "
@@ -2061,15 +1621,12 @@ class EVPlanner:
         index = count
 
         while index > 0:
-
             (
                 _cost,
                 parent_state,
                 parent_energy,
                 action,
-            ) = layers[index][state][
-                energy_k
-            ]
+            ) = layers[index][state][energy_k]
 
             actions[index - 1] = action
 
@@ -2096,13 +1653,11 @@ class EVPlanner:
         ######################################################################
 
         for index in range(count):
-
             hour = ordered_hours[index]
 
             action = actions[index]
 
             if action is None or action[0] == "skip":
-
                 hour.selected = False
                 hour.charge_energy = 0.0
                 hour.free_energy = 0.0
@@ -2117,7 +1672,6 @@ class EVPlanner:
             original_end = hour.end
 
             if action[0] == "full":
-
                 _tag, phase, current_a = action
 
                 power = self._actual_power_for_current(
@@ -2127,9 +1681,7 @@ class EVPlanner:
 
                 duration = durations[index]
 
-                amount = float(
-                    power * duration
-                )
+                amount = float(power * duration)
 
                 free = float(
                     min(
@@ -2142,7 +1694,6 @@ class EVPlanner:
                 paid = amount - free
 
                 if paid < 0:
-
                     paid = 0.0
 
                 hour.start = original_start
@@ -2150,19 +1701,14 @@ class EVPlanner:
                 hour.end = original_end
 
             else:
-
-                _tag, phase, current_a, amount = (
-                    action
-                )
+                _tag, phase, current_a, amount = action
 
                 power = self._actual_power_for_current(
                     current_a,
                     phase,
                 )
 
-                finish_duration = (
-                    amount / power
-                )
+                finish_duration = amount / power
 
                 free = float(
                     min(
@@ -2175,17 +1721,11 @@ class EVPlanner:
                 paid = amount - free
 
                 if paid < 0:
-
                     paid = 0.0
 
                 hour.start = original_start
 
-                hour.end = (
-                    original_start
-                    + self._duration_to_timedelta(
-                        finish_duration
-                    )
-                )
+                hour.end = original_start + self._duration_to_timedelta(finish_duration)
 
                 ################################################################
                 # Harde veiligheidsklem: kan door afrondingen op
@@ -2194,36 +1734,21 @@ class EVPlanner:
                 ################################################################
 
                 if hour.end > original_end:
-
-                    hour.end = (
-                        original_end
-                    )
+                    hour.end = original_end
 
             hour.selected = True
 
-            hour.phases = int(
-                phase
-            )
+            hour.phases = int(phase)
 
-            hour.charge_current_a = float(
-                current_a
-            )
+            hour.charge_current_a = float(current_a)
 
-            hour.charge_power_w = float(
-                power * 1000.0
-            )
+            hour.charge_power_w = float(power * 1000.0)
 
-            hour.charge_energy = float(
-                amount
-            )
+            hour.charge_energy = float(amount)
 
-            hour.free_energy = float(
-                free
-            )
+            hour.free_energy = float(free)
 
-            hour.paid_energy = float(
-                paid
-            )
+            hour.paid_energy = float(paid)
 
         self.logger.debug(
             "GEZAMENLIJKE OPTIMALISATIE: "
@@ -2244,23 +1769,14 @@ class EVPlanner:
     ) -> float:
 
         if current_a <= 0:
-
             return 0.0
 
         if phases <= 0:
-
             return 0.0
 
-        power_kw = (
-            VOLTAGE_V
-            * float(current_a)
-            * float(phases)
-            / 1000.0
-        )
+        power_kw = VOLTAGE_V * float(current_a) * float(phases) / 1000.0
 
-        return float(
-            power_kw
-        )
+        return float(power_kw)
 
     ##########################################################################
     # Tijdduur naar timedelta
@@ -2271,14 +1787,9 @@ class EVPlanner:
         duration_hours: float,
     ) -> timedelta:
 
-        seconds = (
-            float(duration_hours)
-            * 3600.0
-        )
+        seconds = float(duration_hours) * 3600.0
 
-        return timedelta(
-            seconds=seconds
-        )
+        return timedelta(seconds=seconds)
 
     ##########################################################################
     # Decisions bouwen
@@ -2299,88 +1810,41 @@ class EVPlanner:
 
         decisions = []
 
-        for index in range(
-            len(hours)
-        ):
-
+        for index in range(len(hours)):
             hour = hours[index]
 
             if not hour.selected:
-
                 continue
 
-            cost = (
-                float(hour.paid_energy)
-                * float(hour.price)
-            )
+            cost = float(hour.paid_energy) * float(hour.price)
 
-            charge_power_kw = float(
-                hour.charge_power_w
-            ) / 1000.0
+            charge_power_kw = float(hour.charge_power_w) / 1000.0
 
-            charge_current_a = int(
-                hour.charge_current_a
-            )
+            charge_current_a = int(hour.charge_current_a)
 
-            phases = int(
-                hour.phases
-            )
+            phases = int(hour.phases)
 
             decision = ChargingDecision(
-
                 hour=hour,
-
-                energy_kwh=float(
-                    hour.charge_energy
-                ),
-
-                free_energy_kwh=float(
-                    hour.free_energy
-                ),
-
-                paid_energy_kwh=float(
-                    hour.paid_energy
-                ),
-
-                price=float(
-                    hour.price
-                ),
-
-                cost=float(
-                    cost
-                ),
-
+                energy_kwh=float(hour.charge_energy),
+                free_energy_kwh=float(hour.free_energy),
+                paid_energy_kwh=float(hour.paid_energy),
+                price=float(hour.price),
+                cost=float(cost),
                 selected=True,
-
-                reason=str(
-                    hour.reason
-                ),
-
-                charge_power_kw=float(
-                    charge_power_kw
-                ),
-
-                charge_current_a=int(
-                    charge_current_a
-                ),
-
-                phases=int(
-                    phases
-                ),
+                reason=str(hour.reason),
+                charge_power_kw=float(charge_power_kw),
+                charge_current_a=int(charge_current_a),
+                phases=int(phases),
             )
 
-            decisions.append(
-                decision
-            )
+            decisions.append(decision)
 
         ######################################################################
         # Altijd chronologisch
         ######################################################################
 
-        decisions.sort(
-            key=lambda decision:
-            decision.hour.start
-        )
+        decisions.sort(key=lambda decision: decision.hour.start)
 
         return decisions
 
@@ -2393,9 +1857,7 @@ class EVPlanner:
         selected: list[Hour],
     ) -> ChargingPlan:
 
-        decisions = self._build_decisions(
-            selected
-        )
+        decisions = self._build_decisions(selected)
 
         energy_planned = 0.0
 
@@ -2406,35 +1868,23 @@ class EVPlanner:
         estimated_cost = 0.0
 
         for decision in decisions:
+            energy_planned += float(decision.energy_kwh)
 
-            energy_planned += float(
-                decision.energy_kwh
-            )
+            free_energy += float(decision.free_energy_kwh)
 
-            free_energy += float(
-                decision.free_energy_kwh
-            )
+            paid_energy += float(decision.paid_energy_kwh)
 
-            paid_energy += float(
-                decision.paid_energy_kwh
-            )
-
-            estimated_cost += float(
-                decision.cost
-            )
+            estimated_cost += float(decision.cost)
 
         ######################################################################
         # Ontbrekende energie
         ######################################################################
 
-        energy_needed = float(
-            self.settings.energy_needed_kwh
-        )
+        energy_needed = float(self.settings.energy_needed_kwh)
 
         missing_energy = max(
             0.0,
-            energy_needed
-            - energy_planned,
+            energy_needed - energy_planned,
         )
 
         ######################################################################
@@ -2449,48 +1899,19 @@ class EVPlanner:
         # ruis.
         ######################################################################
 
-        complete = (
-            energy_planned + 0.000001
-            >= energy_needed
-        )
+        complete = energy_planned + 0.000001 >= energy_needed
 
         return ChargingPlan(
-
             decisions=decisions,
-
-            energy_needed_kwh=(
-                energy_needed
-            ),
-
-            energy_planned_kwh=(
-                energy_planned
-            ),
-
-            missing_energy_kwh=(
-                missing_energy
-            ),
-
-            free_energy_kwh=(
-                free_energy
-            ),
-
-            paid_energy_kwh=(
-                paid_energy
-            ),
-
-            estimated_cost=(
-                estimated_cost
-            ),
-
+            energy_needed_kwh=(energy_needed),
+            energy_planned_kwh=(energy_planned),
+            missing_energy_kwh=(missing_energy),
+            free_energy_kwh=(free_energy),
+            paid_energy_kwh=(paid_energy),
+            estimated_cost=(estimated_cost),
             complete=complete,
-
-            departure_time=(
-                self.settings.departure_time
-            ),
-
-            max_price=float(
-                self.settings.max_price
-            ),
+            departure_time=(self.settings.departure_time),
+            max_price=float(self.settings.max_price),
         )
 
     ##########################################################################
@@ -2519,16 +1940,11 @@ class EVPlanner:
         # Totale energie mag niet boven de benodigde energie komen.
         ######################################################################
 
-        needed = float(
-            plan.energy_needed_kwh
-        )
+        needed = float(plan.energy_needed_kwh)
 
-        planned = float(
-            plan.energy_planned_kwh
-        )
+        planned = float(plan.energy_planned_kwh)
 
         if planned > needed + TOLERANCE:
-
             raise ValueError(
                 "PLANCONTROLE: geplande energie is groter "
                 f"dan benodigd: {planned:.6f} > {needed:.6f} kWh"
@@ -2539,12 +1955,9 @@ class EVPlanner:
         # het uiteindelijke plan en vergelijk met de instelling.
         ######################################################################
 
-        max_switches = int(
-            self.settings.max_phase_switches
-        )
+        max_switches = int(self.settings.max_phase_switches)
 
         if max_switches < 0:
-
             max_switches = 0
 
         switches = 0
@@ -2555,22 +1968,14 @@ class EVPlanner:
             plan.decisions,
             key=lambda decision: decision.hour.start,
         ):
+            phase = int(decision.phases)
 
-            phase = int(
-                decision.phases
-            )
-
-            if (
-                previous_phase is not None
-                and phase != previous_phase
-            ):
-
+            if previous_phase is not None and phase != previous_phase:
                 switches += 1
 
             previous_phase = phase
 
         if switches > max_switches:
-
             raise ValueError(
                 "PLANCONTROLE: aantal fasewisselingen "
                 f"({switches}) overschrijdt het budget "
@@ -2581,23 +1986,14 @@ class EVPlanner:
         # Beslissingen controleren.
         ######################################################################
 
-        max_price = float(
-            self.settings.max_price
-        )
+        max_price = float(self.settings.max_price)
 
         for decision in plan.decisions:
+            phases = int(decision.phases)
 
-            phases = int(
-                decision.phases
-            )
+            current = int(decision.charge_current_a)
 
-            current = int(
-                decision.charge_current_a
-            )
-
-            power = float(
-                decision.charge_power_kw
-            )
+            power = float(decision.charge_power_kw)
 
             hour = decision.hour
 
@@ -2606,24 +2002,19 @@ class EVPlanner:
             ##################################################################
 
             if phases != 1 and phases != 3:
-
-                raise ValueError(
-                    "Ongeldige faseconfiguratie in laadplan."
-                )
+                raise ValueError("Ongeldige faseconfiguratie in laadplan.")
 
             ##################################################################
             # Geldige, gehele laadstroom
             ##################################################################
 
             if current < MIN_CHARGE_CURRENT_A:
-
                 raise ValueError(
                     "Laadstroom lager dan minimale "
                     f"{MIN_CHARGE_CURRENT_A} A: {current} A."
                 )
 
             if current > MAX_CHARGE_CURRENT_A:
-
                 raise ValueError(
                     "Laadstroom hoger dan maximale "
                     f"{MAX_CHARGE_CURRENT_A} A: {current} A."
@@ -2633,18 +2024,12 @@ class EVPlanner:
             # Werkelijk vermogen controleren
             ##################################################################
 
-            calculated_power = (
-                self._actual_power_for_current(
-                    current,
-                    phases,
-                )
+            calculated_power = self._actual_power_for_current(
+                current,
+                phases,
             )
 
-            if abs(
-                calculated_power
-                - power
-            ) > TOLERANCE:
-
+            if abs(calculated_power - power) > TOLERANCE:
                 raise ValueError(
                     "PLANCONTROLE: vermogen komt niet exact "
                     "overeen met stroom/fasen. "
@@ -2656,14 +2041,9 @@ class EVPlanner:
             # Configuratiemaximum
             ##################################################################
 
-            maximum_power = (
-                self._maximum_power_for_phases(
-                    phases
-                )
-            )
+            maximum_power = self._maximum_power_for_phases(phases)
 
             if power > maximum_power + TOLERANCE:
-
                 raise ValueError(
                     "Laadvermogen overschrijdt technisch maximum: "
                     f"{power:.6f} > "
@@ -2675,7 +2055,6 @@ class EVPlanner:
             ##################################################################
 
             if power > ABSOLUTE_MAX_POWER_KW + TOLERANCE:
-
                 raise ValueError(
                     "Laadvermogen overschrijdt absolute "
                     f"grens van {ABSOLUTE_MAX_POWER_KW:.2f} kW."
@@ -2685,44 +2064,27 @@ class EVPlanner:
             # 1-fase harde grens
             ##################################################################
 
-            if (
-                phases == 1
-                and power > MAX_POWER_1PH_KW + TOLERANCE
-            ):
-
+            if phases == 1 and power > MAX_POWER_1PH_KW + TOLERANCE:
                 raise ValueError(
-                    "1-fase laadvermogen overschrijdt "
-                    f"{MAX_POWER_1PH_KW:.2f} kW."
+                    f"1-fase laadvermogen overschrijdt {MAX_POWER_1PH_KW:.2f} kW."
                 )
 
             ##################################################################
             # PV mag nooit boven Solcast uitkomen.
             ##################################################################
 
-            if (
-                float(decision.free_energy_kwh)
-                > float(hour.usable_pv)
-                + TOLERANCE
-            ):
-
-                raise ValueError(
-                    "Gratis PV-energie overschrijdt beschikbare PV."
-                )
+            if float(decision.free_energy_kwh) > float(hour.usable_pv) + TOLERANCE:
+                raise ValueError("Gratis PV-energie overschrijdt beschikbare PV.")
 
             ##################################################################
             # Gratis + betaald moet exact de laadenergie vormen.
             ##################################################################
 
-            calculated_energy = (
-                float(decision.free_energy_kwh)
-                + float(decision.paid_energy_kwh)
+            calculated_energy = float(decision.free_energy_kwh) + float(
+                decision.paid_energy_kwh
             )
 
-            if abs(
-                calculated_energy
-                - float(decision.energy_kwh)
-            ) > TOLERANCE:
-
+            if abs(calculated_energy - float(decision.energy_kwh)) > TOLERANCE:
                 raise ValueError(
                     "Gratis + betaalde energie komt niet overeen "
                     "met de totale laadenergie."
@@ -2736,8 +2098,11 @@ class EVPlanner:
             if (
                 float(hour.price) > max_price + TOLERANCE
                 and float(decision.paid_energy_kwh) > TOLERANCE
+                and not (
+                    self.settings.planner_mode == PLANNER_MODE_SOLAR_ONLY
+                    and self.settings.pv_rounding == PV_ROUNDING_UP
+                )
             ):
-
                 raise ValueError(
                     "PLANCONTROLE: betaalde energie in een uur "
                     "boven de maximumprijs. "
@@ -2753,13 +2118,8 @@ class EVPlanner:
 
             if (
                 hour.original_start is not None
-                and hour.start
-                < hour.original_start
-                - timedelta(
-                    seconds=1
-                )
+                and hour.start < hour.original_start - timedelta(seconds=1)
             ):
-
                 raise ValueError(
                     "PLANCONTROLE: laadvenster begint vóór het "
                     "eigen oorspronkelijke uur "
@@ -2768,13 +2128,8 @@ class EVPlanner:
 
             if (
                 hour.original_end is not None
-                and hour.end
-                > hour.original_end
-                + timedelta(
-                    seconds=1
-                )
+                and hour.end > hour.original_end + timedelta(seconds=1)
             ):
-
                 raise ValueError(
                     "PLANCONTROLE: laadvenster eindigt na het "
                     "eigen oorspronkelijke uur "
@@ -2791,47 +2146,24 @@ class EVPlanner:
             key=lambda decision: decision.hour.start,
         )
 
-        for position in range(
-            len(ordered_decisions)
-        ):
-
-            is_last = (
-                position
-                == len(ordered_decisions) - 1
-            )
+        for position in range(len(ordered_decisions)):
+            is_last = position == len(ordered_decisions) - 1
 
             if is_last:
-
                 continue
 
-            decision = ordered_decisions[
-                position
-            ]
+            decision = ordered_decisions[position]
 
             hour = decision.hour
 
-            if (
-                hour.original_start is None
-                or hour.original_end is None
-            ):
-
+            if hour.original_start is None or hour.original_end is None:
                 continue
 
-            own_duration = (
-                hour.original_end
-                - hour.original_start
-            ).total_seconds()
+            own_duration = (hour.original_end - hour.original_start).total_seconds()
 
-            actual_duration = (
-                hour.end
-                - hour.start
-            ).total_seconds()
+            actual_duration = (hour.end - hour.start).total_seconds()
 
-            if (
-                own_duration - actual_duration
-                > 1.0
-            ):
-
+            if own_duration - actual_duration > 1.0:
                 raise ValueError(
                     "PLANCONTROLE: een niet-laatste uur is "
                     "korter dan zijn eigen volledige duur "
@@ -2860,105 +2192,50 @@ class EVPlanner:
         plan: ChargingPlan,
     ) -> None:
 
-        self.logger.debug(
-            "------------- EV PLANNING -------------"
-        )
+        self.logger.debug("------------- EV PLANNING -------------")
+
+        self.logger.debug(f"Benodigd       : {plan.energy_needed_kwh:.2f} kWh")
+
+        self.logger.debug(f"Gepland        : {plan.energy_planned_kwh:.2f} kWh")
+
+        self.logger.debug(f"Gratis PV      : {plan.free_energy_kwh:.2f} kWh")
+
+        self.logger.debug(f"Betaald        : {plan.paid_energy_kwh:.2f} kWh")
+
+        self.logger.debug(f"Geschatte kosten: €{plan.estimated_cost:.2f}")
+
+        self.logger.debug(f"Compleet       : {plan.complete}")
+
+        self.logger.debug(f"Vertrek        : {plan.departure_time}")
+
+        self.logger.debug(f"Max prijs      : €{plan.max_price:.3f}/kWh")
+
+        self.logger.debug(f"Max fasewisselingen: {self.settings.max_phase_switches}")
 
         self.logger.debug(
-            f"Benodigd       : "
-            f"{plan.energy_needed_kwh:.2f} kWh"
+            f"Max laadvermogen: {self.settings.max_charge_power_kw:.2f} kW"
         )
 
-        self.logger.debug(
-            f"Gepland        : "
-            f"{plan.energy_planned_kwh:.2f} kWh"
-        )
+        self.logger.debug(f"Min laadstroom: {MIN_CHARGE_CURRENT_A} A")
 
-        self.logger.debug(
-            f"Gratis PV      : "
-            f"{plan.free_energy_kwh:.2f} kWh"
-        )
+        self.logger.debug(f"Max laadstroom: {MAX_CHARGE_CURRENT_A} A")
 
-        self.logger.debug(
-            f"Betaald        : "
-            f"{plan.paid_energy_kwh:.2f} kWh"
-        )
+        self.logger.debug(f"Netspanning: {VOLTAGE_V:.0f} V")
 
-        self.logger.debug(
-            f"Geschatte kosten: "
-            f"€{plan.estimated_cost:.2f}"
-        )
+        self.logger.debug(f"Fasewisselgrens: {PHASE_CHANGE_POWER_KW:.2f} kW")
 
-        self.logger.debug(
-            f"Compleet       : "
-            f"{plan.complete}"
-        )
+        self.logger.debug(f"1-fase maximum: {MAX_POWER_1PH_KW:.2f} kW")
 
-        self.logger.debug(
-            f"Vertrek        : "
-            f"{plan.departure_time}"
-        )
-
-        self.logger.debug(
-            f"Max prijs      : "
-            f"€{plan.max_price:.3f}/kWh"
-        )
-
-        self.logger.debug(
-            f"Max fasewisselingen: "
-            f"{self.settings.max_phase_switches}"
-        )
-
-        self.logger.debug(
-            f"Max laadvermogen: "
-            f"{self.settings.max_charge_power_kw:.2f} kW"
-        )
-
-        self.logger.debug(
-            f"Min laadstroom: "
-            f"{MIN_CHARGE_CURRENT_A} A"
-        )
-
-        self.logger.debug(
-            f"Max laadstroom: "
-            f"{MAX_CHARGE_CURRENT_A} A"
-        )
-
-        self.logger.debug(
-            f"Netspanning: "
-            f"{VOLTAGE_V:.0f} V"
-        )
-
-        self.logger.debug(
-            f"Fasewisselgrens: "
-            f"{PHASE_CHANGE_POWER_KW:.2f} kW"
-        )
-
-        self.logger.debug(
-            f"1-fase maximum: "
-            f"{MAX_POWER_1PH_KW:.2f} kW"
-        )
-
-        self.logger.debug(
-            f"3-fase maximum: "
-            f"{MAX_POWER_3PH_KW:.2f} kW"
-        )
+        self.logger.debug(f"3-fase maximum: {MAX_POWER_3PH_KW:.2f} kW")
 
         ######################################################################
         # Individuele laadbeslissingen
         ######################################################################
 
         for decision in plan.decisions:
-
-            duration_minutes = (
-                self._hour_duration(
-                    decision.hour
-                )
-                * 60.0
-            )
+            duration_minutes = self._hour_duration(decision.hour) * 60.0
 
             self.logger.debug(
-
                 f"{decision.hour.start:%d-%m %H:%M}"
                 f" - "
                 f"{decision.hour.end:%H:%M}"
@@ -2984,6 +2261,4 @@ class EVPlanner:
                 f"{decision.reason}"
             )
 
-        self.logger.debug(
-            "---------------------------------------"
-        )
+        self.logger.debug("---------------------------------------")
