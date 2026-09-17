@@ -96,7 +96,7 @@ def test_solar_rounding_down_below_6a_does_not_start_charging():
     assert plan.decisions == []
     assert plan.energy_planned_kwh == 0.0
     assert plan.paid_energy_kwh == 0.0
-    assert not plan.complete
+    assert plan.energy_needed_kwh == 0.0
 
 
 def test_solar_rounding_up_below_6a_uses_6a():
@@ -163,13 +163,14 @@ def test_solar_min_pv_filters_only_solar_mode():
     assert normal_plan.energy_planned_kwh > 0.0
 
 
-def test_solar_can_finish_partway_through_final_hour():
+def test_solar_only_ignores_energy_target_for_full_hour_selection():
     plan = build_planner([4.6], 2.76, rounding=PV_ROUNDING_DOWN).create_plan()
     decision = plan.decisions[0]
 
     assert plan.complete
-    assert abs(decision.energy_kwh - 2.76) < 0.000001
-    assert decision.hour.end < decision.hour.original_end
+    assert abs(decision.energy_kwh - 4.14) < 0.000001
+    assert decision.hour.end == decision.hour.original_end
+    assert plan.energy_needed_kwh == 4.14
 
 
 def test_solar_gap_resets_phase_switch_counter():
@@ -198,7 +199,7 @@ def test_solar_zero_pv_never_creates_grid_only_charging():
     assert plan.decisions == []
     assert plan.energy_planned_kwh == 0.0
     assert plan.paid_energy_kwh == 0.0
-    assert not plan.complete
+    assert plan.energy_needed_kwh == 0.0
 
 
 def test_solar_energy_accounting_is_consistent():
