@@ -7,6 +7,7 @@ on:
 
 permissions:
   actions: write
+  contents: write
 
 jobs:
   trigger:
@@ -16,4 +17,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh workflow run implement-solar.yml --repo Edwin1983/HASS-ev-charge-planner --ref feature/solar-charging
+          gh api --method POST \
+            -H "Accept: application/vnd.github+json" \
+            /repos/Edwin1983/HASS-ev-charge-planner/actions/workflows/implement-solar.yml/dispatches \
+            -f ref=feature/solar-charging
