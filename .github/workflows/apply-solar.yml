@@ -1,0 +1,274 @@
+name: Apply solar charging
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  implement:
+    if: "!startsWith(github.event.head_commit.message, 'feat: implement solar charging')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Apply implementation
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          repo = Path('.')
+          solar = '''"""Solar-only planning logic for EV Charge Planner."""
+
+from __future__ import annotations
+
+from ..const import PV_ROUNDING_DOWN, PV_ROUNDING_UP
+
+EPS = 0.000001
+HARD_MAX_SWITCHES = 8
+
+
+def _option(planner, hour, phases):
+    duration = planner._hour_duration(hour)
+    if duration <= 0:
+        return None
+    pv = max(0.0, float(hour.pv_estimate))
+    pv_rate = pv / duration
+    valid = planner._valid_currents(phases)
+    if not valid:
+        return None
+    chosen = None
+    if planner.settings.pv_rounding == PV_ROUNDING_DOWN:
+        for current_a in valid:
+            power = planner._actual_power_for_current(current_a, phases)
+            if power <= pv_rate + EPS:
+                chosen = (current_a, power)
+    elif planner.settings.pv_rounding == PV_ROUNDING_UP:
+        for current_a in valid:
+            power = planner._actual_power_for_current(current_a, phases)
+            if power + EPS >= pv_rate:
+                chosen = (current_a, power)
+                break
+        if chosen is None:
+            current_a = valid[-1]
+            chosen = (current_a, planner._actual_power_for_current(current_a, phases))
+    else:
+        raise ValueError("Ongeldige pv_rounding.")
+    if chosen is None:
+        return None
+    current_a, power = chosen
+    amount = power * duration
+    free = min(pv_rate, power) * duration
+    paid = max(0.0, amount - free)
+    return current_a, phases, amount, free, paid, power
+
+
+def apply_solar_only(planner, hours):
+    if not hours:
+        return
+    target = float(planner.settings.energy_needed_kwh)
+    max_switches = min(HARD_MAX_SWITCHES, max(0, int(planner.settings.max_phase_switches)))
+    ordered = list(hours)
+    ordered.sort(key=lambda hour: hour.start)
+    for hour in ordered:
+        hour.selected = False
+        hour.charge_energy = 0.0
+        hour.free_energy = 0.0
+        hour.paid_energy = 0.0
+        hour.charge_power_w = 0.0
+        hour.charge_current_a = 0.0
+        hour.reason = ""
+    options_by_index = []
+    for hour in ordered:
+        pv = max(0.0, float(hour.pv_estimate))
+        if pv < float(planner.settings.min_pv_kwh):
+            options_by_index.append([])
+            continue
+        options = []
+        for phases in (1, 3):
+            option = _option(planner, hour, phases)
+            if option is not None:
+                options.append(option)
+        options_by_index.append(options)
+    states = {(0, 0, 0.0): (0.0, 0.0, None, None)}
+    layers = []
+    for index, hour in enumerate(ordered):
+        next_states = {}
+        for state, record in states.items():
+            last_phase, switches, energy = state
+            free_so_far, paid_so_far, _parent, _action = record
+            def put(key, candidate):
+                current = next_states.get(key)
+                if current is None or candidate[0] > current[0] + EPS or (abs(candidate[0] - current[0]) <= EPS and candidate[1] < current[1] - EPS):
+                    next_states[key] = candidate
+            skip_key = (0, switches, round(energy, 9))
+            put(skip_key, (free_so_far, paid_so_far, state, ("skip",)))
+            remaining = target - energy
+            if remaining <= EPS:
+                continue
+            for current_a, phases, amount, free, paid, power in options_by_index[index]:
+                new_switches = switches
+                if last_phase != 0 and last_phase != phases:
+                    new_switches += 1
+                if new_switches > max_switches:
+                    continue
+                if amount <= remaining + EPS:
+                    new_energy = round(energy + amount, 9)
+                    put((phases, new_switches, new_energy), (free_so_far + free, paid_so_far + paid, state, ("full", phases, current_a, amount, free, paid)))
+                finish_amount = remaining
+                duration = planner._hour_duration(hour)
+                finish_duration = finish_amount / power
+                if finish_duration <= duration + EPS:
+                    finish_free = min(free / duration, power) * finish_duration
+                    finish_paid = max(0.0, finish_amount - finish_free)
+                    new_energy = round(energy + finish_amount, 9)
+                    put((phases, new_switches, new_energy), (free_so_far + finish_free, paid_so_far + finish_paid, state, ("finish", phases, current_a, finish_amount, finish_free, finish_paid)))
+        layers.append(next_states)
+        states = next_states
+    best = None
+    best_score = None
+    for state, record in states.items():
+        _phase, switches, energy = state
+        free, paid, _parent, _action = record
+        score = (min(energy, target), free, -paid, -switches)
+        if best_score is None or score > best_score:
+            best_score = score
+            best = (state, energy)
+    if best is None:
+        return
+    state, _energy = best
+    actions = [None] * len(ordered)
+    for index in range(len(ordered) - 1, -1, -1):
+        record = layers[index][state]
+        actions[index] = record[3]
+        state = record[2]
+        if state is None:
+            break
+    for index, action in enumerate(actions):
+        if action is None or action[0] == "skip":
+            continue
+        hour = ordered[index]
+        tag, phases, current_a, amount, free, paid = action
+        power = planner._actual_power_for_current(current_a, phases)
+        original_start = hour.start
+        original_end = hour.end
+        if tag == "finish":
+            duration = amount / power
+            hour.end = original_start + planner._duration_to_timedelta(duration)
+            if hour.end > original_end:
+                hour.end = original_end
+        hour.selected = True
+        hour.phases = int(phases)
+        hour.charge_current_a = float(current_a)
+        hour.charge_power_w = float(power * 1000.0)
+        hour.charge_energy = float(amount)
+        hour.free_energy = float(free)
+        hour.paid_energy = float(paid)
+        hour.reason = "Alleen zonneladen"
+    planner.logger.debug("SOLAR ONLY: gepland %.3f kWh, PV %.3f kWh, net %.3f kWh", sum(float(h.charge_energy) for h in ordered), sum(float(h.free_energy) for h in ordered), sum(float(h.paid_energy) for h in ordered))
+'''
+          (repo / 'custom_components/ev_planner/core/solar.py').write_text(solar, encoding='utf-8')
+
+          planner_path = repo / 'custom_components/ev_planner/core/planner.py'
+          text = planner_path.read_text(encoding='utf-8')
+          text = text.replace('from .logger import Logger\n\nfrom .models import Hour', 'from .logger import Logger\nfrom .solar import apply_solar_only\n\nfrom .models import Hour', 1)
+          text = text.replace('    PHASE_CHANGE_POWER,\n)', '    PHASE_CHANGE_POWER,\n)\n\nfrom ..const import (\n    PLANNER_MODE_NORMAL,\n    PLANNER_MODE_SOLAR_ONLY,\n    PV_ROUNDING_DOWN,\n    PV_ROUNDING_UP,\n)', 1)
+          text = text.replace('        max_phase_switches: int = 2,\n    ) -> None:', '        max_phase_switches: int = 2,\n        planner_mode: str = PLANNER_MODE_NORMAL,\n        pv_rounding: str = PV_ROUNDING_DOWN,\n    ) -> None:', 1)
+          text = text.replace('        self.max_phase_switches = int(\n            max_phase_switches\n        )\n\n        self._validate()', '        self.max_phase_switches = int(\n            max_phase_switches\n        )\n\n        self.planner_mode = str(planner_mode)\n        self.pv_rounding = str(pv_rounding)\n\n        self._validate()', 1)
+          text = text.replace('        if self.max_phase_switches < 0:\n\n            raise ValueError(\n                "max_phase_switches mag niet negatief zijn."\n            )', '        if self.max_phase_switches < 0:\n\n            raise ValueError(\n                "max_phase_switches mag niet negatief zijn."\n            )\n\n        if self.planner_mode not in (PLANNER_MODE_NORMAL, PLANNER_MODE_SOLAR_ONLY):\n            raise ValueError("Ongeldige planner_mode.")\n\n        if self.pv_rounding not in (PV_ROUNDING_DOWN, PV_ROUNDING_UP):\n            raise ValueError("Ongeldige pv_rounding.")', 1)
+          text = text.replace('        self._optimize_hours(\n            hours\n        )', '        if self.settings.planner_mode == PLANNER_MODE_SOLAR_ONLY:\n            apply_solar_only(self, hours)\n        else:\n            self._optimize_hours(\n                hours\n            )', 1)
+          text = text.replace('            if pv < float(\n                self.settings.min_pv_kwh\n            ):\n\n                pv = 0.0', '            if (self.settings.planner_mode == PLANNER_MODE_SOLAR_ONLY and pv < float(self.settings.min_pv_kwh)):\n                pv = 0.0', 1)
+          text = text.replace('        if pv < float(\n            self.settings.min_pv_kwh\n        ):\n\n            pv = 0.0', '        if (self.settings.planner_mode == PLANNER_MODE_SOLAR_ONLY and pv < float(self.settings.min_pv_kwh)):\n            pv = 0.0', 1)
+          planner_path.write_text(text, encoding='utf-8')
+
+          controller_path = repo / 'custom_components/ev_planner/core/ev_planner.py'
+          text = controller_path.read_text(encoding='utf-8')
+          text = text.replace('    CONF_ENTITY_PLANNER_MODE,\n', '    CONF_ENTITY_PLANNER_MODE,\n    CONF_ENTITY_PV_ROUNDING,\n', 1)
+          text = text.replace('    DEFAULT_ENTITY_PLANNER_MODE,\n', '    DEFAULT_ENTITY_PLANNER_MODE,\n    DEFAULT_ENTITY_PV_ROUNDING,\n', 1)
+          text = text.replace('            "planner_mode": self.config.get(\n                CONF_ENTITY_PLANNER_MODE,\n                DEFAULT_ENTITY_PLANNER_MODE,\n            ),\n', '            "planner_mode": self.config.get(\n                CONF_ENTITY_PLANNER_MODE,\n                DEFAULT_ENTITY_PLANNER_MODE,\n            ),\n            "pv_rounding": self.config.get(\n                CONF_ENTITY_PV_ROUNDING,\n                DEFAULT_ENTITY_PV_ROUNDING,\n            ),\n', 1)
+          text = text.replace('        # ------------------------------------------------------------------\n        # Fasewisselingen\n', '        # ------------------------------------------------------------------\n        # Planner mode\n        # ------------------------------------------------------------------\n\n        planner_mode = self.hass.get_state(\n            self.entities["planner_mode"]\n        )\n\n        # ------------------------------------------------------------------\n        # PV afronding\n        # ------------------------------------------------------------------\n\n        pv_rounding = self.hass.get_state(\n            self.entities["pv_rounding"]\n        )\n\n        # ------------------------------------------------------------------\n        # Fasewisselingen\n', 1)
+          text = text.replace('                max_phase_switches=max_phase_switches,\n            )', '                max_phase_switches=max_phase_switches,\n                planner_mode=planner_mode,\n                pv_rounding=pv_rounding,\n            )', 1)
+          text = text.replace('        self.logger.debug(\n            f"Min PV: {min_pv_kwh:.2f} kWh"\n        )\n', '        self.logger.debug(\n            f"Min PV: {min_pv_kwh:.2f} kWh"\n        )\n\n        self.logger.debug(\n            f"Planner mode: {planner_mode}"\n        )\n\n        self.logger.debug(\n            f"PV afronding: {pv_rounding}"\n        )\n', 1)
+          controller_path.write_text(text, encoding='utf-8')
+          PY
+
+      - name: Add solar tests
+        run: |
+          cat > tests/test_solar_planner.py <<'PY'
+          from datetime import datetime, timedelta, timezone
+          from custom_components.ev_planner.const import PLANNER_MODE_NORMAL, PLANNER_MODE_SOLAR_ONLY, PV_ROUNDING_DOWN, PV_ROUNDING_UP
+          from custom_components.ev_planner.core.logger import Logger
+          from custom_components.ev_planner.core.models import Hour, PriceData, SolcastData
+          from custom_components.ev_planner.core.planner import EVPlanner, PlannerSettings
+
+          def make_planner(pv_kwh, mode, rounding, needed, price=0.40, max_price=0.0, min_pv=0.0):
+              start = datetime.now(timezone.utc) + timedelta(minutes=2)
+              start = start.replace(second=0, microsecond=0)
+              end = start + timedelta(hours=1)
+              hour = Hour(start=start, end=end, price=price)
+              hour.pv_estimate = pv_kwh
+              hour.pv_estimate10 = pv_kwh
+              hour.pv_estimate90 = pv_kwh
+              settings = PlannerSettings(energy_needed_kwh=needed, departure_time=end, max_price=max_price, min_pv_kwh=min_pv, solar_is_free=True, max_charge_power_kw=11.04, max_phase_switches=8, planner_mode=mode, pv_rounding=rounding)
+              return EVPlanner(PriceData(hours=[hour]), SolcastData(hours=[hour]), settings, Logger())
+
+          def test_solar_down_2100w_1ph_is_9a():
+              plan = make_planner(2.1, PLANNER_MODE_SOLAR_ONLY, PV_ROUNDING_DOWN, 2.07).create_plan()
+              decision = plan.decisions[0]
+              assert decision.charge_current_a == 9
+              assert decision.phases == 1
+              assert abs(decision.charge_power_kw - 2.07) < 0.000001
+              assert decision.paid_energy_kwh == 0.0
+
+          def test_solar_up_2100w_1ph_is_10a_with_grid_supplement():
+              plan = make_planner(2.1, PLANNER_MODE_SOLAR_ONLY, PV_ROUNDING_UP, 2.3).create_plan()
+              decision = plan.decisions[0]
+              assert decision.charge_current_a == 10
+              assert decision.phases == 1
+              assert abs(decision.charge_power_kw - 2.3) < 0.000001
+              assert abs(decision.free_energy_kwh - 2.1) < 0.000001
+              assert abs(decision.paid_energy_kwh - 0.2) < 0.000001
+
+          def test_solar_rounding_grid_is_not_blocked_by_max_price():
+              plan = make_planner(2.1, PLANNER_MODE_SOLAR_ONLY, PV_ROUNDING_UP, 2.3, price=0.40, max_price=0.0).create_plan()
+              assert plan.complete
+              assert abs(plan.paid_energy_kwh - 0.2) < 0.000001
+
+          def test_min_pv_filters_solar_only():
+              plan = make_planner(0.5, PLANNER_MODE_SOLAR_ONLY, PV_ROUNDING_DOWN, 1.38, min_pv=1.0).create_plan()
+              assert not plan.decisions
+              assert plan.paid_energy_kwh == 0.0
+
+          def test_min_pv_is_ignored_in_normal_mode():
+              plan = make_planner(0.5, PLANNER_MODE_NORMAL, PV_ROUNDING_DOWN, 1.38, price=0.0, max_price=0.0, min_pv=1.0).create_plan()
+              assert plan.complete
+              assert plan.free_energy_kwh > 0.0
+
+          def test_normal_max_price_zero_blocks_grid_energy():
+              plan = make_planner(0.0, PLANNER_MODE_NORMAL, PV_ROUNDING_DOWN, 1.38, price=0.10, max_price=0.0).create_plan()
+              assert plan.paid_energy_kwh == 0.0
+              assert not plan.complete
+          PY
+
+      - name: Test implementation
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements_test.txt
+          python -m pytest -q
+          python -m ruff check .
+
+      - name: Commit implementation
+        run: |
+          rm -f .github/workflows/apply-solar.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add custom_components/ev_planner/core/planner.py custom_components/ev_planner/core/solar.py custom_components/ev_planner/core/ev_planner.py tests/test_solar_planner.py .github/workflows/apply-solar.yml
+          git commit -m "feat: implement solar charging modes"
+          git push
