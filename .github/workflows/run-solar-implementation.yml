@@ -1,0 +1,51 @@
+name: Run solar implementation
+
+on:
+  push:
+    branches:
+      - feature/solar-charging
+
+permissions:
+  contents: write
+
+jobs:
+  implement:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: feature/solar-charging
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Execute implementation script
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          workflow = Path(".github/workflows/implement-solar.yml").read_text()
+          start = workflow.index("          python - <<'PY'\n") + len("          python - <<'PY'\n")
+          end = workflow.index("          PY\n", start)
+          script = workflow[start:end]
+          exec(compile(script, "implement-solar.yml", "exec"), {})
+          PY
+
+      - name: Run tests after implementation
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements_test.txt
+          python -m pytest -q
+          python -m ruff check .
+
+      - name: Remove temporary implementation workflows
+        run: |
+          rm -f .github/workflows/implement-solar.yml
+          rm -f .github/workflows/run-solar-implementation.yml
+          rm -f .github/workflows/trigger-solar.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add custom_components/ev_planner/core/planner.py custom_components/ev_planner/core/ev_planner.py tests/test_solar_planner.py .github/workflows/implement-solar.yml .github/workflows/run-solar-implementation.yml .github/workflows/trigger-solar.yml
+          git diff --cached --quiet && exit 0
+          git commit -m "feat: add solar-only charging modes"
+          git push origin feature/solar-charging
