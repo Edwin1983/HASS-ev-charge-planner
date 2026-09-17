@@ -1,0 +1,218 @@
+name: Apply planner mode update
+
+on:
+  push:
+    paths:
+      - ".github/workflows/apply-planner-modes.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Patch planner and controller
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          def replace_once(text, old, new, label):
+              if old not in text:
+                  raise SystemExit(f"Patch anchor not found: {label}")
+              return text.replace(old, new, 1)
+
+          planner_path = Path("custom_components/ev_planner/core/planner.py")
+          planner = planner_path.read_text()
+
+          planner = replace_once(
+              planner,
+              "CURRENT_TIEBREAK_EPSILON = 0.000000001\n",
+              '''CURRENT_TIEBREAK_EPSILON = 0.000000001\n\nPLANNER_MODE_NORMAL = "Normaal laden"\nPLANNER_MODE_SOLAR_ONLY = "Alleen zonneladen"\nPV_ROUNDING_DOWN = "Naar beneden — geen netenergie"\nPV_ROUNDING_UP = "Naar boven — kleine netaanvulling toegestaan"\n''',
+              "planner constants",
+          )
+
+          planner = replace_once(
+              planner,
+              "        max_phase_switches: int = 2,\n    ) -> None:\n",
+              """        max_phase_switches: int = 2,\n        planner_mode: str = PLANNER_MODE_NORMAL,\n        pv_rounding: str = PV_ROUNDING_DOWN,\n    ) -> None:\n""",
+              "PlannerSettings signature",
+          )
+
+          planner = replace_once(
+              planner,
+              """        self.max_phase_switches = int(\n            max_phase_switches\n        )\n\n        self._validate()\n""",
+              """        self.max_phase_switches = int(\n            max_phase_switches\n        )\n\n        self.planner_mode = str(planner_mode)\n\n        self.pv_rounding = str(pv_rounding)\n\n        self._validate()\n""",
+              "PlannerSettings fields",
+          )
+
+          planner = replace_once(
+              planner,
+              """        if self.max_phase_switches < 0:\n\n            raise ValueError(\n                \"max_phase_switches mag niet negatief zijn.\"\n            )\n\n\n##############################################################################\n# ChargingDecision\n""",
+              """        if self.max_phase_switches < 0:\n\n            raise ValueError(\n                \"max_phase_switches mag niet negatief zijn.\"\n            )\n\n        if self.planner_mode not in (\n            PLANNER_MODE_NORMAL,\n            PLANNER_MODE_SOLAR_ONLY,\n        ):\n            raise ValueError(\n                f\"Ongeldige planner_mode: {self.planner_mode}\"\n            )\n\n        if self.pv_rounding not in (\n            PV_ROUNDING_DOWN,\n            PV_ROUNDING_UP,\n        ):\n            raise ValueError(\n                f\"Ongeldige pv_rounding: {self.pv_rounding}\"\n            )\n\n\n##############################################################################\n# ChargingDecision\n""",
+              "PlannerSettings validation",
+          )
+
+          planner = replace_once(
+              planner,
+              """            hour.pv_estimate = float(\n                solar_hour.pv_estimate\n            )\n\n            hour.pv_estimate10 = float(\n""",
+              """            hour.pv_estimate = float(\n                solar_hour.pv_estimate\n            )\n\n            hour.pv_source_duration = (\n                solar_hour.end - solar_hour.start\n            ).total_seconds() / 3600.0\n\n            hour.pv_estimate10 = float(\n""",
+              "PV source duration",
+          )
+
+          planner = replace_once(
+              planner,
+              """            partial_hour.pv_estimate = float(\n                source_hour.pv_estimate\n            )\n\n            partial_hour.pv_estimate10 = float(\n""",
+              """            partial_hour.pv_estimate = float(\n                source_hour.pv_estimate\n            )\n\n            if hasattr(source_hour, \"pv_source_duration\"):\n                partial_hour.pv_source_duration = float(\n                    source_hour.pv_source_duration\n                )\n            else:\n                partial_hour.pv_source_duration = (\n                    source_hour.end - source_hour.start\n                ).total_seconds() / 3600.0\n\n            partial_hour.pv_estimate10 = float(\n""",
+              "partial PV source duration",
+          )
+
+          planner = replace_once(
+              planner,
+              """            if pv < float(\n                self.settings.min_pv_kwh\n            ):\n\n                pv = 0.0\n""",
+              """            if (\n                self.settings.planner_mode == PLANNER_MODE_SOLAR_ONLY\n                and pv < float(self.settings.min_pv_kwh)\n            ):\n\n                pv = 0.0\n""",
+              "min PV mode in available energy",
+          )
+
+          old_pv_rate = '''    def _pv_rate_kw(\n        self,\n        hour: Hour,\n    ) -> float:\n        \"\"\"\n        Zonne-opwek van dit uur, als constant vermogen (kW) over de\n        volledige beschikbare duur van dit uur -- de basis voor de\n        \"gelijkmatig uitgesmeerd\"-aanname.\n        \"\"\"\n\n        duration = self._hour_duration(\n            hour\n        )\n\n        if duration <= 0:\n\n            return 0.0\n\n        pv = float(\n            hour.pv_estimate\n        )\n\n        if pv < 0:\n\n            pv = 0.0\n\n        if pv < float(\n            self.settings.min_pv_kwh\n        ):\n\n            pv = 0.0\n\n        return float(\n            pv / duration\n        )\n\n'''
+          new_pv_rate = '''    def _pv_rate_kw(\n        self,\n        hour: Hour,\n    ) -> float:\n        \"\"\"\n        PV-vermogen als gemiddeld kW over het oorspronkelijke\n        Solcast-uur. Een eventueel afgekapt eerste of laatste uur\n        gebruikt dus niet de verkorte planningsduur als noemer.\n        \"\"\"\n\n        duration = self._hour_duration(hour)\n\n        if duration <= 0:\n            return 0.0\n\n        pv = float(hour.pv_estimate)\n\n        if pv < 0:\n            pv = 0.0\n\n        if (\n            self.settings.planner_mode == PLANNER_MODE_SOLAR_ONLY\n            and pv < float(self.settings.min_pv_kwh)\n        ):\n            pv = 0.0\n\n        source_duration = getattr(\n            hour,\n            \"pv_source_duration\",\n            duration,\n        )\n\n        if source_duration <= 0:\n            return 0.0\n\n        return float(pv / source_duration)\n\n    def _solar_only_current_for_pv(\n        self,\n        pv_rate_kw: float,\n        phases: int,\n    ):\n        \"\"\"Bepaal de enige toegestane stroom in solar-only modus.\"\"\"\n\n        if pv_rate_kw <= 0:\n            return None\n\n        power_per_amp = (\n            VOLTAGE_V * float(phases) / 1000.0\n        )\n\n        if power_per_amp <= 0:\n            return None\n\n        current_float = pv_rate_kw / power_per_amp\n\n        if current_float < MIN_CHARGE_CURRENT_A:\n            return None\n\n        if self.settings.pv_rounding == PV_ROUNDING_UP:\n            current_a = int(math.ceil(current_float - 1e-9))\n        else:\n            current_a = int(math.floor(current_float + 1e-9))\n\n        if current_a < MIN_CHARGE_CURRENT_A:\n            return None\n\n        if current_a > MAX_CHARGE_CURRENT_A:\n            current_a = MAX_CHARGE_CURRENT_A\n\n        return current_a\n\n'''
+          planner = replace_once(planner, old_pv_rate, new_pv_rate, "PV rate and solar current")
+
+          planner = replace_once(
+              planner,
+              """        max_price = float(\n            self.settings.max_price\n        )\n\n        ######################################################################\n        # Per uur, per fase: beschikbare duur, zonvermogen, geldige\n""",
+              """        max_price = float(\n            self.settings.max_price\n        )\n\n        solar_only = (\n            self.settings.planner_mode == PLANNER_MODE_SOLAR_ONLY\n        )\n\n        ######################################################################\n        # Per uur, per fase: beschikbare duur, zonvermogen, geldige\n""",
+              "optimizer mode",
+          )
+
+          planner = replace_once(
+              planner,
+              """                    for current_a in valid_currents_by_phase[\n                        phase\n                    ]:\n\n                        power = self._actual_power_for_current(\n""",
+              """                    candidate_currents = valid_currents_by_phase[\n                        phase\n                    ]\n\n                    if solar_only:\n                        solar_current = self._solar_only_current_for_pv(\n                            pv_rates[index],\n                            phase,\n                        )\n                        if solar_current is None:\n                            candidate_currents = []\n                        else:\n                            candidate_currents = [solar_current]\n\n                    for current_a in candidate_currents:\n\n                        power = self._actual_power_for_current(\n""",
+              "solar full-hour candidates",
+          )
+
+          planner = replace_once(
+              planner,
+              """                        if (\n                            prices[index] > max_price\n                            and paid > 0.000001\n                        ):\n""",
+              """                        if (\n                            not solar_only\n                            and prices[index] > max_price\n                            and paid > 0.000001\n                        ):\n""",
+              "solar max price full hour",
+          )
+
+          planner = replace_once(
+              planner,
+              """                            new_cost = (\n                                cost\n                                + paid\n                                * prices[index]\n                                - CURRENT_TIEBREAK_EPSILON\n                                * current_a\n                            )\n""",
+              """                            if solar_only:\n                                new_cost = (\n                                    cost\n                                    + paid\n                                    - CURRENT_TIEBREAK_EPSILON\n                                    * current_a\n                                )\n                            else:\n                                new_cost = (\n                                    cost\n                                    + paid\n                                    * prices[index]\n                                    - CURRENT_TIEBREAK_EPSILON\n                                    * current_a\n                                )\n""",
+              "solar objective full hour",
+          )
+
+          planner = replace_once(
+              planner,
+              """                        price_ok_currents = (\n                            valid_currents_by_phase[\n                                phase\n                            ]\n                        )\n\n                        best_current = None\n""",
+              """                        price_ok_currents = (\n                            valid_currents_by_phase[\n                                phase\n                            ]\n                        )\n\n                        if solar_only:\n                            solar_current = self._solar_only_current_for_pv(\n                                pv_rate,\n                                phase,\n                            )\n                            if solar_current is None:\n                                price_ok_currents = []\n                            else:\n                                price_ok_currents = [solar_current]\n\n                        best_current = None\n""",
+              "solar finish candidates",
+          )
+
+          planner = replace_once(
+              planner,
+              """                            if (\n                                prices[index]\n                                > max_price\n                                and power\n                                > pv_rate + 0.000001\n                            ):\n""",
+              """                            if (\n                                not solar_only\n                                and prices[index]\n                                > max_price\n                                and power\n                                > pv_rate + 0.000001\n                            ):\n""",
+              "solar max price finish",
+          )
+
+          planner = replace_once(
+              planner,
+              """                        new_cost = (\n                            cost\n                            + finish_paid\n                            * prices[index]\n                        )\n""",
+              """                        if solar_only:\n                            new_cost = (\n                                cost\n                                + finish_paid\n                            )\n                        else:\n                            new_cost = (\n                                cost\n                                + finish_paid\n                                * prices[index]\n                            )\n""",
+              "solar objective finish",
+          )
+
+          planner = replace_once(
+              planner,
+              """            if (\n                float(hour.price) > max_price + TOLERANCE\n                and float(decision.paid_energy_kwh) > TOLERANCE\n            ):\n""",
+              """            if (\n                self.settings.planner_mode != PLANNER_MODE_SOLAR_ONLY\n                and float(hour.price) > max_price + TOLERANCE\n                and float(decision.paid_energy_kwh) > TOLERANCE\n            ):\n""",
+              "solar final price validation",
+          )
+
+          planner_path.write_text(planner)
+
+          controller_path = Path("custom_components/ev_planner/core/ev_planner.py")
+          controller = controller_path.read_text()
+
+          controller = replace_once(
+              controller,
+              """    CONF_ENTITY_PLANNER_MODE,\n    CONF_ENTITY_PRICES,\n""",
+              """    CONF_ENTITY_PLANNER_MODE,\n    CONF_ENTITY_PV_ROUNDING,\n    CONF_ENTITY_PRICES,\n""",
+              "controller imports",
+          )
+          controller = replace_once(
+              controller,
+              """    DEFAULT_ENTITY_PLANNER_MODE,\n    DEFAULT_ENTITY_PRICES,\n""",
+              """    DEFAULT_ENTITY_PLANNER_MODE,\n    DEFAULT_ENTITY_PV_ROUNDING,\n    DEFAULT_ENTITY_PRICES,\n""",
+              "controller default imports",
+          )
+          controller = replace_once(
+              controller,
+              """            \"planner_mode\": self.config.get(\n                CONF_ENTITY_PLANNER_MODE,\n                DEFAULT_ENTITY_PLANNER_MODE,\n            ),\n            \"solar_enabled\": self.config.get(\n""",
+              """            \"planner_mode\": self.config.get(\n                CONF_ENTITY_PLANNER_MODE,\n                DEFAULT_ENTITY_PLANNER_MODE,\n            ),\n            \"pv_rounding\": self.config.get(\n                CONF_ENTITY_PV_ROUNDING,\n                DEFAULT_ENTITY_PV_ROUNDING,\n            ),\n            \"solar_enabled\": self.config.get(\n""",
+              "controller entities",
+          )
+
+          controller = replace_once(
+              controller,
+              """        # ------------------------------------------------------------------\n        # Fasewisselingen\n        # ------------------------------------------------------------------\n""",
+              """        # ------------------------------------------------------------------\n        # Planner mode\n        # ------------------------------------------------------------------\n\n        planner_mode = self.hass.get_state(\n            self.entities[\"planner_mode\"]\n        )\n\n        if planner_mode not in (\n            \"Normaal laden\",\n            \"Alleen zonneladen\",\n        ):\n            self.logger.warning(\n                f\"Ongeldige planner mode: {planner_mode}\"\n            )\n            return None\n\n        # ------------------------------------------------------------------\n        # PV-laadstroom afronding\n        # ------------------------------------------------------------------\n\n        pv_rounding = self.hass.get_state(\n            self.entities[\"pv_rounding\"]\n        )\n\n        if pv_rounding not in (\n            \"Naar beneden — geen netenergie\",\n            \"Naar boven — kleine netaanvulling toegestaan\",\n        ):\n            self.logger.warning(\n                f\"Ongeldige PV-afronding: {pv_rounding}\"\n            )\n            return None\n\n        # ------------------------------------------------------------------\n        # Fasewisselingen\n        # ------------------------------------------------------------------\n""",
+              "controller mode inputs",
+          )
+
+          controller = replace_once(
+              controller,
+              """                min_pv_kwh=min_pv_kwh,\n                solar_is_free=True,\n                max_charge_power_kw=self.max_charge_power_kw,\n""",
+              """                min_pv_kwh=min_pv_kwh,\n                solar_is_free=True,\n                max_charge_power_kw=self.max_charge_power_kw,\n                planner_mode=planner_mode,\n                pv_rounding=pv_rounding,\n""",
+              "controller planner settings",
+          )
+
+          controller_path.write_text(controller)
+
+          test_path = Path("tests/test_config_flow.py")
+          test = test_path.read_text()
+          test = replace_once(
+              test,
+              """    CONF_ENTITY_PLANNER_MODE,\n    CONF_ENTITY_PRICES,\n""",
+              """    CONF_ENTITY_PLANNER_MODE,\n    CONF_ENTITY_PV_ROUNDING,\n    CONF_ENTITY_PRICES,\n""",
+              "config test imports",
+          )
+          test = replace_once(
+              test,
+              """        CONF_ENTITY_PLANNER_MODE: \"input_select.ev_planner_mode\",\n        CONF_ENTITY_PRICES: \"sensor.zonneplan_current_electricity_tariff\",\n""",
+              """        CONF_ENTITY_PLANNER_MODE: \"input_select.ev_planner_mode\",\n        CONF_ENTITY_PV_ROUNDING: \"input_select.ev_pv_afronding\",\n        CONF_ENTITY_PRICES: \"sensor.zonneplan_current_electricity_tariff\",\n""",
+              "config test data",
+          )
+          test_path.write_text(test)
+
+          core_path = Path("tests/test_core.py")
+          core = core_path.read_text()
+          core += '''\n\ndef make_planner_with_pv(pv, mode, rounding):\n    tz = timezone.utc\n    now = datetime.now(tz)\n    start = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)\n    price_hour = make_hour(start, price=0.50, index=0)\n    solar_hour = make_hour(start, pv=pv, index=0)\n    return EVPlanner(\n        PriceData(hours=[price_hour]),\n        SolcastData(hours=[solar_hour]),\n        PlannerSettings(\n            energy_needed_kwh=1.0,\n            departure_time=start + timedelta(hours=1),\n            max_price=0.0,\n            max_charge_power_kw=11.04,\n            max_phase_switches=8,\n            planner_mode=mode,\n            pv_rounding=rounding,\n        ),\n        DummyLogger(),\n    )\n\n\ndef test_normal_mode_ignores_min_pv_threshold():\n    tz = timezone.utc\n    now = datetime.now(tz)\n    start = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)\n    price_hour = make_hour(start, price=0.50, index=0)\n    solar_hour = make_hour(start, pv=0.50, index=0)\n    plan = EVPlanner(\n        PriceData(hours=[price_hour]),\n        SolcastData(hours=[solar_hour]),\n        PlannerSettings(\n            energy_needed_kwh=0.50,\n            departure_time=start + timedelta(hours=1),\n            max_price=0.0,\n            min_pv_kwh=1.0,\n            max_charge_power_kw=11.04,\n            planner_mode=\"Normaal laden\",\n        ),\n        DummyLogger(),\n    ).create_plan()\n    assert plan.complete\n    assert plan.free_energy_kwh > 0.49\n    assert plan.paid_energy_kwh == pytest.approx(0.0, abs=1e-6)\n\n\ndef test_solar_only_round_down_uses_integer_current_without_grid_energy():\n    planner = make_planner_with_pv(2.10, \"Alleen zonneladen\", \"Naar beneden — geen netenergie\")\n    plan = planner.create_plan()\n    decision = plan.decisions[0]\n    assert decision.charge_current_a == 9\n    assert decision.paid_energy_kwh == pytest.approx(0.0, abs=1e-6)\n\n\ndef test_solar_only_round_up_allows_small_grid_supplement():\n    planner = make_planner_with_pv(2.10, \"Alleen zonneladen\", \"Naar boven — kleine netaanvulling toegestaan\")\n    plan = planner.create_plan()\n    decision = plan.decisions[0]\n    assert decision.charge_current_a == 10\n    assert decision.paid_energy_kwh > 0.0\n    assert decision.price > plan.max_price\n\n\ndef test_solar_only_ignores_max_price_for_rounding_supplement():\n    planner = make_planner_with_pv(2.10, \"Alleen zonneladen\", \"Naar boven — kleine netaanvulling toegestaan\")\n    plan = planner.create_plan()\n    assert plan.complete\n    assert plan.paid_energy_kwh > 0.0\n\n\ndef test_solar_only_below_minimum_current_does_not_charge():\n    planner = make_planner_with_pv(1.00, \"Alleen zonneladen\", \"Naar boven — kleine netaanvulling toegestaan\")\n    plan = planner.create_plan()\n    assert not plan.complete\n    assert plan.energy_planned_kwh == pytest.approx(0.0, abs=1e-6)\n'''
+          core_path.write_text(core)
+          PY
+
+      - name: Run tests
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements_test.txt
+          pytest -q
+          ruff check custom_components tests
+
+      - name: Commit changes and remove temporary workflow
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/apply-planner-modes.yml
+          git add custom_components/ev_planner/core/planner.py custom_components/ev_planner/core/ev_planner.py tests/test_core.py tests/test_config_flow.py
+          git commit -m "feat: add normal and solar-only planner modes"
+          git push
