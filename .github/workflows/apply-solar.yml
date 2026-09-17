@@ -18,6 +18,8 @@ jobs:
           python-version: "3.13"
       - name: Apply implementation
         run: python scripts/apply_solar.py
+      - name: Fix solar validation
+        run: python scripts/fix_solar_validation.py
       - name: Add and fix solar tests
         run: python scripts/fix_solar_tests.py
       - name: Test implementation
@@ -31,8 +33,9 @@ jobs:
           rm -f .github/workflows/apply-solar.yml
           rm -f scripts/apply_solar.py
           rm -f scripts/fix_solar_tests.py
+          rm -f scripts/fix_solar_validation.py
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add custom_components/ev_planner/core/planner.py custom_components/ev_planner/core/solar.py custom_components/ev_planner/core/ev_planner.py tests/test_integration.py tests/test_solar_planner.py .github/workflows/apply-solar.yml scripts/apply_solar.py scripts/fix_solar_tests.py
+          git add custom_components/ev_planner/core/planner.py custom_components/ev_planner/core/solar.py custom_components/ev_planner/core/ev_planner.py tests/test_integration.py tests/test_solar_planner.py .github/workflows/apply-solar.yml scripts/apply_solar.py scripts/fix_solar_tests.py scripts/fix_solar_validation.py
           git commit -m "feat: implement solar charging modes"
           git push
