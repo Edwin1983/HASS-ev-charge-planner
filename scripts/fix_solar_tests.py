@@ -77,9 +77,11 @@ def test_min_pv_filters_solar_only():
 
 
 def test_min_pv_is_ignored_in_normal_mode():
-    plan = make_planner(0.5, PLANNER_MODE_NORMAL, PV_ROUNDING_DOWN, 1.38, price=0.0, max_price=0.0, min_pv=1.0).create_plan()
-    assert plan.complete
-    assert plan.free_energy_kwh > 0.0
+    with_min = make_planner(0.5, PLANNER_MODE_NORMAL, PV_ROUNDING_DOWN, 1.38, price=0.0, max_price=0.0, min_pv=1.0).create_plan()
+    without_min = make_planner(0.5, PLANNER_MODE_NORMAL, PV_ROUNDING_DOWN, 1.38, price=0.0, max_price=0.0, min_pv=0.0).create_plan()
+    assert with_min.complete == without_min.complete
+    assert abs(with_min.energy_planned_kwh - without_min.energy_planned_kwh) < 0.000001
+    assert abs(with_min.paid_energy_kwh - without_min.paid_energy_kwh) < 0.000001
 
 
 def test_normal_max_price_zero_blocks_grid_energy():
