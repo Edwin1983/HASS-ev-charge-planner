@@ -4,21 +4,9 @@ root = Path(__file__).resolve().parents[1]
 
 path = root / "tests/test_integration.py"
 text = path.read_text(encoding="utf-8")
-text = text.replace(
-    "    CONF_ENTITY_PLANNER_MODE,\n",
-    "    CONF_ENTITY_PLANNER_MODE,\n    CONF_ENTITY_PV_ROUNDING,\n",
-    1,
-)
-text = text.replace(
-    '        CONF_ENTITY_PLANNER_MODE: "input_select.ev_planner_mode",\n',
-    '        CONF_ENTITY_PLANNER_MODE: "input_select.ev_planner_mode",\n        CONF_ENTITY_PV_ROUNDING: "input_select.ev_pv_afronding",\n',
-    1,
-)
-text = text.replace(
-    '    hass.states.async_set("input_select.ev_planner_mode", "Auto")\n',
-    '    hass.states.async_set("input_select.ev_planner_mode", "Normaal laden")\n    hass.states.async_set("input_select.ev_pv_afronding", "Naar beneden — geen netenergie")\n',
-    1,
-)
+text = text.replace("    CONF_ENTITY_PLANNER_MODE,\n", "    CONF_ENTITY_PLANNER_MODE,\n    CONF_ENTITY_PV_ROUNDING,\n", 1)
+text = text.replace('        CONF_ENTITY_PLANNER_MODE: "input_select.ev_planner_mode",\n', '        CONF_ENTITY_PLANNER_MODE: "input_select.ev_planner_mode",\n        CONF_ENTITY_PV_ROUNDING: "input_select.ev_pv_afronding",\n', 1)
+text = text.replace('    hass.states.async_set("input_select.ev_planner_mode", "Auto")\n', '    hass.states.async_set("input_select.ev_planner_mode", "Normaal laden")\n    hass.states.async_set("input_select.ev_pv_afronding", "Naar beneden — geen netenergie")\n', 1)
 path.write_text(text, encoding="utf-8")
 
 solar_tests = '''from datetime import datetime, timedelta, timezone
@@ -42,6 +30,7 @@ def make_planner(pv_kwh, mode, rounding, needed, price=0.40, max_price=0.0, min_
     hour.pv_estimate = pv_kwh
     hour.pv_estimate10 = pv_kwh
     hour.pv_estimate90 = pv_kwh
+    hour.usable_pv = pv_kwh
     settings = PlannerSettings(
         energy_needed_kwh=needed,
         departure_time=end,
