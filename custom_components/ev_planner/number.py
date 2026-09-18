@@ -190,8 +190,27 @@ class EVPlannerMaxChargePower(EVPlannerNumberBase):
         self._attr_unique_id = f"{entry.entry_id}_{NATIVE_MAX_CHARGE_POWER}"
 
     async def async_added_to_hass(self) -> None:
+        """Restore the value, with the old config option as fallback."""
         await super().async_added_to_hass()
-        await self._restore_or_legacy(
-            DEFAULT_MAX_CHARGE_POWER_KW,
+
+        last_state = await self.async_get_last_state()
+
+        if last_state is not None:
+            try:
+                self._attr_native_value = float(last_state.state)
+                return
+            except (TypeError, ValueError):
+                pass
+
+        legacy_value = self._entry.options.get(
             CONF_MAX_CHARGE_POWER_KW,
+            self._entry.data.get(
+                CONF_MAX_CHARGE_POWER_KW,
+                DEFAULT_MAX_CHARGE_POWER_KW,
+            ),
         )
+
+        try:
+            self._attr_native_value = float(legacy_value)
+        except (TypeError, ValueError):
+            self._attr_native_value = DEFAULT_MAX_CHARGE_POWER_KW
