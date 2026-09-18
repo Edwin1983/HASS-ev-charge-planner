@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+import datetime as dt
 
 import pytest
 
@@ -85,10 +85,10 @@ async def test_full_integration_setup_and_unload(hass):
     assert states.get("sensor.ev_planner_gewenste_fase") is not None
     assert states.get("binary_sensor.ev_planner_charging_allowed") is not None
     assert states.get("switch.ev_planner_smart_charging") is not None
-    assert states.get("select.ev_planner_departure_day") is not None
-    assert states.get("select.ev_planner_planner_mode") is not None
-    assert states.get("select.ev_planner_pv_charging_current_rounding") is not None
-    assert states.get("datetime.ev_planner_departure_time") is not None
+    assert states.get("select.ev_charge_planner_departure_day") is not None
+    assert states.get("select.ev_charge_planner_planner_mode") is not None
+    assert states.get("select.ev_charge_planner_pv_charging_current_rounding") is not None
+    assert states.get("datetime.ev_charge_planner_departure_time") is not None
     assert states.get("number.ev_planner_energy_needed") is not None
     assert states.get("number.ev_planner_max_price") is not None
     assert states.get("number.ev_planner_max_phase_switches") is not None
@@ -120,13 +120,13 @@ async def test_native_only_configuration(hass):
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
 
-    assert hass.states.get("datetime.ev_planner_departure_time") is not None
-    assert hass.states.get("select.ev_planner_departure_day") is not None
-    assert hass.states.get("number.ev_planner_energy_needed") is not None
-    assert hass.states.get("number.ev_planner_max_price") is not None
-    assert hass.states.get("number.ev_planner_max_phase_switches") is not None
-    assert hass.states.get("number.ev_planner_min_pv_kwh") is not None
-    assert hass.states.get("number.ev_planner_max_charge_power") is not None
+    assert hass.states.get("datetime.ev_charge_planner_departure_time") is not None
+    assert hass.states.get("select.ev_charge_planner_departure_day") is not None
+    assert hass.states.get("number.ev_charge_planner_energy_needed") is not None
+    assert hass.states.get("number.ev_charge_planner_maximum_grid_price") is not None
+    assert hass.states.get("number.ev_charge_planner_maximum_phase_switches") is not None
+    assert hass.states.get("number.ev_charge_planner_minimum_pv_for_solar_only") is not None
+    assert hass.states.get("number.ev_charge_planner_maximum_charging_power") is not None
 
     assert await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()
@@ -135,9 +135,9 @@ async def test_native_only_configuration(hass):
 @pytest.mark.usefixtures("enable_custom_integrations")
 async def test_full_planning_chain(hass):
     """Exercise config -> readers -> planner -> scheduler -> native output."""
-    now = datetime.now().astimezone()
+    now = dt.datetime.now().astimezone()
     base = now.replace(minute=0, second=0, microsecond=0)
-    departure = base + timedelta(hours=4)
+    departure = base + dt.timedelta(hours=4)
 
     hass.states.async_set(
         "input_datetime.ev_vertrektijd",
@@ -157,7 +157,7 @@ async def test_full_planning_chain(hass):
     solcast_today = []
     solcast_tomorrow = []
     for index in range(6):
-        start = base + timedelta(hours=index)
+        start = base + dt.timedelta(hours=index)
         forecast.append(
             {
                 "start_date": start.isoformat(),
