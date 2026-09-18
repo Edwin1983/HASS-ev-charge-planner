@@ -1480,15 +1480,15 @@ class EVPlanner:
 
                             if prices[index] > max_price:
                                 ####################################################
-                                # Boven de maximumprijs mag alleen
-                                # volledig met beschikbare PV worden
-                                # geladen. De PV wordt hier als
-                                # beschikbare energie van dit uur
-                                # beschouwd; het laadvenster mag
-                                # daarom korter zijn dan het uur.
+                                # Boven de maximumprijs mag dit volledige
+                                # uur alleen worden gebruikt wanneer de
+                                # volledige laadenergie door PV wordt
+                                # gedekt. Het uur blijft daarbij volledig
+                                # actief; alleen het eerste en laatste
+                                # actieve uur mogen onvolledig zijn.
                                 ####################################################
 
-                                if remaining > float(hour.usable_pv) + 0.000001:
+                                if free < amount - 0.000001:
                                     continue
 
                             if power * duration >= remaining - 0.000001:
@@ -1511,19 +1511,13 @@ class EVPlanner:
 
                         finish_amount = power * finish_duration
 
-                        if (
-                            prices[index] > max_price
-                            and remaining <= float(hour.usable_pv) + 0.000001
-                        ):
-                            finish_free = float(finish_amount)
-                        else:
-                            finish_free = float(
-                                min(
-                                    pv_rate,
-                                    power,
-                                )
-                                * finish_duration
+                        finish_free = float(
+                            min(
+                                pv_rate,
+                                power,
                             )
+                            * finish_duration
+                        )
 
                         finish_paid = finish_amount - finish_free
 
