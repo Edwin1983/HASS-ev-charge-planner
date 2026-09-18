@@ -71,7 +71,7 @@ class EVPlannerDepartureDateTime(DateTimeEntity, RestoreEntity):
                 legacy_state.state if legacy_state else None
             )
             if restored is not None:
-                self._attr_datetime = restored
+                self._attr_native_value = restored
 
     @staticmethod
     def _parse_state(value: str | None) -> datetime | None:
