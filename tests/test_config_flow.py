@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from homeassistant.config_entries import ConfigEntry, SOURCE_USER
+from homeassistant.config_entries import SOURCE_USER
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.ev_planner.const import (
     CONF_ENTITY_PRICES,
@@ -57,13 +58,11 @@ async def test_config_flow_creates_single_entry(hass):
 @pytest.mark.usefixtures("enable_custom_integrations")
 async def test_options_flow_updates_entry(hass):
     """Test updating the external data-source entities."""
-    entry = ConfigEntry(
-        version=1,
-        minor_version=0,
+    entry = MockConfigEntry(
         domain=DOMAIN,
         title="EV Charge Planner",
         data=config_data(),
-        source=SOURCE_USER,
+        unique_id="options-test",
     )
     hass.config_entries.async_add(entry)
 
