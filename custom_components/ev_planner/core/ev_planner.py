@@ -90,6 +90,8 @@ from ..const import (
     DOMAIN,
     PLANNER_MODE_NORMAL,
     PLANNER_MODE_SOLAR_ONLY,
+    PV_ROUNDING_DOWN,
+    PV_ROUNDING_UP,
     SIGNAL_SENSOR_UPDATE,
 )
 from .homeassistant import HomeAssistant
@@ -411,6 +413,40 @@ class EVPlannerController:
 
         return PLANNER_MODE_NORMAL
 
+    def _pv_rounding_entity_id(self) -> str | None:
+        """Return the native PV rounding select entity_id."""
+
+        registry = er.async_get(self._hass)
+
+        entity_id = registry.async_get_entity_id(
+            "select",
+            DOMAIN,
+            f"{self.entry_id}_pv_rounding",
+        )
+
+        if entity_id is not None:
+            return entity_id
+
+        return self.config.get(
+            CONF_ENTITY_PV_ROUNDING,
+            DEFAULT_ENTITY_PV_ROUNDING,
+        )
+
+    def _get_pv_rounding(self) -> str:
+        """Read the current PV rounding mode."""
+
+        entity_id = self._pv_rounding_entity_id()
+
+        if entity_id is None:
+            return PV_ROUNDING_DOWN
+
+        value = self.hass.get_state(entity_id)
+
+        if value in (PV_ROUNDING_DOWN, PV_ROUNDING_UP):
+            return value
+
+        return PV_ROUNDING_DOWN
+
     def _is_enabled(self) -> bool:
         """
         Controleert of de planner is ingeschakeld.
@@ -518,7 +554,7 @@ class EVPlannerController:
         # PV afronding
         # ------------------------------------------------------------------
 
-        pv_rounding = self.hass.get_state(self.entities["pv_rounding"])
+        pv_rounding = self._get_pv_rounding()
 
         # ------------------------------------------------------------------
         # Fasewisselingen
