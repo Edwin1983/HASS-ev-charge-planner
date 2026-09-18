@@ -13,7 +13,6 @@ from custom_components.ev_planner.const import (
     CONF_ENTITY_MAX_PHASE_SWITCHES,
     CONF_ENTITY_MAX_PRICE,
     CONF_ENTITY_MIN_PV_KWH,
-    CONF_ENTITY_PLANNER_MODE,
     CONF_ENTITY_PV_ROUNDING,
     CONF_ENTITY_PRICES,
     CONF_ENTITY_SOLCAST_TODAY,
@@ -31,7 +30,6 @@ def make_config():
         CONF_ENTITY_MAX_PRICE: "input_number.ev_max_prijs",
         CONF_ENTITY_MIN_PV_KWH: "input_number.ev_min_pv_kwh",
         CONF_ENTITY_MAX_PHASE_SWITCHES: "input_number.ev_max_fasewisselingen",
-        CONF_ENTITY_PLANNER_MODE: "input_select.ev_planner_mode",
         CONF_ENTITY_PV_ROUNDING: "input_select.ev_pv_afronding",
         CONF_ENTITY_PRICES: "sensor.zonneplan_current_electricity_tariff",
         CONF_ENTITY_SOLCAST_TODAY: "sensor.solcast_pv_forecast_forecast_today",
@@ -87,6 +85,7 @@ async def test_full_integration_setup_and_unload(hass):
     assert states.get("sensor.ev_planner_gewenste_fase") is not None
     assert states.get("binary_sensor.ev_planner_charging_allowed") is not None
     assert states.get("switch.ev_planner_smart_charging") is not None
+    assert states.get("select.ev_planner_planner_mode") is not None
 
     assert await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()
@@ -112,7 +111,6 @@ async def test_full_planning_chain(hass):
     hass.states.async_set("input_number.ev_max_prijs", "0.20")
     hass.states.async_set("input_number.ev_min_pv_kwh", "0.0")
     hass.states.async_set("input_number.ev_max_fasewisselingen", "8")
-    hass.states.async_set("input_select.ev_planner_mode", "Normaal laden")
     hass.states.async_set(
         "input_select.ev_pv_afronding", "Naar beneden — geen netenergie"
     )
