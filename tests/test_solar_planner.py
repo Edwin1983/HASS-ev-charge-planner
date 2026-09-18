@@ -144,8 +144,8 @@ def test_min_pv_is_ignored_in_normal_mode():
         0.5,
         PLANNER_MODE_NORMAL,
         PV_ROUNDING_DOWN,
-        1.38,
-        price=0.0,
+        0.5,
+        price=0.40,
         max_price=0.0,
         min_pv=1.0,
     ).create_plan()
@@ -153,13 +153,20 @@ def test_min_pv_is_ignored_in_normal_mode():
         0.5,
         PLANNER_MODE_NORMAL,
         PV_ROUNDING_DOWN,
-        1.38,
-        price=0.0,
+        0.5,
+        price=0.40,
         max_price=0.0,
         min_pv=0.0,
     ).create_plan()
-    assert with_min.complete == without_min.complete
-    assert abs(with_min.energy_planned_kwh - without_min.energy_planned_kwh) < 0.000001
+
+    assert with_min.complete
+    assert without_min.complete
+    assert abs(with_min.energy_planned_kwh - 0.5) < 0.000001
+    assert abs(without_min.energy_planned_kwh - 0.5) < 0.000001
+    assert abs(with_min.free_energy_kwh - 0.5) < 0.000001
+    assert abs(without_min.free_energy_kwh - 0.5) < 0.000001
+    assert with_min.paid_energy_kwh == 0.0
+    assert without_min.paid_energy_kwh == 0.0
 
 
 def test_normal_max_price_zero_blocks_grid_energy():
