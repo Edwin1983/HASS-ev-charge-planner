@@ -3,11 +3,11 @@
   "name": "EV Charge Planner",
   "codeowners": ["@Edwin1983"],
   "config_flow": true,
-  "documentation": "https://github.com/Edwin1983/HASS-ev-planner",
+  "documentation": "https://github.com/Edwin1983/HASS-ev-charge-planner",
   "integration_type": "service",
   "iot_class": "local_polling",
-  "issue_tracker": "https://github.com/Edwin1983/HASS-ev-planner/issues",
+  "issue_tracker": "https://github.com/Edwin1983/HASS-ev-charge-planner/issues",
   "requirements": [],
   "single_config_entry": true,
-  "version": "1.1.0-beta.1"
+  "version": "1.1.0-beta.2"
 }
