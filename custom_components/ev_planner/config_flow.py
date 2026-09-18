@@ -14,7 +14,6 @@ from .const import (
     CONF_ENTITY_MAX_PHASE_SWITCHES,
     CONF_ENTITY_MAX_PRICE,
     CONF_ENTITY_MIN_PV_KWH,
-    CONF_ENTITY_PLANNER_MODE,
     CONF_ENTITY_PV_ROUNDING,
     CONF_ENTITY_PRICES,
     CONF_ENTITY_SOLCAST_TODAY,
@@ -26,7 +25,6 @@ from .const import (
     DEFAULT_ENTITY_MAX_PHASE_SWITCHES,
     DEFAULT_ENTITY_MAX_PRICE,
     DEFAULT_ENTITY_MIN_PV_KWH,
-    DEFAULT_ENTITY_PLANNER_MODE,
     DEFAULT_ENTITY_PV_ROUNDING,
     DEFAULT_ENTITY_PRICES,
     DEFAULT_ENTITY_SOLCAST_TODAY,
@@ -43,7 +41,6 @@ _DEFAULTS = {
     CONF_ENTITY_MAX_PRICE: DEFAULT_ENTITY_MAX_PRICE,
     CONF_ENTITY_MIN_PV_KWH: DEFAULT_ENTITY_MIN_PV_KWH,
     CONF_ENTITY_MAX_PHASE_SWITCHES: DEFAULT_ENTITY_MAX_PHASE_SWITCHES,
-    CONF_ENTITY_PLANNER_MODE: DEFAULT_ENTITY_PLANNER_MODE,
     CONF_ENTITY_PV_ROUNDING: DEFAULT_ENTITY_PV_ROUNDING,
     CONF_ENTITY_PRICES: DEFAULT_ENTITY_PRICES,
     CONF_ENTITY_SOLCAST_TODAY: DEFAULT_ENTITY_SOLCAST_TODAY,
@@ -91,12 +88,6 @@ def _build_schema(defaults: dict) -> vol.Schema:
                 default=defaults[CONF_ENTITY_MAX_PHASE_SWITCHES],
             ): selector.EntitySelector(
                 selector.EntitySelectorConfig(domain="input_number")
-            ),
-            vol.Required(
-                CONF_ENTITY_PLANNER_MODE,
-                default=defaults[CONF_ENTITY_PLANNER_MODE],
-            ): selector.EntitySelector(
-                selector.EntitySelectorConfig(domain="input_select")
             ),
             vol.Required(
                 CONF_ENTITY_PV_ROUNDING,
