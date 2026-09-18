@@ -106,7 +106,8 @@ async def test_full_planning_chain(hass):
         "input_datetime.ev_vertrektijd",
         departure.strftime("%H:%M:%S"),
     )
-    hass.states.async_set("input_select.ev_vertrekdag", "Vandaag")
+    departure_day = "Vandaag" if departure.date() == base.date() else "Morgen"
+    hass.states.async_set("input_select.ev_vertrekdag", departure_day)
     hass.states.async_set("input_number.ev_kwh_nodig", "2.0")
     hass.states.async_set("input_number.ev_max_prijs", "0.20")
     hass.states.async_set("input_number.ev_min_pv_kwh", "0.0")
@@ -117,7 +118,8 @@ async def test_full_planning_chain(hass):
     )
 
     forecast = []
-    solcast = []
+    solcast_today = []
+    solcast_tomorrow = []
     for index in range(6):
         start = base + timedelta(hours=index)
         forecast.append(
@@ -126,14 +128,16 @@ async def test_full_planning_chain(hass):
                 "electricity_price": 1_000_000,
             }
         )
-        solcast.append(
-            {
-                "period_start": start.isoformat(),
-                "pv_estimate": 0.0,
-                "pv_estimate10": 0.0,
-                "pv_estimate90": 0.0,
-            }
-        )
+        item = {
+            "period_start": start.isoformat(),
+            "pv_estimate": 0.0,
+            "pv_estimate10": 0.0,
+            "pv_estimate90": 0.0,
+        }
+        if start.date() == base.date():
+            solcast_today.append(item)
+        else:
+            solcast_tomorrow.append(item)
 
     hass.states.async_set(
         "sensor.zonneplan_current_electricity_tariff",
@@ -143,12 +147,12 @@ async def test_full_planning_chain(hass):
     hass.states.async_set(
         "sensor.solcast_pv_forecast_forecast_today",
         "0",
-        {"detailedHourly": solcast},
+        {"detailedHourly": solcast_today},
     )
     hass.states.async_set(
         "sensor.solcast_pv_forecast_forecast_tomorrow",
         "0",
-        {"detailedHourly": []},
+        {"detailedHourly": solcast_tomorrow},
     )
 
     entry = MockConfigEntry(
