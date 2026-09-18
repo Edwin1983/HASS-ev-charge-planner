@@ -164,7 +164,7 @@ async def async_setup_entry(
 
         return await hass.async_add_executor_job(
             controller.get_dashboard_data,
-            datetime.now().astimezone(),
+            dt_datetime.now().astimezone(),
         )
 
     handlers = {
