@@ -10,6 +10,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import (
     CONF_ENTITY_PLANNER_MODE,
+    CONF_ENTITY_PV_ROUNDING,
     DOMAIN,
     PLANNER_MODE_NORMAL,
     PLANNER_MODE_SOLAR_ONLY,
