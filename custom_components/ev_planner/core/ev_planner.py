@@ -681,45 +681,35 @@ class EVPlannerController:
             return None
 
         # ------------------------------------------------------------------
-        # Volledige datetime proberen
+        # Vertrektijd combineren met de gekozen vertrekdag
+        #
+        # De native datetime is bewust een tijd-only instelling. De
+        # afzonderlijke vertrekdag bepaalt of die tijd vandaag of morgen
+        # geldt. Dit voorkomt dat een interne datum van de datetime entity
+        # de keuze "Morgen" overschrijft.
         # ------------------------------------------------------------------
 
-        departure_datetime = None
+        departure_clock = None
 
         try:
-            departure_datetime = datetime.fromisoformat(raw_departure)
+            departure_clock = datetime.fromisoformat(raw_departure).time()
         except (TypeError, ValueError):
-            pass
-
-        # ------------------------------------------------------------------
-        # Alleen tijd
-        # ------------------------------------------------------------------
-
-        if departure_datetime is None:
             try:
                 departure_clock = time.fromisoformat(raw_departure)
-
-                if departure_day == "Vandaag":
-                    departure_date = now.date()
-                else:
-                    departure_date = now.date() + timedelta(days=1)
-
-                departure_datetime = datetime.combine(
-                    departure_date,
-                    departure_clock,
-                    tzinfo=now.tzinfo,
-                )
-
             except (TypeError, ValueError):
                 self.logger.warning(f"Ongeldige vertrektijd: {raw_departure}")
                 return None
 
-        # ------------------------------------------------------------------
-        # Timezone toevoegen indien nodig
-        # ------------------------------------------------------------------
+        if departure_day == "Vandaag":
+            departure_date = now.date()
+        else:
+            departure_date = now.date() + timedelta(days=1)
 
-        if departure_datetime.tzinfo is None:
-            departure_datetime = departure_datetime.replace(tzinfo=now.tzinfo)
+        departure_datetime = datetime.combine(
+            departure_date,
+            departure_clock,
+            tzinfo=now.tzinfo,
+        )
 
         # ------------------------------------------------------------------
         # PlannerSettings
