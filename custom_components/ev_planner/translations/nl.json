@@ -5,17 +5,9 @@
         "title": "EV Charge Planner configureren",
         "description": "Kies de Home Assistant-entities die de planner als invoer gebruikt. EV Charge Planner bestuurt geen laadpaal.",
         "data": {
-          "entity_departure": "Vertrektijd",
-          "entity_departure_day": "Vertrekdag",
-          "entity_energy_needed": "Benodigde energie",
-          "entity_max_price": "Maximale netprijs",
-          "entity_min_pv_kwh": "Minimale PV voor zonneladen",
-          "entity_max_phase_switches": "Maximaal aantal fasewisselingen",
-          "entity_pv_rounding": "PV-laadstroom afronden",
           "entity_prices": "Elektriciteitsprijzen",
           "entity_solcast_today": "Solcast vandaag",
           "entity_solcast_tomorrow": "Solcast morgen",
-          "max_charge_power_kw": "Maximaal laadvermogen"
         }
       }
     },
@@ -27,7 +19,7 @@
     "step": {
       "init": {
         "title": "EV Charge Planner configureren",
-        "description": "Pas de invoer-entities en het maximale laadvermogen aan.",
+        "description": "Pas de externe prijs- en Solcast-entities aan. De plannerinstellingen zijn native entities.",
         "data": {
           "entity_departure": "Vertrektijd",
           "entity_departure_day": "Vertrekdag",
