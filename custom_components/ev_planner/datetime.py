@@ -36,7 +36,12 @@ class EVPlannerDepartureDateTime(DateTimeEntity, RestoreEntity):
         self._hass = hass
         self._entry = entry
         self._attr_unique_id = f"{entry.entry_id}_{NATIVE_DEPARTURE}"
-        self._attr_datetime = None
+        now = datetime.now().astimezone()
+        self._attr_datetime = datetime.combine(
+            now.date(),
+            time(23, 59),
+            tzinfo=now.tzinfo,
+        )
 
     @property
     def device_info(self) -> dict:
