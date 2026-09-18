@@ -34,7 +34,6 @@
           "entity_max_price": "Maximum grid price",
           "entity_min_pv_kwh": "Minimum usable PV",
           "entity_max_phase_switches": "Maximum phase switches",
-          "entity_planner_mode": "Planner mode",
           "entity_prices": "Electricity prices",
           "entity_solcast_today": "Solcast today",
           "entity_solcast_tomorrow": "Solcast tomorrow",
