@@ -6,6 +6,7 @@ PLATFORMS = [
     "switch",
     "sensor",
     "binary_sensor",
+    "select",
 ]
 
 SIGNAL_SENSOR_UPDATE = "ev_planner_sensor_update"
