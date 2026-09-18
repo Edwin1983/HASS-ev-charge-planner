@@ -21,16 +21,9 @@
         "title": "Configure EV Charge Planner",
         "description": "Change the external price and Solcast entities. Planner settings are native entities.",
         "data": {
-          "entity_departure": "Departure time",
-          "entity_departure_day": "Departure day",
-          "entity_energy_needed": "Energy needed",
-          "entity_max_price": "Maximum grid price",
-          "entity_min_pv_kwh": "Minimum usable PV",
-          "entity_max_phase_switches": "Maximum phase switches",
           "entity_prices": "Electricity prices",
           "entity_solcast_today": "Solcast today",
-          "entity_solcast_tomorrow": "Solcast tomorrow",
-          "max_charge_power_kw": "Maximum charging power"
+          "entity_solcast_tomorrow": "Solcast tomorrow"
         }
       }
     }
