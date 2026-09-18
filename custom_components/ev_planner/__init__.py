@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime as dt_datetime
 import logging
 
 from homeassistant.config_entries import ConfigEntry
@@ -46,7 +46,7 @@ async def _run(
 
     return await hass.async_add_executor_job(
         func,
-        datetime.now().astimezone(),
+        dt_datetime.now().astimezone(),
     )
 
 
