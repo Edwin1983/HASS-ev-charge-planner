@@ -7,7 +7,7 @@
         "data": {
           "entity_prices": "Electricity prices",
           "entity_solcast_today": "Solcast today",
-          "entity_solcast_tomorrow": "Solcast tomorrow",
+          "entity_solcast_tomorrow": "Solcast tomorrow"
         }
       }
     },
