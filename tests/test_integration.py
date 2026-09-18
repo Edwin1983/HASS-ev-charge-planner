@@ -103,6 +103,36 @@ async def test_full_integration_setup_and_unload(hass):
 
 
 @pytest.mark.usefixtures("enable_custom_integrations")
+async def test_native_only_configuration(hass):
+    """The integration can be set up without legacy input helpers."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="EV Planner",
+        data={
+            CONF_ENTITY_PRICES: "sensor.zonneplan_current_electricity_tariff",
+            CONF_ENTITY_SOLCAST_TODAY: "sensor.solcast_pv_forecast_forecast_today",
+            CONF_ENTITY_SOLCAST_TOMORROW: "sensor.solcast_pv_forecast_forecast_tomorrow",
+        },
+        unique_id="native-only",
+    )
+    entry.add_to_hass(hass)
+
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert hass.states.get("datetime.ev_planner_departure_time") is not None
+    assert hass.states.get("select.ev_planner_departure_day") is not None
+    assert hass.states.get("number.ev_planner_energy_needed") is not None
+    assert hass.states.get("number.ev_planner_max_price") is not None
+    assert hass.states.get("number.ev_planner_max_phase_switches") is not None
+    assert hass.states.get("number.ev_planner_min_pv_kwh") is not None
+    assert hass.states.get("number.ev_planner_max_charge_power") is not None
+
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+
+
+@pytest.mark.usefixtures("enable_custom_integrations")
 async def test_full_planning_chain(hass):
     """Exercise config -> readers -> planner -> scheduler -> native output."""
     now = datetime.now().astimezone()
