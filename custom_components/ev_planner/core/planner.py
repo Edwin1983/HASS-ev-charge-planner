@@ -1478,14 +1478,18 @@ class EVPlanner:
                                 phase,
                             )
 
-                            if prices[index] > max_price and power > pv_rate + 0.000001:
+                            if prices[index] > max_price:
                                 ####################################################
-                                # Boven de maximumprijs mag dit uur
-                                # nooit sneller laden dan de zon zelf
-                                # levert.
+                                # Boven de maximumprijs mag alleen
+                                # volledig met beschikbare PV worden
+                                # geladen. De PV wordt hier als
+                                # beschikbare energie van dit uur
+                                # beschouwd; het laadvenster mag
+                                # daarom korter zijn dan het uur.
                                 ####################################################
 
-                                continue
+                                if remaining > float(hour.usable_pv) + 0.000001:
+                                    continue
 
                             if power * duration >= remaining - 0.000001:
                                 best_current = current_a
@@ -1507,13 +1511,19 @@ class EVPlanner:
 
                         finish_amount = power * finish_duration
 
-                        finish_free = float(
-                            min(
-                                pv_rate,
-                                power,
+                        if (
+                            prices[index] > max_price
+                            and remaining <= float(hour.usable_pv) + 0.000001
+                        ):
+                            finish_free = float(finish_amount)
+                        else:
+                            finish_free = float(
+                                min(
+                                    pv_rate,
+                                    power,
+                                )
+                                * finish_duration
                             )
-                            * finish_duration
-                        )
 
                         finish_paid = finish_amount - finish_free
 
