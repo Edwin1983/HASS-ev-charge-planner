@@ -7,6 +7,8 @@ PLATFORMS = [
     "sensor",
     "binary_sensor",
     "select",
+    "number",
+    "datetime",
 ]
 
 SIGNAL_SENSOR_UPDATE = "ev_planner_sensor_update"
@@ -32,6 +34,19 @@ CONF_MAX_CHARGE_POWER_KW = "max_charge_power_kw"
 
 
 ##############################################################################
+# Native entity unique IDs
+##############################################################################
+
+NATIVE_DEPARTURE = "departure"
+NATIVE_DEPARTURE_DAY = "departure_day"
+NATIVE_ENERGY_NEEDED = "energy_needed"
+NATIVE_MAX_PRICE = "max_price"
+NATIVE_MAX_PHASE_SWITCHES = "max_phase_switches"
+NATIVE_MIN_PV_KWH = "min_pv_kwh"
+NATIVE_MAX_CHARGE_POWER = "max_charge_power"
+
+
+##############################################################################
 # Planner modes
 ##############################################################################
 
@@ -47,7 +62,7 @@ PV_ROUNDING_DOWN = "Naar beneden — geen netenergie"
 PV_ROUNDING_UP = "Naar boven — kleine netaanvulling toegestaan"
 
 
-# Standaardwaarden.
+# Legacy standaardwaarden.
 DEFAULT_ENTITY_DEPARTURE = "input_datetime.ev_vertrektijd"
 DEFAULT_ENTITY_DEPARTURE_DAY = "input_select.ev_vertrekdag"
 DEFAULT_ENTITY_ENERGY_NEEDED = "input_number.ev_kwh_nodig"
