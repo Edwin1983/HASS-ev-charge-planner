@@ -1116,7 +1116,10 @@ class EVPlanner:
         if pv < 0:
             pv = 0.0
 
-        if pv < float(self.settings.min_pv_kwh):
+        if (
+            self.settings.planner_mode == PLANNER_MODE_SOLAR_ONLY
+            and pv < float(self.settings.min_pv_kwh)
+        ):
             pv = 0.0
 
         return float(pv / duration)
