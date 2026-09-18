@@ -650,7 +650,12 @@ class EVPlannerController:
         # Vertrektijd
         # ------------------------------------------------------------------
 
-        raw_departure = self.hass.get_state(self.entities["departure"])
+        departure_entity = self._native_entity_id(
+            "datetime",
+            NATIVE_DEPARTURE,
+            self.entities["departure"],
+        )
+        raw_departure = self.hass.get_state(departure_entity) if departure_entity else None
 
         if not raw_departure:
             self.logger.warning("Geen vertrektijd ingesteld.")
@@ -660,7 +665,16 @@ class EVPlannerController:
         # Vertrekdag
         # ------------------------------------------------------------------
 
-        departure_day = self.hass.get_state(self.entities["departure_day"])
+        departure_day_entity = self._native_entity_id(
+            "select",
+            NATIVE_DEPARTURE_DAY,
+            self.entities["departure_day"],
+        )
+        departure_day = (
+            self.hass.get_state(departure_day_entity)
+            if departure_day_entity
+            else None
+        )
 
         if departure_day not in ("Vandaag", "Morgen"):
             self.logger.warning(f"Ongeldige vertrekdag: {departure_day}")
