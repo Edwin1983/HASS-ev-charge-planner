@@ -46,7 +46,7 @@ async def _run(
 
     return await hass.async_add_executor_job(
         func,
-        dt_dt_datetime.now().astimezone(),
+        dt_datetime.now().astimezone(),
     )
 
 
