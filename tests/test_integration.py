@@ -85,8 +85,15 @@ async def test_full_integration_setup_and_unload(hass):
     assert states.get("sensor.ev_planner_gewenste_fase") is not None
     assert states.get("binary_sensor.ev_planner_charging_allowed") is not None
     assert states.get("switch.ev_planner_smart_charging") is not None
+    assert states.get("select.ev_planner_departure_day") is not None
     assert states.get("select.ev_planner_planner_mode") is not None
     assert states.get("select.ev_planner_pv_charging_current_rounding") is not None
+    assert states.get("datetime.ev_planner_departure_time") is not None
+    assert states.get("number.ev_planner_energy_needed") is not None
+    assert states.get("number.ev_planner_max_price") is not None
+    assert states.get("number.ev_planner_max_phase_switches") is not None
+    assert states.get("number.ev_planner_min_pv_kwh") is not None
+    assert states.get("number.ev_planner_max_charge_power") is not None
 
     assert await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()
