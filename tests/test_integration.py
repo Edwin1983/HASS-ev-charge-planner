@@ -86,6 +86,7 @@ async def test_full_integration_setup_and_unload(hass):
     assert states.get("binary_sensor.ev_planner_charging_allowed") is not None
     assert states.get("switch.ev_planner_smart_charging") is not None
     assert states.get("select.ev_planner_planner_mode") is not None
+    assert states.get("select.ev_planner_pv_charging_current_rounding") is not None
 
     assert await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()
