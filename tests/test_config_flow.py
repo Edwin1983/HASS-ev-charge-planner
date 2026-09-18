@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from homeassistant.config_entries import SOURCE_USER
+from homeassistant.config_entries import ConfigEntry, SOURCE_USER
 
 from custom_components.ev_planner.const import (
     CONF_ENTITY_PRICES,
