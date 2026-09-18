@@ -74,6 +74,13 @@ from ..const import (
     CONF_ENTITY_SOLCAST_TODAY,
     CONF_ENTITY_SOLCAST_TOMORROW,
     CONF_MAX_CHARGE_POWER_KW,
+    NATIVE_DEPARTURE,
+    NATIVE_DEPARTURE_DAY,
+    NATIVE_ENERGY_NEEDED,
+    NATIVE_MAX_CHARGE_POWER,
+    NATIVE_MAX_PHASE_SWITCHES,
+    NATIVE_MAX_PRICE,
+    NATIVE_MIN_PV_KWH,
     DEFAULT_ENTITY_DEPARTURE,
     DEFAULT_ENTITY_DEPARTURE_DAY,
     DEFAULT_ENTITY_ENERGY_NEEDED,
@@ -189,9 +196,8 @@ class EVPlannerController:
             ),
         }
 
-        # Maximaal laadvermogen waarmee de planner rekent.
-        #
-        # Dit is GEEN opdracht aan de laadpaal.
+        # Het maximale laadvermogen wordt gelezen uit de native number entity.
+        # De legacy configwaarde blijft alleen als fallback behouden.
         self.max_charge_power_kw = float(
             self.config.get(
                 CONF_MAX_CHARGE_POWER_KW,
@@ -464,23 +470,73 @@ class EVPlannerController:
 
         return self.hass.get_state(entity_id) == "on"
 
-    def _get_max_phase_switches(self) -> int:
-        """
-        Leest het maximaal toegestane aantal fasewisselingen.
+    def _native_entity_id(
+        self,
+        platform: str,
+        suffix: str,
+        legacy_entity: str | None = None,
+    ) -> str | None:
+        """Return a native entity_id, with an optional legacy fallback."""
 
-        Dit is een plannerparameter.
+        registry = er.async_get(self._hass)
+        entity_id = registry.async_get_entity_id(
+            platform,
+            DOMAIN,
+            f"{self.entry_id}_{suffix}",
+        )
 
-        De planner voert de fasewisselingen zelf NIET uit.
-        """
+        if entity_id is not None:
+            return entity_id
 
-        raw_value = self.hass.get_state(self.entities["max_phase_switches"])
+        return legacy_entity
+
+    def _native_number_state(
+        self,
+        suffix: str,
+        legacy_entity: str,
+        default: float,
+    ) -> float:
+        """Read a native number, falling back to the legacy input_number."""
+
+        entity_id = self._native_entity_id(
+            "number",
+            suffix,
+            legacy_entity,
+        )
+        raw_value = self.hass.get_state(entity_id) if entity_id else None
 
         try:
-            value = int(float(raw_value))
+            return float(raw_value)
         except (TypeError, ValueError):
-            return 0
+            return float(default)
 
-        return max(0, value)
+    def _get_max_phase_switches(self) -> int:
+        """Return the configured maximum number of phase switches."""
+
+        value = self._native_number_state(
+            NATIVE_MAX_PHASE_SWITCHES,
+            self.entities["max_phase_switches"],
+            8.0,
+        )
+        return max(0, int(value))
+
+    def _get_max_charge_power_kw(self) -> float:
+        """Return the maximum charging power used by the planner."""
+
+        return max(
+            1.0,
+            min(
+                DEFAULT_MAX_CHARGE_POWER_KW,
+                self._native_number_state(
+                    NATIVE_MAX_CHARGE_POWER,
+                    self.config.get(
+                        CONF_MAX_CHARGE_POWER_KW,
+                        "",
+                    ),
+                    DEFAULT_MAX_CHARGE_POWER_KW,
+                ),
+            ),
+        )
 
     ##########################################################################
     # PlannerSettings
@@ -498,7 +554,11 @@ class EVPlannerController:
         # Benodigde energie
         # ------------------------------------------------------------------
 
-        raw_energy = self.hass.get_state(self.entities["energy_needed"])
+        raw_energy = self._native_number_state(
+            NATIVE_ENERGY_NEEDED,
+            self.entities["energy_needed"],
+            10.0,
+        )
 
         try:
             energy_needed_kwh = float(raw_energy)
@@ -514,7 +574,11 @@ class EVPlannerController:
         # Maximale prijs
         # ------------------------------------------------------------------
 
-        raw_max_price = self.hass.get_state(self.entities["max_price"])
+        raw_max_price = self._native_number_state(
+            NATIVE_MAX_PRICE,
+            self.entities["max_price"],
+            0.0,
+        )
 
         try:
             max_price = float(raw_max_price)
@@ -532,7 +596,11 @@ class EVPlannerController:
         # Minimale PV
         # ------------------------------------------------------------------
 
-        raw_min_pv = self.hass.get_state(self.entities["min_pv_kwh"])
+        raw_min_pv = self._native_number_state(
+            NATIVE_MIN_PV_KWH,
+            self.entities["min_pv_kwh"],
+            0.0,
+        )
 
         try:
             min_pv_kwh = float(raw_min_pv)
@@ -650,7 +718,7 @@ class EVPlannerController:
                 max_price=max_price,
                 min_pv_kwh=min_pv_kwh,
                 solar_is_free=True,
-                max_charge_power_kw=self.max_charge_power_kw,
+                max_charge_power_kw=self._get_max_charge_power_kw(),
                 max_phase_switches=max_phase_switches,
                 planner_mode=planner_mode,
                 pv_rounding=pv_rounding,
