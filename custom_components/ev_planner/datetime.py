@@ -37,7 +37,7 @@ class EVPlannerDepartureDateTime(DateTimeEntity, RestoreEntity):
         self._entry = entry
         self._attr_unique_id = f"{entry.entry_id}_{NATIVE_DEPARTURE}"
         now = datetime.now().astimezone()
-        self._attr_datetime = datetime.combine(
+        self._attr_native_value = datetime.combine(
             now.date(),
             time(23, 59),
             tzinfo=now.tzinfo,
@@ -61,7 +61,7 @@ class EVPlannerDepartureDateTime(DateTimeEntity, RestoreEntity):
         restored = self._parse_state(last_state.state if last_state else None)
 
         if restored is not None:
-            self._attr_datetime = restored
+            self._attr_native_value = restored
             return
 
         legacy_entity = self._entry.data.get(CONF_ENTITY_DEPARTURE)
@@ -92,5 +92,5 @@ class EVPlannerDepartureDateTime(DateTimeEntity, RestoreEntity):
 
     async def async_set_value(self, value: datetime) -> None:
         """Set the desired departure time."""
-        self._attr_datetime = value
+        self._attr_native_value = value
         self.async_write_ha_state()
