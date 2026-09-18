@@ -2,11 +2,28 @@
 
 All notable changes to EV Charge Planner are documented here.
 
+## [1.1.0-beta.4] - 2026-09-18
+
+### Changed
+
+- Refined normal charging behavior so min_pv_kwh is ignored outside solar-only mode.
+- Preserved full source-hour charging windows except where the first or last active hour must be partial.
+- Removed the short-window behavior that could create arbitrary charging intervals inside a source hour.
+- Corrected solar/PV energy accounting for partial active hours.
+- Added and aligned regression coverage for normal-mode minimum-PV handling and solar charging behavior.
+
+### Validation
+
+- Pytest: passed.
+- Ruff: passed.
+- Hassfest: passed.
+- HACS validation: passed.
+
 ## [1.1.0-beta.3] - 2026-09-18
 
 ### Changed
 
-- Updated the integration version to `1.1.0-beta.3` for the next beta release.
+- Updated the integration version to 1.1.0-beta.3 for the next beta release.
 - Continued beta validation of the native EV Charge Planner integration.
 
 ### Validation
@@ -21,7 +38,7 @@ All notable changes to EV Charge Planner are documented here.
 ### Changed
 
 - Refined solar-only planning so PV eligibility, PV rounding, and charging-energy targeting are handled consistently.
-- Solar-only planning ignores `ev_kwh_nodig` as an optimization target and follows available PV hour by hour.
+- Solar-only planning ignores ev_kwh_nodig as an optimization target and follows available PV hour by hour.
 - Added and aligned functional coverage for PV rounding down/up, minimum PV filtering, phase switching, and solar-only energy accounting.
 - Made integration planning tests safe across midnight when the configured departure day is tomorrow.
 - Updated release metadata and repository links for the public repository.
