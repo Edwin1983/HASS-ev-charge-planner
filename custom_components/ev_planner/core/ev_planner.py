@@ -88,6 +88,8 @@ from ..const import (
     DEFAULT_ENTITY_SOLCAST_TOMORROW,
     DEFAULT_MAX_CHARGE_POWER_KW,
     DOMAIN,
+    PLANNER_MODE_NORMAL,
+    PLANNER_MODE_SOLAR_ONLY,
     SIGNAL_SENSOR_UPDATE,
 )
 from .homeassistant import HomeAssistant
@@ -174,10 +176,6 @@ class EVPlannerController:
             "max_phase_switches": self.config.get(
                 CONF_ENTITY_MAX_PHASE_SWITCHES,
                 DEFAULT_ENTITY_MAX_PHASE_SWITCHES,
-            ),
-            "planner_mode": self.config.get(
-                CONF_ENTITY_PLANNER_MODE,
-                DEFAULT_ENTITY_PLANNER_MODE,
             ),
             "pv_rounding": self.config.get(
                 CONF_ENTITY_PV_ROUNDING,
@@ -378,6 +376,41 @@ class EVPlannerController:
             f"{self.entry_id}_smart_charging",
         )
 
+    def _planner_mode_entity_id(self) -> str | None:
+        """Return the native planner mode select entity_id."""
+
+        registry = er.async_get(self._hass)
+
+        entity_id = registry.async_get_entity_id(
+            "select",
+            DOMAIN,
+            f"{self.entry_id}_planner_mode",
+        )
+
+        if entity_id is not None:
+            return entity_id
+
+        # Backward compatibility for existing configurations.
+        return self.config.get(
+            CONF_ENTITY_PLANNER_MODE,
+            DEFAULT_ENTITY_PLANNER_MODE,
+        )
+
+    def _get_planner_mode(self) -> str:
+        """Read the current planner mode from the native select."""
+
+        entity_id = self._planner_mode_entity_id()
+
+        if entity_id is None:
+            return PLANNER_MODE_NORMAL
+
+        value = self.hass.get_state(entity_id)
+
+        if value in (PLANNER_MODE_NORMAL, PLANNER_MODE_SOLAR_ONLY):
+            return value
+
+        return PLANNER_MODE_NORMAL
+
     def _is_enabled(self) -> bool:
         """
         Controleert of de planner is ingeschakeld.
@@ -479,7 +512,7 @@ class EVPlannerController:
         # Planner mode
         # ------------------------------------------------------------------
 
-        planner_mode = self.hass.get_state(self.entities["planner_mode"])
+        planner_mode = self._get_planner_mode()
 
         # ------------------------------------------------------------------
         # PV afronding
