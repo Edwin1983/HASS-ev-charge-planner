@@ -655,7 +655,9 @@ class EVPlannerController:
             NATIVE_DEPARTURE,
             self.entities["departure"],
         )
-        raw_departure = (\n            self.hass.get_state(departure_entity) if departure_entity else None\n        )
+        raw_departure = (
+            self.hass.get_state(departure_entity) if departure_entity else None
+        )
 
         if not raw_departure:
             self.logger.warning("Geen vertrektijd ingesteld.")
