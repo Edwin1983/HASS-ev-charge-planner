@@ -35,7 +35,6 @@
           "entity_max_price": "Maximale netprijs",
           "entity_min_pv_kwh": "Minimale PV voor zonneladen",
           "entity_max_phase_switches": "Maximaal aantal fasewisselingen",
-          "entity_planner_mode": "Planner mode",
           "entity_pv_rounding": "PV-laadstroom afronden",
           "entity_prices": "Elektriciteitsprijzen",
           "entity_solcast_today": "Solcast vandaag",
