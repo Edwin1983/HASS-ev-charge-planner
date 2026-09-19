@@ -100,8 +100,8 @@ async def test_full_integration_setup_and_unload(hass):
     assert states.get("number.ev_charge_planner_energy_needed").attributes["mode"] == "slider"
     assert states.get("number.ev_charge_planner_maximum_grid_price").attributes["mode"] == "slider"
     assert states.get("number.ev_charge_planner_minimum_pv_for_solar_only").attributes["mode"] == "slider"
-    assert states["number.ev_charge_planner_maximum_grid_price"].attributes["unit_of_measurement"] == "ct/kWh"
-    assert states["number.ev_charge_planner_maximum_grid_price"].attributes["step"] == 1.0
+    assert states.get("number.ev_charge_planner_maximum_grid_price").attributes["unit_of_measurement"] == "ct/kWh"
+    assert states.get("number.ev_charge_planner_maximum_grid_price").attributes["step"] == 1.0
 
     assert await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()
