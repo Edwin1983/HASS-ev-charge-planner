@@ -95,13 +95,20 @@ async def test_full_integration_setup_and_unload(hass):
     assert states.get("number.ev_charge_planner_energy_needed") is not None
     assert states.get("number.ev_charge_planner_maximum_grid_price") is not None
     assert states.get("number.ev_charge_planner_maximum_phase_switches") is not None
-    assert states.get("number.ev_charge_planner_minimum_pv_for_solar_only") is not None
+    assert (
+        states.get("number.ev_charge_planner_minimum_pv_for_solar_only") is not None
+    )
     assert states.get("number.ev_charge_planner_maximum_charging_power") is not None
-    assert states.get("number.ev_charge_planner_energy_needed").attributes["mode"] == "slider"
-    assert states.get("number.ev_charge_planner_maximum_grid_price").attributes["mode"] == "slider"
-    assert states.get("number.ev_charge_planner_minimum_pv_for_solar_only").attributes["mode"] == "slider"
-    assert states.get("number.ev_charge_planner_maximum_grid_price").attributes["unit_of_measurement"] == "ct/kWh"
-    assert states.get("number.ev_charge_planner_maximum_grid_price").attributes["step"] == 1.0
+
+    energy_needed = states.get("number.ev_charge_planner_energy_needed")
+    max_grid_price = states.get("number.ev_charge_planner_maximum_grid_price")
+    min_pv = states.get("number.ev_charge_planner_minimum_pv_for_solar_only")
+
+    assert energy_needed.attributes["mode"] == "slider"
+    assert max_grid_price.attributes["mode"] == "slider"
+    assert min_pv.attributes["mode"] == "slider"
+    assert max_grid_price.attributes["unit_of_measurement"] == "ct/kWh"
+    assert max_grid_price.attributes["step"] == 1.0
 
     assert await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()
