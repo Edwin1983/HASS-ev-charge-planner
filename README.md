@@ -2,10 +2,6 @@
 
 Native Home Assistant custom integration for EV charging planning using electricity prices and PV forecasts.
 
-## Dashboard
-
-![EV Charge Planner Home Assistant dashboard](images/Dashboard.png)
-
 ## What it does
 
 EV Charge Planner calculates **when and how much** an EV should charge before a configured departure time.
@@ -18,7 +14,7 @@ It combines:
 - a maximum grid-price limit;
 - a minimum usable PV-energy setting for solar-only planning;
 - a configurable phase-switch budget;
-- the electrical limits configured for the planner.
+- the configured maximum charging power.
 
 **EV Charge Planner does not control the physical charger.** It does not switch a charger on/off, set charging current, change phases, or detect whether an EV is connected. Those actions remain Home Assistant automation responsibilities.
 
@@ -26,108 +22,81 @@ It combines:
 
 ### HACS
 
-Add this GitHub repository as a custom HACS repository with category **Integration**.
+Add this repository as a custom HACS repository with category **Integration**.
 
-After installation, restart Home Assistant. The integration will be available under:
+After installation, restart Home Assistant. The integration is available under:
 
 **Settings → Devices & services → Add integration → EV Charge Planner**
 
 ### Manual
 
-Copy:
-
-```text
-custom_components/ev_planner/
-```
-
-to:
-
-```text
-/config/custom_components/ev_planner/
-```
-
-Restart Home Assistant and add **EV Charge Planner** from the integration UI.
+Copy `custom_components/ev_planner/` to `/config/custom_components/ev_planner/`, restart Home Assistant, and add **EV Charge Planner** from the integration UI.
 
 ## Configuration
 
-EV Charge Planner uses a config flow and options flow. The following existing Home Assistant entities are selected during configuration:
+EV Charge Planner uses a config flow and an options flow.
+
+During initial configuration you select only the external data sources:
 
 | Setting | Entity type |
 |---|---|
-| Departure time | `input_datetime` |
-| Departure day | `input_select` |
-| Energy needed | `input_number` |
-| Maximum grid price | `input_number` |
-| Minimum usable PV | `input_number` |
-| Maximum phase switches | `input_number` |
-| Planner mode | `input_select` |
-| PV charging-current rounding | `input_select` |
 | Electricity prices | `sensor` |
 | Solcast today | `sensor` |
 | Solcast tomorrow | `sensor` |
-| Maximum charging power | numeric setting |
 
-The default entity IDs are compatible with the original EV Planner/Pyscript setup. They can be changed through the integration configuration.
+The planner settings are provided as **native Home Assistant entities** by the integration. They are no longer required as existing `input_*` helpers during setup.
+
+### Native planner settings
+
+The integration provides these configurable entities:
+
+| Setting | Native entity | Default |
+|---|---|---:|
+| Departure time | `datetime.ev_charge_planner_departure_time` | 23:59 |
+| Departure day | `select.ev_charge_planner_departure_day` | Vandaag |
+| Energy needed | `number.ev_charge_planner_energy_needed` | 10 kWh |
+| Maximum grid price | `number.ev_charge_planner_maximum_grid_price` | €0/kWh |
+| Minimum PV for solar-only | `number.ev_charge_planner_minimum_pv_for_solar_only` | 0 kWh |
+| Maximum phase switches | `number.ev_charge_planner_maximum_phase_switches` | 8 |
+| Maximum charging power | `number.ev_charge_planner_maximum_charging_power` | 11.04 kW |
+| Planner mode | `select.ev_charge_planner_planner_mode` | integration default |
+| PV current rounding | `select.ev_charge_planner_pv_charging_current_rounding` | integration default |
+
+Home Assistant may change entity IDs through the entity registry. Use the entity registry/UI when referencing these entities from automations.
+
+The native entities restore their previous values after a restart. Existing installations can also use the previous `input_datetime`, `input_select` and `input_number` settings as compatibility fallbacks where applicable.
 
 ### Planner modes
 
 **Normaal laden** uses the normal price/PV optimizer. It plans the required charging energy as cheaply as possible before departure. PV energy is treated as free, while grid charging is only used when the configured price limit permits it.
 
-**Alleen zonneladen** uses only periods with usable PV production. The planner maximizes useful PV charging and does not create grid-only charging periods. The `Minimale PV voor zonneladen` setting filters out small PV periods in this mode; it does not restrict normal price-based charging.
+**Alleen zonneladen** uses only periods with usable PV production. The planner maximizes useful PV charging and does not create grid-only charging periods. The minimum-PV setting filters out small PV periods in this mode; it does not restrict normal price-based charging.
 
 ### PV-laadstroom afronden
 
-In **Alleen zonneladen**, the planner derives a charging current from the available PV power:
+In **Alleen zonneladen**, the planner derives a charging current from available PV power:
 
-- **Naar beneden — geen netenergie**: selects the highest valid current that does not exceed the available PV power. If the available PV is below the minimum 6 A charging current, that period is not selected. This prevents planned grid energy caused by rounding.
-- **Naar boven — kleine netaanvulling toegestaan**: selects the lowest valid current that reaches or exceeds the available PV power. The small difference between PV production and charging power is treated as paid grid energy. This intentional rounding supplement is not blocked by the configured maximum grid-price limit.
+- **Naar beneden — geen netenergie** selects the highest valid current that does not exceed available PV power. If PV is below the minimum 6 A charging current, that period is not selected.
+- **Naar boven — kleine netaanvulling toegestaan** selects the lowest valid current that reaches or exceeds available PV power. The difference is treated as paid grid energy for that period.
 
-For example, with 2.1 kW of available PV on 1 phase, rounding down selects 9 A (2.07 kW), while rounding up selects 10 A (2.30 kW), with approximately 0.23 kW of additional grid power during that period.
+For example, with 2.1 kW available PV on 1 phase, rounding down selects 9 A (2.07 kW), while rounding up selects 10 A (2.30 kW).
 
-The planner still respects its electrical limits: 6–16 A integer current, 1-phase/3-phase operation, the configured maximum charging power, and the hard phase-switch safety cap.
+The planner respects its electrical limits: 6–16 A integer current, 1-phase/3-phase operation, the configured maximum charging power, and the hard phase-switch safety cap.
 
 ## Entities
 
-The integration provides:
+The integration provides planner settings and outputs as native Home Assistant entities.
 
-- **Smart Charging switch** — enables/disables planner operation. It is not a charger control.
+### Planner control and status
+
+- **Smart Charging switch** — enables/disables planner operation. It is not charger control.
 - **State sensor** — reports the current planner state.
 - **Data sensor** — exposes the complete current plan as state attributes.
 - **Charging Allowed binary sensor** — read-only indication that the current planner window permits charging.
-- **Desired charging current sensor** — reports the charging current in amperes (`A`) from the currently active planner decision. It reports `0 A` when there is no active charging decision.
-- **Desired phase sensor** — reports the number of phases from the currently active planner decision (`1` or `3`). It reports `0` when there is no active charging decision.
+- **Desired charging current sensor** — reports the current from the active planner decision in amperes. It reports `0 A` when there is no active charging decision.
+- **Desired phase sensor** — reports `1` or `3` for the active planner decision and `0` when there is no active charging decision.
 
-The desired current and desired phase sensors are **planner outputs**. They do not directly change the charger settings. Your Home Assistant automations can use them to control the physical charger's current and phase.
-
-Home Assistant may assign the final entity IDs through its entity registry. Use the registry/UI when referencing entities from automations.
-
-## Services
-
-### `ev_planner.update`
-
-Runs one planner update cycle.
-
-The integration intentionally does **not** start its own periodic background loop. Call this service from your own automation when appropriate.
-
-### `ev_planner.create_plan`
-
-Creates a new charging plan from the current inputs.
-
-### `ev_planner.replan`
-
-Clears the current plan and creates a new one.
-
-### `ev_planner.clear_plan`
-
-Clears the current plan.
-
-### `ev_planner.status`
-
-Returns the current runtime status. The service supports Home Assistant response data.
-
-### `ev_planner.dashboard`
-
-Returns the current planner/dashboard data. The service supports Home Assistant response data.
+The desired current, desired phase and charging-allowed entities are **planner outputs**. They do not directly change charger settings. Your Home Assistant automations can translate these outputs into charger control.
 
 ## Recommended architecture
 
@@ -147,9 +116,9 @@ Home Assistant automation
                        │
         ┌──────────────┼────────────────┐
         ▼              ▼                ▼
-sensor.ev_planner_data  desired current  desired phase
-        │
-        └──────────────┬────────────────┘
+    plan data     desired current  desired phase
+        │              │                │
+        └──────────────┼────────────────┘
                        ▼
               Your HA automation
                        │
@@ -158,176 +127,68 @@ sensor.ev_planner_data  desired current  desired phase
         charger on/off      current / phase
 ```
 
-This separation is intentional. The planner is the decision layer; Home Assistant automations are the physical charger control layer.
+This separation is intentional: the planner is the decision layer, while Home Assistant automations are the physical charger control layer.
 
-## Dashboard example
+## Services
 
-EV Charge Planner can be combined with standard Home Assistant cards and, optionally, custom dashboard cards. The example below deliberately uses **generic placeholder entity IDs** so it can be adapted to different EVs, chargers and Home Assistant installations.
+### `ev_planner.update`
 
-The example assumes that the EV Charge Planner entities have the following names after entity-registry configuration:
+Runs one planner update cycle. The integration does not start its own periodic background loop; call this service from your own automation when appropriate.
 
-- `sensor.ev_planner_data`
-- `sensor.ev_planner_state`
-- `binary_sensor.ev_planner_charging_allowed`
-- `sensor.ev_planner_gewenste_laadstroom`
-- `sensor.ev_planner_gewenste_fase`
-- `switch.ev_planner_smart_charging`
+### `ev_planner.create_plan`
 
-The other entities are examples only. Replace them with the entities provided by your own EV, charger and Home Assistant helpers.
+Creates a new charging plan from the current inputs.
 
-```yaml
-views:
-  - title: EV Smart Charging
-    path: ev-smart-charging
-    icon: mdi:car-electric
-    type: masonry
-    cards:
-      - type: glance
-        title: 🔋 Auto
-        columns: 4
-        entities:
-          - entity: sensor.ev_battery_level
-            name: Accu
-            icon: mdi:battery
-          - entity: sensor.ev_range
-            name: Bereik
-            icon: mdi:road-variant
-          - entity: sensor.ev_charge_power
-            name: Laadvermogen
-            icon: mdi:flash
-          - entity: sensor.ev_charger_mode
-            name: Laden
-            icon: mdi:battery-charging
+### `ev_planner.replan`
 
-      - type: entities
-        title: 🧠 Slim laden
-        show_header_toggle: false
-        entities:
-          - entity: switch.ev_planner_smart_charging
-            name: Slim laden
-          - entity: input_number.ev_kwh_needed
-            name: Benodigde energie
-            icon: mdi:battery-plus
-          - entity: input_number.ev_max_price
-            name: Maximale prijs
-            icon: mdi:currency-eur
-          - entity: input_number.ev_min_pv_kwh
-            name: Minimale PV-energie
-            icon: mdi:solar-power
-          - entity: input_number.ev_max_phase_switches
-            name: Max. fasewisselingen
-            icon: mdi:swap-horizontal
-          - entity: input_datetime.ev_departure_time
-            name: Vertrektijd
-            icon: mdi:clock-outline
-          - entity: input_select.ev_departure_day
-            name: Vertrekdag
+Clears the current plan and creates a new one.
 
-      - type: entities
-        title: 🚗 EV Charge Planner
-        show_header_toggle: false
-        entities:
-          - entity: sensor.ev_planner_state
-            name: Planner status
-            icon: mdi:ev-station
-          - entity: binary_sensor.ev_planner_charging_allowed
-            name: Laden toegestaan
-            icon: mdi:ev-station
-          - entity: sensor.ev_planner_gewenste_laadstroom
-            name: Gewenste laadstroom
-            icon: mdi:current-ac
-          - entity: sensor.ev_planner_gewenste_fase
-            name: Gewenste fase
-            icon: mdi:sine-wave
-          - entity: input_select.ev_planner_mode
-            name: Planner modus
-            icon: mdi:state-machine
+### `ev_planner.clear_plan`
 
-      - type: markdown
-        content: >-
-          {% set data = state_attr('sensor.ev_planner_data', 'decisions') or [] %}
-          {% set needed = state_attr('sensor.ev_planner_data', 'energy_needed_kwh') | float(0) %}
-          {% set planned = state_attr('sensor.ev_planner_data', 'energy_planned_kwh') | float(0) %}
-          {% set missing = state_attr('sensor.ev_planner_data', 'missing_energy_kwh') | float(0) %}
-          {% set free = state_attr('sensor.ev_planner_data', 'free_energy_kwh') | float(0) %}
-          {% set paid = state_attr('sensor.ev_planner_data', 'paid_energy_kwh') | float(0) %}
-          {% set cost = state_attr('sensor.ev_planner_data', 'estimated_cost') | float(0) %}
-          {% set switches = state_attr('sensor.ev_planner_data', 'phase_switches') | int(0) %}
-          {% set max_switches = state_attr('sensor.ev_planner_data', 'max_phase_switches') | int(0) %}
-          {% set minutes = state_attr('sensor.ev_planner_data', 'total_charging_minutes') | float(0) %}
-          {% set departure = state_attr('sensor.ev_planner_data', 'departure_time') %}
-          {% set hours = (minutes // 60) | int %}
-          {% set mins = (minutes % 60) | round(0) | int %}
+Clears the current plan.
 
-          ## 🚗 EV laadplanning
+### `ev_planner.status`
 
-          **{{ planned | round(1) }} / {{ needed | round(1) }} kWh** gepland / nodig  
-          ☀️ {{ free | round(2) }} kWh PV · ⚡ {{ paid | round(2) }} kWh net · 💰 €{{ cost | round(2) }} · 🔄 {{ switches }}/{{ max_switches }} fasewisselingen · ⏱ {{ hours }}u {{ mins }}m
+Returns the current runtime status and supports Home Assistant response data.
 
-          {% if missing > 0.01 %}
-          > ⚠️ **Niet volledig haalbaar:** nog {{ missing | round(2) }} kWh nodig.
-          {% else %}
-          > ✅ **Volledig geladen vóór vertrek**
-          {% endif %}
+### `ev_planner.dashboard`
 
-          {% if departure %}
-          **Vertrek:** {{ as_datetime(departure).strftime('%H:%M') }}
-          {% endif %}
+Returns current planner/dashboard data and supports Home Assistant response data.
 
-          | Tijd | Status | Fase | Stroom | Vermogen | ☀️ PV | ⚡ Net | Prijs | Kosten |
-          |:---|:---:|:---:|---:|---:|---:|---:|---:|---:|
-          {% for d in data %}
-            {% set start = as_datetime(d.start) %}
-            {% set end = as_datetime(d.end) %}
-            {% set pv = d.free_energy_kwh | float(0) %}
-            {% set grid = d.paid_energy_kwh | float(0) %}
-            {% set power = d.charge_power_kw | float(0) %}
-            {% set current = d.charge_current_a | int(0) %}
-            {% set phases = d.phases | int(0) %}
-            {% set price = d.price | float(0) %}
-            {% set hour_cost = d.cost | float(0) %}
-            {% set selected = d.selected | default(false) %}
-            {% if selected %}
-              {% if phases == 1 %}{% set phase_text = '1F' %}{% elif phases == 3 %}{% set phase_text = '3F' %}{% else %}{% set phase_text = '-' %}{% endif %}
-              {% if pv > 0 and grid > 0 %}{% set status = '☀️⚡' %}{% elif pv > 0 %}{% set status = '☀️' %}{% else %}{% set status = '⚡' %}{% endif %}
-              {% if d.phase_change | default(false) %}{% set status = status ~ ' 🔄' %}{% endif %}
-          | {{ start.strftime('%H:%M') }}–{{ end.strftime('%H:%M') }} | {{ status }} | {{ phase_text }} | {{ current }} A | {{ power | round(2) }} kW | {{ pv | round(2) }} kWh | {{ grid | round(2) }} kWh | €{{ price | round(3) }} | €{{ hour_cost | round(2) }} |
-            {% endif %}
-          {% endfor %}
+## Planning behavior
 
-          **Legenda:** ☀️ PV = gratis zonne-energie · ⚡ = netenergie · 🔄 = fasewissel
+The planner's objective is to schedule the required energy before departure while respecting the configured constraints.
 
-      - type: button
-        name: 🔄 Planning opnieuw berekenen
-        icon: mdi:calendar-refresh
-        tap_action:
-          action: perform-action
-          perform_action: ev_planner.replan
-          target: {}
+- PV energy is treated as free.
+- Grid charging is permitted only when the electricity price is within the configured maximum, except for the intentional small grid supplement allowed by PV rounding-up mode.
+- In normal mode, the minimum-PV setting is ignored.
+- In solar-only mode, only usable PV periods are planned.
+- The first active interval may start at the current time and the final active interval may end at departure.
+- Intermediate active intervals preserve source-hour boundaries.
+- Separate active charging blocks may have idle gaps.
+- Phase-switch counting is reset across idle/off windows.
 
-      - type: button
-        name: 🗑️ Planning verwijderen
-        icon: mdi:calendar-remove
-        tap_action:
-          action: perform-action
-          perform_action: ev_planner.clear_plan
-          target: {}
-```
+## Electrical limits
 
-### Dashboard notes
+The current planner uses:
 
-The dashboard example is intentionally split into two layers:
+- 230 V;
+- 6–16 A integer charging current;
+- 1-phase and 3-phase charging;
+- maximum 11.04 kW by default;
+- configurable maximum charging power;
+- configurable phase-switch budget with a hard safety cap.
 
-1. **EV/charger information** — battery, range, charging power and charger state come from the user's own EV and charger integrations.
-2. **EV Charge Planner information** — planner state, charging permission, desired charging current, desired phase, planning inputs and `sensor.ev_planner_data` come from EV Charge Planner.
+Typical reference powers are approximately:
 
-The `charging_allowed`, desired current and desired phase entities are **advisory planner outputs**. They are not commands to the charger. Your own Home Assistant automation decides how those outputs are translated into charger on/off, current or phase control.
-
-If you use custom cards such as Mushroom or ApexCharts, they can be added around the same generic EV Charge Planner entities. They are not required for EV Charge Planner itself.
+- 1-phase 6 A: 1.38 kW;
+- 1-phase 16 A: 3.68 kW;
+- 3-phase 8 A: 5.52 kW;
+- 3-phase 16 A: 11.04 kW.
 
 ## Planner output
 
-`sensor.ev_planner_data` contains the plan summary and decision information, including:
+The planning data sensor exposes the plan summary and individual decisions, including where available:
 
 - required energy;
 - planned energy;
@@ -343,91 +204,40 @@ If you use custom cards such as Mushroom or ApexCharts, they can be added around
 - total charging minutes;
 - individual charging decisions.
 
-Each decision contains the source hour and the charging settings calculated by the planner, including the planned charging current and number of phases.
-
-## Electrical limits
-
-The current planner configuration uses:
-
-- 230 V;
-- 6–16 A integer charging current;
-- 1-phase and 3-phase charging;
-- maximum 11.04 kW;
-- a configurable phase-switch limit with the planner's hard safety cap.
-
-The planner reads the technical limits from its central configuration.
+Individual decisions contain the source hour and the calculated charging settings, including charging current, number of phases and active charging interval.
 
 ## Data sources
 
-EV Charge Planner currently integrates with data provided by other Home Assistant integrations:
+EV Charge Planner currently uses data supplied by other Home Assistant integrations. The recommended setup uses:
 
-- **Solcast** — provides the predicted hourly solar/PV production used by EV Charge Planner to determine when solar energy is available.
-- **Zonneplan** — provides the electricity price forecast used by EV Charge Planner to calculate the cost of grid charging.
+- **Solcast** for hourly PV forecasts;
+- an electricity-price integration such as **Zonneplan** for price data.
 
-These integrations are therefore part of the current recommended setup for EV Charge Planner. The EV Charge Planner configuration does not hard-code their entity IDs: you select the relevant Home Assistant sensors during configuration, so the entity names can differ between installations.
-
-The planner is deliberately separated from these data providers. Solcast and Zonneplan provide the forecast data; EV Charge Planner combines that data with the required charging energy, departure time and charging constraints to produce a charging plan.
+The integration does not hard-code those provider entities. You select the relevant Home Assistant sensors during configuration, so entity names can differ between installations.
 
 ## Troubleshooting
 
+If the planner does not produce a plan:
+
 1. Open **Settings → Devices & services → EV Charge Planner**.
-2. Verify all configured input entities exist.
-3. Check that the Solcast forecast sensors contain hourly forecast data.
-4. Check that the price sensor contains the expected price forecast.
-5. Check that departure time/day and required energy contain valid values.
-6. Call `ev_planner.create_plan` manually.
-7. Inspect `sensor.ev_planner_state`, `sensor.ev_planner_data`, the desired charging current sensor and the desired phase sensor.
-8. Check Home Assistant logs for `EV Charge Planner`.
-9. Verify that your automations, not the integration, operate the physical charger.
+2. Check the configured electricity-price and Solcast entities.
+3. Check the native planner settings and make sure the departure day/time and required energy are valid.
+4. Check the planner state and planning-data entities for the reported reason.
+5. If you use automations, verify that they call `ev_planner.create_plan` or `ev_planner.replan` at the intended time.
+
+For issues or feature requests, use the repository issue tracker.
 
 ## Development
 
-Install development dependencies:
+Run the test suite locally with:
 
 ```bash
-python -m pip install -r requirements_test.txt
+python -m pytest -q
+python -m ruff check .
 ```
 
-Run all tests:
-
-```bash
-pytest
-```
-
-Run linting:
-
-```bash
-ruff check .
-```
-
-The repository contains both core unit tests and Home Assistant integration tests. The Home Assistant tests use `pytest-homeassistant-custom-component`.
-
-## Project layout
-
-```text
-.
-├── custom_components/
-│   └── ev_planner/
-│       ├── __init__.py
-│       ├── binary_sensor.py
-│       ├── config_flow.py
-│       ├── const.py
-│       ├── manifest.json
-│       ├── sensor.py
-│       ├── services.yaml
-│       ├── strings.json
-│       ├── switch.py
-│       ├── translations/
-│       └── core/
-├── tests/
-├── .github/
-│   └── workflows/
-├── hacs.json
-├── LICENSE
-├── pyproject.toml
-└── requirements_test.txt
-```
+GitHub Actions also validates pytest/Ruff, Home Assistant Hassfest and HACS integration validation on pushes and pull requests.
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+This project is licensed under the MIT License. See `LICENSE` for details.
