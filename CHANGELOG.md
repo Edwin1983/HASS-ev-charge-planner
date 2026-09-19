@@ -2,6 +2,38 @@
 
 All notable changes to EV Charge Planner are documented here.
 
+## [1.1.0] - 2026-09-18
+
+### Added
+
+- Native Home Assistant entities for planner settings:
+  - departure time;
+  - departure day;
+  - energy needed;
+  - maximum grid price;
+  - minimum PV for solar-only charging;
+  - maximum phase switches;
+  - maximum charging power.
+- Native planner mode and PV charging-current rounding selects.
+- Native planner output entities for state, planning data, charging permission, desired current and desired phase.
+- Restore support for native planner settings, with compatibility fallbacks for the previous input-helper configuration.
+
+### Changed
+
+- The config flow now configures only external electricity-price and Solcast entities; planner settings are managed as native entities by the integration.
+- Refined normal charging so `min_pv_kwh` is ignored outside solar-only mode.
+- Preserved full source-hour charging windows except where the first or last active hour must be partial.
+- Removed arbitrary short charging windows inside a source hour.
+- Corrected solar/PV energy accounting for partial active hours.
+- Improved integration and regression test coverage for normal and solar-only planning.
+
+### Validation
+
+- Pytest: passed.
+- Ruff: passed.
+- Hassfest: passed.
+- HACS validation: passed.
+
 ## [1.1.0-beta.4] - 2026-09-18
 
 ### Changed
