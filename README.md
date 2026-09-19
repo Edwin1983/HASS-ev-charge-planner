@@ -2,6 +2,27 @@
 
 Native Home Assistant custom integration for EV charging planning using electricity prices and PV forecasts.
 
+**Current release: 1.1.0**
+
+## What's new in 1.1.0
+
+Version 1.1.0 makes the planner settings native Home Assistant entities instead of requiring user-created `input_*` helpers.
+
+Highlights:
+
+- native departure **time** plus separate departure **day**;
+- native sliders for energy needed, maximum grid price and minimum PV;
+- maximum grid price is configured in **ct/kWh**;
+- native planner mode and PV-current rounding selectors;
+- native planner status, plan data, charging permission, desired current and desired phase outputs;
+- native settings restore their values after a Home Assistant restart;
+- compatibility fallbacks for existing installations using the previous `input_*` helpers;
+- refined normal-mode and solar-only planning behavior;
+- source-hour-aligned charging windows, with partial intervals only where required at the beginning or end;
+- improved integration and regression test coverage.
+
+The planner remains a decision layer only: Home Assistant automations are responsible for translating planner outputs into physical charger control.
+
 ## What it does
 
 EV Charge Planner calculates **when and how much** an EV should charge before a configured departure time.
