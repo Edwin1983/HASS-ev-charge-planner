@@ -8,7 +8,7 @@ PLATFORMS = [
     "binary_sensor",
     "select",
     "number",
-    "datetime",
+    "time",
 ]
 
 SIGNAL_SENSOR_UPDATE = "ev_planner_sensor_update"
