@@ -581,7 +581,8 @@ class EVPlannerController:
         )
 
         try:
-            max_price = float(raw_max_price)
+            # Native entity stores the price in euro cents per kWh.
+            max_price = float(raw_max_price) / 100.0
         except (TypeError, ValueError):
             self.logger.warning(
                 f"Ongeldige maximale elektriciteitsprijs: {raw_max_price}"
@@ -651,7 +652,7 @@ class EVPlannerController:
         # ------------------------------------------------------------------
 
         departure_entity = self._native_entity_id(
-            "datetime",
+            "time",
             NATIVE_DEPARTURE,
             self.entities["departure"],
         )
@@ -742,7 +743,7 @@ class EVPlannerController:
 
         self.logger.debug(f"Benodigd: {energy_needed_kwh:.2f} kWh")
 
-        self.logger.debug(f"Max prijs: €{max_price:.3f}/kWh")
+        self.logger.debug(f"Max prijs: €{max_price:.2f}/kWh")
 
         self.logger.debug(f"Min PV: {min_pv_kwh:.2f} kWh")
 
