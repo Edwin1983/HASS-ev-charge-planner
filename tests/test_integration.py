@@ -91,7 +91,7 @@ async def test_full_integration_setup_and_unload(hass):
         states.get("select.ev_charge_planner_pv_charging_current_rounding")
         is not None
     )
-    assert states.get("datetime.ev_charge_planner_departure_time") is not None
+    assert states.get("time.ev_charge_planner_departure_time") is not None
     assert states.get("number.ev_charge_planner_energy_needed") is not None
     assert states.get("number.ev_charge_planner_maximum_grid_price") is not None
     assert states.get("number.ev_charge_planner_maximum_phase_switches") is not None
