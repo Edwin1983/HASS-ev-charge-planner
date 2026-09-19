@@ -11,7 +11,7 @@ It combines:
 - electricity price data;
 - Solcast PV forecasts;
 - required charging energy;
-- a maximum grid-price limit;
+- a maximum grid-price limit in ct/kWh;
 - a minimum usable PV-energy setting for solar-only planning;
 - a configurable phase-switch budget;
 - the configured maximum charging power.
@@ -52,10 +52,10 @@ The integration provides these configurable entities:
 
 | Setting | Native entity | Default |
 |---|---|---:|
-| Departure time | `datetime.ev_charge_planner_departure_time` | 23:59 |
+| Departure time | `time.ev_charge_planner_departure_time` | 23:59 |
 | Departure day | `select.ev_charge_planner_departure_day` | Vandaag |
 | Energy needed | `number.ev_charge_planner_energy_needed` | 10 kWh |
-| Maximum grid price | `number.ev_charge_planner_maximum_grid_price` | €0/kWh |
+| Maximum grid price | `number.ev_charge_planner_maximum_grid_price` | 0 ct/kWh |
 | Minimum PV for solar-only | `number.ev_charge_planner_minimum_pv_for_solar_only` | 0 kWh |
 | Maximum phase switches | `number.ev_charge_planner_maximum_phase_switches` | 8 |
 | Maximum charging power | `number.ev_charge_planner_maximum_charging_power` | 11.04 kW |
@@ -64,7 +64,7 @@ The integration provides these configurable entities:
 
 Home Assistant may change entity IDs through the entity registry. Use the entity registry/UI when referencing these entities from automations.
 
-The native entities restore their previous values after a restart. Existing installations can also use the previous `input_datetime`, `input_select` and `input_number` settings as compatibility fallbacks where applicable.
+The native entities restore their previous values after a restart. The departure time is a time-only entity; the separate departure-day entity determines whether that time applies to today or tomorrow. Existing installations can also use the previous `input_datetime`, `input_select` and `input_number` settings as compatibility fallbacks where applicable.
 
 ### Planner modes
 
