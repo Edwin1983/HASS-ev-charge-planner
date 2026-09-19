@@ -629,23 +629,7 @@ class EVPlannerController:
         # Fasewisselingen
         # ------------------------------------------------------------------
 
-        raw_max_phase_switches = self.hass.get_state(
-            self.entities["max_phase_switches"]
-        )
-
-        try:
-            max_phase_switches = int(float(raw_max_phase_switches))
-        except (TypeError, ValueError):
-            self.logger.warning(
-                f"Ongeldig maximaal aantal fasewisselingen: {raw_max_phase_switches}"
-            )
-            return None
-
-        if max_phase_switches < 0:
-            self.logger.warning(
-                "Maximaal aantal fasewisselingen kan niet negatief zijn."
-            )
-            return None
+        max_phase_switches = self._get_max_phase_switches()
 
         # ------------------------------------------------------------------
         # Vertrektijd
