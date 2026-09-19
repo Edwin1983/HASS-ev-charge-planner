@@ -2,6 +2,20 @@
 
 All notable changes to EV Charge Planner are documented here.
 
+## [1.1.1] - 2026-09-19
+
+### Changed
+
+- Bumped the integration version for the 1.1.1 maintenance release.
+- Updated release documentation and metadata to keep the repository aligned with the published 1.1.x release line.
+
+### Validation
+
+- Pytest: passed.
+- Ruff: passed.
+- Hassfest: passed.
+- HACS validation: passed.
+
 ## [1.1.0] - 2026-09-18
 
 ### Added
