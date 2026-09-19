@@ -99,7 +99,7 @@ class EVPlannerEnergyNeeded(EVPlannerNumberBase):
     _attr_native_max_value = 100.0
     _attr_native_step = 0.1
     _attr_native_unit_of_measurement = "kWh"
-    _attr_mode = NumberMode.BOX
+    _attr_mode = NumberMode.SLIDER
 
     def __init__(self, hass, entry):
         super().__init__(hass, entry)
@@ -127,7 +127,29 @@ class EVPlannerMaxPrice(EVPlannerNumberBase):
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
-        await self._restore_or_legacy(0.0, CONF_ENTITY_MAX_PRICE)
+        last_state = await self.async_get_last_state()
+        if last_state is not None:
+            try:
+                value = float(last_state.state)
+                unit = last_state.attributes.get("unit_of_measurement")
+                if unit == "€/kWh":
+                    value *= 100.0
+                self._attr_native_value = value
+                return
+            except (TypeError, ValueError):
+                pass
+
+        legacy_entity = self._entry.data.get(CONF_ENTITY_MAX_PRICE)
+        if legacy_entity:
+            state = self._hass.states.get(legacy_entity)
+            if state is not None:
+                try:
+                    self._attr_native_value = float(state.state) * 100.0
+                    return
+                except (TypeError, ValueError):
+                    pass
+
+        self._attr_native_value = 0.0
 
 
 class EVPlannerMaxPhaseSwitches(EVPlannerNumberBase):
