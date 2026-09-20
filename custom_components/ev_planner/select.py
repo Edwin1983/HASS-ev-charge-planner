@@ -5,6 +5,7 @@ from __future__ import annotations
 from homeassistant.components.select import SelectEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -56,6 +57,7 @@ class EVPlannerBaseSelect(SelectEntity, RestoreEntity):
     """Base class for EV Charge Planner selects."""
 
     _attr_has_entity_name = True
+    _attr_entity_category = EntityCategory.CONFIG
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         """Initialize the select."""
@@ -76,7 +78,7 @@ class EVPlannerBaseSelect(SelectEntity, RestoreEntity):
 class EVPlannerDepartureDaySelect(EVPlannerBaseSelect):
     """Select today or tomorrow as departure day."""
 
-    _attr_name = "Departure day"
+    _attr_translation_key = "departure_day"
     _attr_icon = "mdi:calendar-arrow-right"
     _attr_options = DEPARTURE_DAYS
 
@@ -112,7 +114,7 @@ class EVPlannerDepartureDaySelect(EVPlannerBaseSelect):
 class EVPlannerModeSelect(EVPlannerBaseSelect):
     """Select the EV Planner operating mode."""
 
-    _attr_name = "Planner mode"
+    _attr_translation_key = "planner_mode"
     _attr_icon = "mdi:ev-station"
     _attr_options = PLANNER_MODES
 
@@ -148,7 +150,7 @@ class EVPlannerModeSelect(EVPlannerBaseSelect):
 class EVPlannerPvRoundingSelect(EVPlannerBaseSelect):
     """Select the PV charging current rounding mode."""
 
-    _attr_name = "PV charging current rounding"
+    _attr_translation_key = "pv_charging_current_rounding"
     _attr_icon = "mdi:solar-power"
     _attr_options = PV_ROUNDING_OPTIONS
 
