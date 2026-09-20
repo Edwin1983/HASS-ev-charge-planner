@@ -4,6 +4,7 @@ import datetime as dt
 
 import pytest
 
+from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -23,6 +24,18 @@ from custom_components.ev_planner.const import (
 )
 
 
+@pytest.fixture
+def ignore_missing_translations() -> list[str]:
+    """Ignore unrelated Home Assistant Core translation checks."""
+    return [
+        "component.select.services.select_first.name",
+        "component.select.services.select_first.description",
+        "component.select.services.select_option.name",
+        "component.select.services.select_option.description",
+        "component.homeassistant.exceptions.service_not_found.message",
+    ]
+
+
 def make_config():
     return {
         CONF_ENTITY_DEPARTURE: "input_datetime.ev_vertrektijd",
@@ -39,7 +52,9 @@ def make_config():
     }
 
 
-async def test_full_integration_setup_and_unload(hass, enable_custom_integrations):
+async def test_full_integration_setup_and_unload(
+    hass: HomeAssistant, enable_custom_integrations: None
+):
     entry = MockConfigEntry(
         domain=DOMAIN,
         title="EV Planner",
@@ -100,7 +115,9 @@ async def test_full_integration_setup_and_unload(hass, enable_custom_integration
     assert hass.services.has_service(DOMAIN, "update")
 
 
-async def test_native_only_configuration(hass, enable_custom_integrations):
+async def test_native_only_configuration(
+    hass: HomeAssistant, enable_custom_integrations: None
+):
     """The integration can be set up without legacy input helpers."""
     entry = MockConfigEntry(
         domain=DOMAIN, title="EV Planner",
@@ -133,7 +150,9 @@ async def test_native_only_configuration(hass, enable_custom_integrations):
     await hass.async_block_till_done()
 
 
-async def test_full_planning_chain(hass, enable_custom_integrations):
+async def test_full_planning_chain(
+    hass: HomeAssistant, enable_custom_integrations: None
+):
     """Exercise config -> readers -> planner -> scheduler -> native output."""
     now = dt.datetime.now().astimezone()
     base = now.replace(minute=0, second=0, microsecond=0)
@@ -225,7 +244,7 @@ async def test_full_planning_chain(hass, enable_custom_integrations):
     await hass.async_block_till_done()
 
 
-async def test_service_rejects_unknown_config_entry(hass):
+async def test_service_rejects_unknown_config_entry(hass: HomeAssistant):
     """Service actions reject an unknown config entry."""
     with pytest.raises(ServiceValidationError):
         await hass.services.async_call(
@@ -234,7 +253,9 @@ async def test_service_rejects_unknown_config_entry(hass):
         )
 
 
-async def test_service_rejects_unloaded_config_entry(hass, enable_custom_integrations):
+async def test_service_rejects_unloaded_config_entry(
+    hass: HomeAssistant, enable_custom_integrations: None
+):
     """Service actions reject a config entry that is not loaded."""
     entry = MockConfigEntry(
         domain=DOMAIN, title="EV Planner", data=make_config(),
