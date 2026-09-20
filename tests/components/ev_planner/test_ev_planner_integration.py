@@ -107,7 +107,9 @@ async def test_native_only_configuration(hass, enable_custom_integrations):
         data={
             CONF_ENTITY_PRICES: "sensor.zonneplan_current_electricity_tariff",
             CONF_ENTITY_SOLCAST_TODAY: "sensor.solcast_pv_forecast_forecast_today",
-            CONF_ENTITY_SOLCAST_TOMORROW: "sensor.solcast_pv_forecast_forecast_tomorrow",
+            CONF_ENTITY_SOLCAST_TOMORROW: (
+                "sensor.solcast_pv_forecast_forecast_tomorrow"
+            ),
         },
         unique_id="native-only",
     )
@@ -118,9 +120,15 @@ async def test_native_only_configuration(hass, enable_custom_integrations):
     assert hass.states.get("select.ev_charge_planner_departure_day") is not None
     assert hass.states.get("number.ev_charge_planner_energy_needed") is not None
     assert hass.states.get("number.ev_charge_planner_maximum_grid_price") is not None
-    assert hass.states.get("number.ev_charge_planner_maximum_phase_switches") is not None
-    assert hass.states.get("number.ev_charge_planner_minimum_pv_for_solar_only") is not None
-    assert hass.states.get("number.ev_charge_planner_maximum_charging_power") is not None
+    assert hass.states.get(
+        "number.ev_charge_planner_maximum_phase_switches"
+    ) is not None
+    assert hass.states.get(
+        "number.ev_charge_planner_minimum_pv_for_solar_only"
+    ) is not None
+    assert hass.states.get(
+        "number.ev_charge_planner_maximum_charging_power"
+    ) is not None
     assert await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()
 
@@ -131,7 +139,9 @@ async def test_full_planning_chain(hass, enable_custom_integrations):
     base = now.replace(minute=0, second=0, microsecond=0)
     departure = base + dt.timedelta(hours=4)
 
-    hass.states.async_set("input_datetime.ev_vertrektijd", departure.strftime("%H:%M:%S"))
+    hass.states.async_set(
+        "input_datetime.ev_vertrektijd", departure.strftime("%H:%M:%S")
+    )
     hass.states.async_set(
         "input_select.ev_vertrekdag",
         "Vandaag" if departure.date() == base.date() else "Morgen",
@@ -149,14 +159,17 @@ async def test_full_planning_chain(hass, enable_custom_integrations):
     solcast_tomorrow = []
     for index in range(6):
         start = base + dt.timedelta(hours=index)
-        forecast.append({"start_date": start.isoformat(), "electricity_price": 1_000_000})
+        forecast.append(
+            {"start_date": start.isoformat(), "electricity_price": 1_000_000}
+        )
         item = {
             "period_start": start.isoformat(),
             "pv_estimate": 0.0,
             "pv_estimate10": 0.0,
             "pv_estimate90": 0.0,
         }
-        (solcast_today if start.date() == base.date() else solcast_tomorrow).append(item)
+        target = solcast_today if start.date() == base.date() else solcast_tomorrow
+        target.append(item)
 
     hass.states.async_set(
         "sensor.zonneplan_current_electricity_tariff", "0.10", {"forecast": forecast}
