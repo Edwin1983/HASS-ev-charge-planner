@@ -72,7 +72,7 @@ async def test_full_integration_setup_and_unload(hass):
     dashboard_response = await hass.services.async_call(
         DOMAIN,
         "dashboard",
-        {},
+        {"config_entry_id": entry.entry_id},
         blocking=True,
         return_response=True,
     )
