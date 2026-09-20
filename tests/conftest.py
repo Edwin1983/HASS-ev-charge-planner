@@ -1,6 +1,7 @@
 """Shared pytest fixtures for EV Charge Planner tests."""
 
 import pytest
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.ev_planner.const import (
     CONF_ENTITY_PRICES,
@@ -25,9 +26,10 @@ def valid_config():
 def config_entry(hass, valid_config):
     """Create a config entry for the integration."""
 
-    entry = hass.config_entries.async_add(
-        DOMAIN,
-        "EV Charge Planner",
-        valid_config,
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="EV Charge Planner",
+        data=valid_config,
     )
+    entry.add_to_hass(hass)
     return entry
