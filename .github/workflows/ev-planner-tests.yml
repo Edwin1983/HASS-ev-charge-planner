@@ -21,7 +21,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Detect Core-test changes
+      - name: Detect Core integration changes
         id: filter
         shell: bash
         run: |
@@ -42,7 +42,7 @@ jobs:
             fi
           fi
 
-          if grep -Eq '^(homeassistant/components/ev_planner/|tests/components/ev_planner/|requirements_test.txt|pyproject.toml|\.github/workflows/ev-planner-tests\.yml$)' /tmp/changed-files; then
+          if grep -Eq '^(homeassistant/components/ev_planner/|\.github/workflows/ev-planner-tests\.yml$)' /tmp/changed-files; then
             echo "core=true" >> "$GITHUB_OUTPUT"
           else
             echo "core=false" >> "$GITHUB_OUTPUT"
@@ -103,11 +103,20 @@ jobs:
             ha-core/requirements_all.txt
             ha-core/requirements_test.txt
 
-      - name: Install Home Assistant Core test dependencies
+      - name: Restore Home Assistant Core virtual environment
+        id: core-cache
+        uses: actions/cache@v4
+        with:
+          path: ha-core/.venv
+          key: ha-core-venv-${{ runner.os }}-py3.14-${{ hashFiles('ha-core/requirements_all.txt', 'ha-core/requirements_test.txt') }}
+
+      - name: Create and populate Home Assistant Core virtual environment
         working-directory: ha-core
+        if: steps.core-cache.outputs.cache-hit != 'true'
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements_all.txt -r requirements_test.txt
+          python -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/python -m pip install -r requirements_all.txt -r requirements_test.txt
 
       - name: Copy EV Charge Planner into Home Assistant Core
         run: |
@@ -118,4 +127,4 @@ jobs:
 
       - name: Run Core integration tests
         working-directory: ha-core
-        run: python -m pytest -q tests/components/ev_planner/test_ev_planner_integration.py
+        run: .venv/bin/python -m pytest -q tests/components/ev_planner/test_ev_planner_integration.py
