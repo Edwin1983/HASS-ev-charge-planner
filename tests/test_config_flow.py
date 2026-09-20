@@ -30,8 +30,14 @@ async def test_form_success(hass, valid_config, enable_custom_integrations):
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["title"] == "EV Charge Planner"
     assert result["data"][CONF_ENTITY_PRICES] == valid_config[CONF_ENTITY_PRICES]
-    assert result["data"][CONF_ENTITY_SOLCAST_TODAY] == valid_config[CONF_ENTITY_SOLCAST_TODAY]
-    assert result["data"][CONF_ENTITY_SOLCAST_TOMORROW] == valid_config[CONF_ENTITY_SOLCAST_TOMORROW]
+    assert (
+        result["data"][CONF_ENTITY_SOLCAST_TODAY]
+        == valid_config[CONF_ENTITY_SOLCAST_TODAY]
+    )
+    assert (
+        result["data"][CONF_ENTITY_SOLCAST_TOMORROW]
+        == valid_config[CONF_ENTITY_SOLCAST_TOMORROW]
+    )
 
 
 async def test_single_instance(hass, config_entry, enable_custom_integrations):
