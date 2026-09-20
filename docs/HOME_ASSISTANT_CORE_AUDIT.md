@@ -125,3 +125,66 @@ charger current, change phases, or detect vehicle connection.
 - No existing HACS installation path is removed.
 - No claim is made that the integration currently satisfies all Core quality-scale
   requirements.
+
+
+## Audit update — 2026-09-20
+
+A review against the current Home Assistant developer documentation identified the
+following additional Core requirements.
+
+### Confirmed current practices
+
+- The config flow uses UI selectors and `data_description`.
+- The options flow now uses the current `OptionsFlow.config_entry` API rather than
+  retaining a private copy of the config entry.
+- Service action descriptions now have translations in `strings.json` and the
+  English/Dutch translation files.
+- Service actions are registered from `async_setup`, which is the correct lifecycle
+  location.
+
+### Remaining Core blockers
+
+1. **Service action lifecycle and runtime lookup**
+   - Core expects service actions to remain registered even when no config entry is
+     loaded.
+   - The current unload path removes all EV Planner service actions.
+   - The current service handlers find the first controller in `hass.data` rather
+     than resolving a config entry and validating that it is loaded.
+   - This should be migrated to the Core `ConfigEntry.runtime_data` pattern during
+     the Core package migration.
+
+2. **Response action semantics**
+   - `status` and `dashboard` are read-only response actions and should use
+     `SupportsResponse.ONLY` in the Core implementation.
+   - Their focused tests should explicitly verify response-only behavior.
+
+3. **ConfigEntry.runtime_data**
+   - The controller is currently stored in `hass.data[DOMAIN][entry_id]`.
+   - The Core implementation should use a typed config-entry runtime-data object
+     and `entry.runtime_data`.
+
+4. **Core manifest**
+   - The current custom-integration manifest intentionally retains `version` and
+     the GitHub documentation URL.
+   - For the actual Core package, `version` must be omitted and
+     `documentation` must point to the Home Assistant documentation page.
+   - The final Core manifest should also declare the reviewed quality-scale tier.
+
+5. **Repository/package layout**
+   - The actual Core PR must move the integration to
+     `homeassistant/components/ev_planner/` and tests to
+     `tests/components/ev_planner/`.
+   - HACS-only files and installation instructions remain in this repository.
+
+6. **Quality-scale evidence**
+   - The current custom-integration test suite is green, but this does not establish
+     the Core bronze/silver requirements.
+   - In particular, the Core migration still needs dedicated coverage for service
+     actions, runtime-data lifecycle, config-entry unloading, and the applicable
+     documentation/quality-scale checklist.
+
+### Decision
+
+The planner/scheduler algorithm is **not** a Core blocker and will not be rewritten as
+part of this migration. The remaining work is primarily the Home Assistant adapter,
+lifecycle, service-action, test-layout and documentation boundary.
