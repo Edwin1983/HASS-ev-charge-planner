@@ -5,7 +5,7 @@ import datetime as dt
 import pytest
 
 from homeassistant.exceptions import ServiceValidationError
-from tests.common import MockConfigEntry
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from homeassistant.components.ev_planner.const import (
     CONF_ENTITY_DEPARTURE,
