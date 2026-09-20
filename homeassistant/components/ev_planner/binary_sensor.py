@@ -15,8 +15,6 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from .const import DOMAIN, SIGNAL_SENSOR_UPDATE
 
 
-DATA_CHARGING_ALLOWED = "charging_allowed"
-
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -24,21 +22,6 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up EV Planner binary sensors."""
-
-    domain_data = hass.data.setdefault(
-        DOMAIN,
-        {},
-    )
-
-    entry_data = domain_data.setdefault(
-        entry.entry_id,
-        {},
-    )
-
-    entry_data.setdefault(
-        DATA_CHARGING_ALLOWED,
-        False,
-    )
 
     async_add_entities(
         [
@@ -94,26 +77,13 @@ class EVPlannerChargingAllowedBinarySensor(BinarySensorEntity):
     def _entry_data(self) -> dict[str, Any]:
         """Return integration entry data."""
 
-        domain_data = self._hass.data.get(
-            DOMAIN,
-            {},
-        )
-
-        return domain_data.get(
-            self._entry.entry_id,
-            {},
-        )
+        return self._entry.runtime_data
 
     @property
     def is_on(self) -> bool:
         """Return whether the planner currently allows charging."""
 
-        return bool(
-            self._entry_data.get(
-                DATA_CHARGING_ALLOWED,
-                False,
-            )
-        )
+        return bool(self._entry_data.charging_allowed)
 
     async def async_added_to_hass(self) -> None:
         """Register dispatcher listener."""
