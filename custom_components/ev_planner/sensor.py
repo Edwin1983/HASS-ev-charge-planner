@@ -14,7 +14,6 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from .const import DOMAIN, SIGNAL_SENSOR_UPDATE
 
 
-
 def _current_decision(data: dict[str, Any]) -> dict[str, Any] | None:
     """Return the planner decision active at the current time."""
 
@@ -116,12 +115,7 @@ class EVPlannerStateSensor(EVPlannerBaseSensor):
     def native_value(self) -> str:
         """Return the current planner state."""
 
-        return str(
-            self._entry_data.get(
-                "sensor_state",
-                "Geen actieve laadbeslissing",
-            )
-        )
+        return str(self._controller.sensor_state)
 
 
 class EVPlannerDataSensor(EVPlannerBaseSensor):
@@ -140,15 +134,13 @@ class EVPlannerDataSensor(EVPlannerBaseSensor):
     def native_value(self) -> str:
         """Return the current plan state."""
 
-        data = self._entry_data.sensor_data
-        return str(data.get("state", "Geen planning"))
+        return str(self._controller.sensor_data.get("state", "Geen planning"))
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return planner data attributes."""
 
-        data = self._entry_data.get(DATA_SENSOR_DATA, {})
-        return dict(data.get("attributes", {}))
+        return dict(self._controller.sensor_data.get("attributes", {}))
 
 
 class EVPlannerChargeCurrentSensor(EVPlannerBaseSensor):
@@ -169,8 +161,7 @@ class EVPlannerChargeCurrentSensor(EVPlannerBaseSensor):
     def native_value(self) -> int:
         """Return the desired charging current at this moment."""
 
-        data = self._entry_data.get(DATA_SENSOR_DATA, {})
-        decision = _current_decision(data)
+        decision = _current_decision(self._controller.sensor_data)
         if decision is None:
             return 0
         return int(decision.get("charge_current_a", 0))
@@ -192,8 +183,7 @@ class EVPlannerPhasesSensor(EVPlannerBaseSensor):
     def native_value(self) -> int:
         """Return the desired number of charging phases at this moment."""
 
-        data = self._entry_data.get(DATA_SENSOR_DATA, {})
-        decision = _current_decision(data)
+        decision = _current_decision(self._controller.sensor_data)
         if decision is None:
             return 0
         return int(decision.get("phases", 0))
