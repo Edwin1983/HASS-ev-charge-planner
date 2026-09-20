@@ -51,7 +51,7 @@ async def test_full_integration_setup_and_unload(hass):
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
 
-    assert hass.data[DOMAIN][entry.entry_id]["controller"] is not None
+    assert entry.runtime_data is not None
 
     assert hass.services.has_service(DOMAIN, "update")
     assert hass.services.has_service(DOMAIN, "create_plan")
@@ -63,7 +63,7 @@ async def test_full_integration_setup_and_unload(hass):
     status_response = await hass.services.async_call(
         DOMAIN,
         "status",
-        {},
+        {"config_entry_id": entry.entry_id},
         blocking=True,
         return_response=True,
     )
@@ -113,8 +113,8 @@ async def test_full_integration_setup_and_unload(hass):
     assert await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()
 
-    assert entry.entry_id not in hass.data.get(DOMAIN, {})
-    assert not hass.services.has_service(DOMAIN, "update")
+    assert entry.runtime_data is None
+    assert hass.services.has_service(DOMAIN, "update")
 
 
 @pytest.mark.usefixtures("enable_custom_integrations")
@@ -236,7 +236,7 @@ async def test_full_planning_chain(hass):
     )
     await hass.async_block_till_done()
 
-    controller = hass.data[DOMAIN][entry.entry_id]["controller"]
+    controller = entry.runtime_data
     controller.update(now)
     await hass.async_block_till_done()
 
