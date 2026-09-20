@@ -67,5 +67,64 @@
       "name": "Dashboard data",
       "description": "Returns the current planner data."
     }
+  },
+  "entity": {
+    "sensor": {
+      "state": {
+        "name": "State"
+      },
+      "data": {
+        "name": "Data"
+      },
+      "desired_charge_current": {
+        "name": "Desired charge current"
+      },
+      "desired_phases": {
+        "name": "Desired phases"
+      }
+    },
+    "binary_sensor": {
+      "charging_allowed": {
+        "name": "Charging allowed"
+      }
+    },
+    "number": {
+      "energy_needed": {
+        "name": "Energy needed"
+      },
+      "maximum_grid_price": {
+        "name": "Maximum grid price"
+      },
+      "maximum_phase_switches": {
+        "name": "Maximum phase switches"
+      },
+      "minimum_pv_solar_only": {
+        "name": "Minimum PV for solar-only"
+      },
+      "maximum_charging_power": {
+        "name": "Maximum charging power"
+      }
+    },
+    "select": {
+      "departure_day": {
+        "name": "Departure day"
+      },
+      "planner_mode": {
+        "name": "Planner mode"
+      },
+      "pv_charging_current_rounding": {
+        "name": "PV charging current rounding"
+      }
+    },
+    "time": {
+      "departure_time": {
+        "name": "Departure time"
+      }
+    },
+    "switch": {
+      "smart_charging": {
+        "name": "Smart charging"
+      }
+    }
   }
 }
