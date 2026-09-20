@@ -124,6 +124,7 @@ jobs:
             homeassistant/setup.py
             homeassistant/util
             tests
+            requirements.txt
             requirements_all.txt
             requirements_test.txt
             pyproject.toml
