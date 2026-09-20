@@ -61,8 +61,7 @@ jobs:
         working-directory: ha-core
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt -r requirements_test.txt
-          python -m pip install paho-mqtt==2.1.0
+          python -m pip install -r requirements_all.txt -r requirements_test.txt
 
       - name: Copy EV Charge Planner into Home Assistant Core
         run: |
