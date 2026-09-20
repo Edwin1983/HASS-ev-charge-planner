@@ -78,6 +78,27 @@ class EVPlannerConfigFlow(
             data_schema=_build_schema(_DEFAULTS),
         )
 
+    async def async_step_reconfigure(
+        self,
+        user_input: dict[str, str] | None = None,
+    ) -> FlowResult:
+        """Handle reconfiguration of the planner input entities."""
+        if user_input is not None:
+            return self.async_update_reload_and_abort(
+                self._get_reconfigure_entry(),
+                data_updates=user_input,
+            )
+
+        current = self._get_reconfigure_entry().data
+        defaults = {
+            key: current.get(key, default)
+            for key, default in _DEFAULTS.items()
+        }
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=_build_schema(defaults),
+        )
+
     @staticmethod
     @callback
     def async_get_options_flow(
