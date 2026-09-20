@@ -99,40 +99,6 @@ jobs:
           repository: home-assistant/core
           path: ha-core
           fetch-depth: 1
-          sparse-checkout: |
-            homeassistant/__init__.py
-            homeassistant/block_async_io.py
-            homeassistant/auth
-            homeassistant/components/__init__.py
-            homeassistant/components/binary_sensor
-            homeassistant/components/device_tracker
-            homeassistant/components/ev_planner
-            homeassistant/components/number
-            homeassistant/components/recorder
-            homeassistant/components/select
-            homeassistant/components/sensor
-            homeassistant/components/switch
-            homeassistant/components/time
-            homeassistant/components/websocket_api
-            homeassistant/config.py
-            homeassistant/config_entries.py
-            homeassistant/const.py
-            homeassistant/core.py
-            homeassistant/exceptions.py
-            homeassistant/helpers
-            homeassistant/generated
-            homeassistant/loader.py
-            homeassistant/runner.py
-            homeassistant/setup.py
-            homeassistant/util
-            tests
-            requirements.txt
-            requirements_all.txt
-            requirements_test.txt
-            requirements_test_pre_commit.txt
-            homeassistant/package_constraints.txt
-            pyproject.toml
-          sparse-checkout-cone-mode: false
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -165,7 +131,11 @@ jobs:
           rm -rf ha-core/homeassistant/components/ev_planner
           cp -R homeassistant/components/ev_planner ha-core/homeassistant/components/ev_planner
           mkdir -p ha-core/tests/components/ev_planner
-          sed -e 's/from pytest_homeassistant_custom_component.common import MockConfigEntry/from tests.common import MockConfigEntry/'               -e 's/from custom_components.ev_planner/from homeassistant.components.ev_planner/'               -e 's/, enable_custom_integrations: None//'               tests/components/ev_planner/test_ev_planner_integration.py               > ha-core/tests/components/ev_planner/test_ev_planner_integration.py
+          sed -e 's/from pytest_homeassistant_custom_component.common import MockConfigEntry/from tests.common import MockConfigEntry/' \
+              -e 's/from custom_components.ev_planner/from homeassistant.components.ev_planner/' \
+              -e 's/, enable_custom_integrations: None//' \
+              tests/components/ev_planner/test_ev_planner_integration.py \
+              > ha-core/tests/components/ev_planner/test_ev_planner_integration.py
 
       - name: Run Core integration tests
         working-directory: ha-core
