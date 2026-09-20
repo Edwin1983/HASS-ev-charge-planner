@@ -9,6 +9,20 @@
           "entity_solcast_today": "Solcast today",
           "entity_solcast_tomorrow": "Solcast tomorrow"
         }
+      },
+      "reconfigure": {
+        "title": "Reconfigure EV Charge Planner",
+        "description": "Change the Home Assistant entities used as planner inputs.",
+        "data": {
+          "entity_prices": "Electricity prices",
+          "entity_solcast_today": "Solcast today",
+          "entity_solcast_tomorrow": "Solcast tomorrow"
+        },
+        "data_description": {
+          "entity_prices": "Select the Home Assistant sensor that provides the electricity price forecast.",
+          "entity_solcast_today": "Select the Solcast sensor containing today's hourly PV forecast.",
+          "entity_solcast_tomorrow": "Select the Solcast sensor containing tomorrow's hourly PV forecast."
+        }
       }
     },
     "abort": {
@@ -29,11 +43,29 @@
     }
   },
   "services": {
-    "update": {"name": "Update", "description": "Runs one EV Planner update."},
-    "create_plan": {"name": "Create plan", "description": "Creates a new EV charging plan."},
-    "replan": {"name": "Replan", "description": "Clears the current plan and creates a new one."},
-    "clear_plan": {"name": "Clear plan", "description": "Clears the current EV charging plan."},
-    "status": {"name": "Status", "description": "Returns the current planner status."},
-    "dashboard": {"name": "Dashboard data", "description": "Returns the current planner data."}
+    "update": {
+      "name": "Update",
+      "description": "Runs one EV Planner update."
+    },
+    "create_plan": {
+      "name": "Create plan",
+      "description": "Creates a new EV charging plan."
+    },
+    "replan": {
+      "name": "Replan",
+      "description": "Clears the current plan and creates a new one."
+    },
+    "clear_plan": {
+      "name": "Clear plan",
+      "description": "Clears the current EV charging plan."
+    },
+    "status": {
+      "name": "Status",
+      "description": "Returns the current planner status."
+    },
+    "dashboard": {
+      "name": "Dashboard data",
+      "description": "Returns the current planner data."
+    }
   }
 }
