@@ -4,15 +4,20 @@ from __future__ import annotations
 
 from datetime import datetime as dt_datetime
 import logging
-from typing import Any
+from typing import Any, cast
 
-from homeassistant.config_entries import ConfigEntry
+import voluptuous as vol
+
+from homeassistant.helpers import config_validation as cv
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState
+from homeassistant.const import ATTR_CONFIG_ENTRY_ID
 from homeassistant.core import (
     HomeAssistant,
     HomeAssistantError,
     ServiceCall,
     SupportsResponse,
 )
+from homeassistant.exceptions import ServiceValidationError
 
 from .const import DOMAIN, PLATFORMS
 from .core.ev_planner import EVPlannerController
@@ -30,10 +35,17 @@ SERVICE_NAMES = (
 )
 RESPONSE_SERVICES = {"status", "dashboard"}
 
+type EVPlannerConfigEntry = ConfigEntry[EVPlannerController]
+
+SERVICE_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_CONFIG_ENTRY_ID): cv.string,
+    }
+)
+
 
 def _make_logger() -> Logger:
     """Create the EV Charge Planner logger."""
-
     return Logger(
         _LOGGER.debug,
         _LOGGER.info,
@@ -42,18 +54,21 @@ def _make_logger() -> Logger:
     )
 
 
-def _get_controller(hass: HomeAssistant) -> EVPlannerController:
-    """Return the active planner controller."""
+def _get_controller(
+    hass: HomeAssistant,
+    call: ServiceCall,
+) -> EVPlannerController:
+    """Return the controller for the targeted config entry."""
+    entry_id = call.data[ATTR_CONFIG_ENTRY_ID]
+    entry = hass.config_entries.async_get_entry(entry_id)
 
-    domain_data: dict[str, Any] = hass.data.get(DOMAIN, {})
-    if not domain_data:
-        raise HomeAssistantError("EV Charge Planner is not configured")
+    if entry is None or entry.domain != DOMAIN:
+        raise ServiceValidationError("EV Charge Planner config entry not found")
 
-    entry_data = next(iter(domain_data.values()), None)
-    if not entry_data or "controller" not in entry_data:
-        raise HomeAssistantError("EV Charge Planner is not configured")
+    if entry.state is not ConfigEntryState.LOADED:
+        raise ServiceValidationError("EV Charge Planner config entry is not loaded")
 
-    return entry_data["controller"]
+    return cast(EVPlannerConfigEntry, entry).runtime_data
 
 
 async def _run(
@@ -62,7 +77,6 @@ async def _run(
     method: str,
 ) -> Any:
     """Run a synchronous controller method outside the event loop."""
-
     func = getattr(controller, method)
 
     if method == "clear_plan":
@@ -74,60 +88,36 @@ async def _run(
     )
 
 
-async def _async_handle_update(
-    call: ServiceCall,
-) -> None:
+async def _async_handle_update(call: ServiceCall) -> None:
     """Handle the update action."""
-
-    hass = call.hass
-    await _run(hass, _get_controller(hass), "update")
+    await _run(call.hass, _get_controller(call.hass, call), "update")
 
 
-async def _async_handle_create_plan(
-    call: ServiceCall,
-) -> None:
+async def _async_handle_create_plan(call: ServiceCall) -> None:
     """Handle the create_plan action."""
-
-    hass = call.hass
-    await _run(hass, _get_controller(hass), "create_plan")
+    await _run(call.hass, _get_controller(call.hass, call), "create_plan")
 
 
-async def _async_handle_replan(
-    call: ServiceCall,
-) -> None:
+async def _async_handle_replan(call: ServiceCall) -> None:
     """Handle the replan action."""
-
-    hass = call.hass
-    await _run(hass, _get_controller(hass), "replan")
+    await _run(call.hass, _get_controller(call.hass, call), "replan")
 
 
-async def _async_handle_clear_plan(
-    call: ServiceCall,
-) -> None:
+async def _async_handle_clear_plan(call: ServiceCall) -> None:
     """Handle the clear_plan action."""
-
-    hass = call.hass
-    await _run(hass, _get_controller(hass), "clear_plan")
+    await _run(call.hass, _get_controller(call.hass, call), "clear_plan")
 
 
-async def _async_handle_status(
-    call: ServiceCall,
-) -> dict:
+async def _async_handle_status(call: ServiceCall) -> dict:
     """Handle the status action."""
-
-    hass = call.hass
-    controller = _get_controller(hass)
-    return await hass.async_add_executor_job(controller.get_status)
+    controller = _get_controller(call.hass, call)
+    return await call.hass.async_add_executor_job(controller.get_status)
 
 
-async def _async_handle_dashboard(
-    call: ServiceCall,
-) -> dict:
+async def _async_handle_dashboard(call: ServiceCall) -> dict:
     """Handle the dashboard action."""
-
-    hass = call.hass
-    controller = _get_controller(hass)
-    return await hass.async_add_executor_job(
+    controller = _get_controller(call.hass, call)
+    return await call.hass.async_add_executor_job(
         controller.get_dashboard_data,
         dt_datetime.now().astimezone(),
     )
@@ -145,14 +135,14 @@ SERVICE_HANDLERS = {
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     """Set up EV Charge Planner services."""
-
     for name in SERVICE_NAMES:
         hass.services.async_register(
             DOMAIN,
             name,
             SERVICE_HANDLERS[name],
+            schema=SERVICE_SCHEMA,
             supports_response=(
-                SupportsResponse.OPTIONAL
+                SupportsResponse.ONLY
                 if name in RESPONSE_SERVICES
                 else SupportsResponse.NONE
             ),
@@ -163,10 +153,9 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
+    entry: EVPlannerConfigEntry,
 ) -> bool:
     """Set up EV Charge Planner from a config entry."""
-
     merged_config = {
         **entry.data,
         **entry.options,
@@ -178,9 +167,7 @@ async def async_setup_entry(
         config=merged_config,
         entry_id=entry.entry_id,
     )
-
-    domain_data = hass.data.setdefault(DOMAIN, {})
-    domain_data[entry.entry_id] = {"controller": controller}
+    entry.runtime_data = controller
 
     await hass.config_entries.async_forward_entry_setups(
         entry,
@@ -197,33 +184,18 @@ async def async_setup_entry(
 
 async def _async_update_listener(
     hass: HomeAssistant,
-    entry: ConfigEntry,
+    entry: EVPlannerConfigEntry,
 ) -> None:
     """Reload the config entry when options change."""
-
     await hass.config_entries.async_reload(entry.entry_id)
 
 
 async def async_unload_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
+    entry: EVPlannerConfigEntry,
 ) -> bool:
     """Unload EV Charge Planner."""
-
-    unload_ok = await hass.config_entries.async_unload_platforms(
+    return await hass.config_entries.async_unload_platforms(
         entry,
         PLATFORMS,
     )
-
-    if not unload_ok:
-        return False
-
-    domain_data = hass.data.get(DOMAIN, {})
-    domain_data.pop(entry.entry_id, None)
-
-    if not domain_data:
-        hass.data.pop(DOMAIN, None)
-        for service in SERVICE_NAMES:
-            hass.services.async_remove(DOMAIN, service)
-
-    return True
