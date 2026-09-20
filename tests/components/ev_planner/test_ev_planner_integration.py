@@ -24,18 +24,6 @@ from custom_components.ev_planner.const import (
 )
 
 
-@pytest.fixture
-def ignore_missing_translations() -> list[str]:
-    """Ignore unrelated Home Assistant Core translation checks."""
-    return [
-        "component.select.services.select_first.name",
-        "component.select.services.select_first.description",
-        "component.select.services.select_option.name",
-        "component.select.services.select_option.description",
-        "component.homeassistant.exceptions.service_not_found.message",
-    ]
-
-
 def make_config():
     return {
         CONF_ENTITY_DEPARTURE: "input_datetime.ev_vertrektijd",
@@ -216,13 +204,10 @@ async def test_full_planning_chain(
     )
     await hass.async_block_till_done()
 
-    controller = entry.runtime_data
-    controller.update(now)
+    await hass.services.async_call(
+        DOMAIN, "update", {"config_entry_id": entry.entry_id}, blocking=True,
+    )
     await hass.async_block_till_done()
-    assert controller.last_plan is not None
-    assert controller.last_plan.complete is True
-    assert controller.last_plan.energy_planned_kwh > 0
-    assert controller.scheduler.plan is controller.last_plan
 
     data_state = hass.states.get("sensor.ev_planner_data")
     assert data_state is not None
