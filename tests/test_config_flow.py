@@ -34,7 +34,7 @@ async def test_form_success(hass, valid_config, enable_custom_integrations):
     assert result["data"][CONF_ENTITY_SOLCAST_TOMORROW] == valid_config[CONF_ENTITY_SOLCAST_TOMORROW]
 
 
-async def test_single_instance(hass, config_entry):
+async def test_single_instance(hass, config_entry, enable_custom_integrations):
     """Test only one config entry can be created."""
 
     result = await hass.config_entries.flow.async_init(
@@ -49,7 +49,7 @@ async def test_single_instance(hass, config_entry):
 async def test_options_flow(hass, config_entry, valid_config):
     """Test the options flow."""
 
-    result = await hass.config_entries.options.async_init(config_entry)
+    result = await hass.config_entries.options.async_init(config_entry.entry_id)
     assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == "init"
 
