@@ -127,6 +127,7 @@ jobs:
             requirements.txt
             requirements_all.txt
             requirements_test.txt
+            requirements_test_pre_commit.txt
             homeassistant/package_constraints.txt
             pyproject.toml
           sparse-checkout-cone-mode: false
@@ -139,6 +140,7 @@ jobs:
           cache-dependency-path: |
             ha-core/requirements_all.txt
             ha-core/requirements_test.txt
+            ha-core/requirements_test_pre_commit.txt
             ha-core/homeassistant/package_constraints.txt
 
       - name: Restore Home Assistant Core virtual environment
@@ -146,7 +148,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ha-core/.venv
-          key: ha-core-venv-${{ runner.os }}-py3.14-${{ hashFiles('ha-core/requirements_all.txt', 'ha-core/requirements_test.txt', 'ha-core/homeassistant/package_constraints.txt') }}
+          key: ha-core-venv-${{ runner.os }}-py3.14-${{ hashFiles('ha-core/requirements_all.txt', 'ha-core/requirements_test.txt', 'ha-core/requirements_test_pre_commit.txt', 'ha-core/homeassistant/package_constraints.txt') }}
 
       - name: Create and populate Home Assistant Core virtual environment
         working-directory: ha-core
