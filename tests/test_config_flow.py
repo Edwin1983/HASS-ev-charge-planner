@@ -73,7 +73,12 @@ async def test_options_flow(
     assert result["data"] == valid_config
 
 
-async def test_reconfigure(hass, config_entry, valid_config, enable_custom_integrations):
+async def test_reconfigure(
+    hass,
+    config_entry,
+    valid_config,
+    enable_custom_integrations,
+):
     """Test reconfiguring the planner input entities."""
     new_config = {
         **valid_config,
