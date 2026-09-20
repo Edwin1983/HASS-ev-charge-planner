@@ -102,7 +102,7 @@ class EVPlannerBaseSensor(SensorEntity):
 class EVPlannerStateSensor(EVPlannerBaseSensor):
     """Sensor containing the current EV Planner state."""
 
-    _attr_name = "State"
+    _attr_translation_key = "state"
     _attr_icon = "mdi:ev-station"
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
@@ -121,7 +121,7 @@ class EVPlannerStateSensor(EVPlannerBaseSensor):
 class EVPlannerDataSensor(EVPlannerBaseSensor):
     """Sensor containing EV Planner plan data."""
 
-    _attr_name = "Data"
+    _attr_translation_key = "data"
     _attr_icon = "mdi:chart-timeline-variant"
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
@@ -146,7 +146,7 @@ class EVPlannerDataSensor(EVPlannerBaseSensor):
 class EVPlannerChargeCurrentSensor(EVPlannerBaseSensor):
     """Sensor containing the desired charging current right now."""
 
-    _attr_name = "Gewenste laadstroom"
+    _attr_translation_key = "desired_charge_current"
     _attr_icon = "mdi:ev-station"
     _attr_native_unit_of_measurement = "A"
     _attr_device_class = SensorDeviceClass.CURRENT
@@ -170,7 +170,7 @@ class EVPlannerChargeCurrentSensor(EVPlannerBaseSensor):
 class EVPlannerPhasesSensor(EVPlannerBaseSensor):
     """Sensor containing the desired number of charging phases right now."""
 
-    _attr_name = "Gewenste fase"
+    _attr_translation_key = "desired_phases"
     _attr_icon = "mdi:sine-wave"
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
