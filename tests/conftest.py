@@ -1,5 +1,7 @@
 """Shared pytest fixtures for EV Charge Planner tests."""
 
+pytest_plugins = "pytest_homeassistant_custom_component"
+
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
