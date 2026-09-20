@@ -4,6 +4,7 @@ import datetime as dt
 
 import pytest
 
+from homeassistant.exceptions import ServiceValidationError
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.ev_planner.const import (
@@ -272,8 +273,6 @@ async def test_full_planning_chain(hass):
 @pytest.mark.usefixtures("enable_custom_integrations")
 async def test_service_rejects_unknown_config_entry(hass):
     """Service actions reject an unknown config entry."""
-    from homeassistant.exceptions import ServiceValidationError
-
     with pytest.raises(ServiceValidationError):
         await hass.services.async_call(
             DOMAIN,
@@ -287,8 +286,6 @@ async def test_service_rejects_unknown_config_entry(hass):
 @pytest.mark.usefixtures("enable_custom_integrations")
 async def test_service_rejects_unloaded_config_entry(hass):
     """Service actions reject a config entry that is not loaded."""
-    from homeassistant.exceptions import ServiceValidationError
-
     entry = MockConfigEntry(
         domain=DOMAIN,
         title="EV Planner",
