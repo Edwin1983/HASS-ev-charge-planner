@@ -78,9 +78,7 @@ entity-disabled-by-default: todo
 entity-translations: todo
 exception-translations: todo
 icon-translations: todo
-reconfiguration-flow:
-  status: exempt
-  comment: Configuration is service- and entity-based; there is no external connection that can be reconfigured.
+reconfiguration-flow: done
 repair-issues: todo
 stale-devices:
   status: exempt
