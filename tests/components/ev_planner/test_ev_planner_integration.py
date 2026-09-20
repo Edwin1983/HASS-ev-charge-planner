@@ -24,11 +24,26 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 
 @pytest.fixture
-def ignore_missing_translations() -> list[str]:
-    """Ignore unrelated Home Assistant Core translation checks."""
-    return [
-        "component.number.services.set_value.name",
-    ]
+def ignore_missing_translations(request: pytest.FixtureRequest) -> list[str]:
+    """Ignore unrelated Home Assistant Core translation checks per test."""
+    ignores = {
+        "test_full_integration_setup_and_unload": [
+            "component.select.services.select_last.name",
+        ],
+        "test_native_only_configuration": [
+            "component.switch.services.turn_on.name",
+        ],
+        "test_full_planning_chain": [
+            "component.switch.services.toggle.name",
+        ],
+        "test_service_rejects_unknown_config_entry": [
+            "component.number.services.set_value.name",
+        ],
+        "test_service_rejects_unloaded_config_entry": [
+            "component.switch.services.turn_on.name",
+        ],
+    }
+    return ignores.get(request.node.name, [])
 
 
 def make_config():
