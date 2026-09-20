@@ -120,6 +120,7 @@ jobs:
             homeassistant/core.py
             homeassistant/exceptions.py
             homeassistant/helpers
+            homeassistant/generated
             homeassistant/loader.py
             homeassistant/runner.py
             homeassistant/setup.py
