@@ -7,7 +7,12 @@ import logging
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, HomeAssistantError, ServiceCall, SupportsResponse
+from homeassistant.core import (
+    HomeAssistant,
+    HomeAssistantError,
+    ServiceCall,
+    SupportsResponse,
+)
 
 from .const import DOMAIN, PLATFORMS
 from .core.ev_planner import EVPlannerController
