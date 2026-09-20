@@ -96,8 +96,8 @@ async def test_full_integration_setup_and_unload(
     states = hass.states
     for entity_id in (
         "sensor.ev_planner_state", "sensor.ev_planner_data",
-        "sensor.ev_planner_gewenste_laadstroom",
-        "sensor.ev_planner_gewenste_fase",
+        "sensor.ev_planner_desired_charge_current",
+        "sensor.ev_planner_desired_phases",
         "binary_sensor.ev_planner_charging_allowed",
         "switch.ev_planner_smart_charging",
         "select.ev_charge_planner_departure_day",
@@ -235,8 +235,8 @@ async def test_full_planning_chain(
     assert data_state is not None
     assert data_state.attributes["decisions"]
     assert data_state.attributes["energy_planned_kwh"] > 0
-    charge_current = hass.states.get("sensor.ev_planner_gewenste_laadstroom")
-    phases = hass.states.get("sensor.ev_planner_gewenste_fase")
+    charge_current = hass.states.get("sensor.ev_planner_desired_charge_current")
+    phases = hass.states.get("sensor.ev_planner_desired_phases")
     assert charge_current is not None
     assert phases is not None
     assert 0 <= int(charge_current.state) <= 16
