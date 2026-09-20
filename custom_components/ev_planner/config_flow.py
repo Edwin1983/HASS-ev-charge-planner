@@ -61,7 +61,7 @@ class EVPlannerConfigFlow(
 
     async def async_step_user(
         self,
-        user_input=None,
+        user_input: dict[str, str] | None = None,
     ) -> FlowResult:
         """Create the EV Charge Planner integration."""
         if self._async_current_entries():
@@ -96,7 +96,7 @@ class EVPlannerOptionsFlow(config_entries.OptionsFlow):
 
     async def async_step_init(
         self,
-        user_input=None,
+        user_input: dict[str, str] | None = None,
     ) -> FlowResult:
         """Manage the options."""
         if user_input is not None:
