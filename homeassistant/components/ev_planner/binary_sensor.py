@@ -15,7 +15,6 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from .const import DOMAIN, SIGNAL_SENSOR_UPDATE
 
 
-
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -74,7 +73,7 @@ class EVPlannerChargingAllowedBinarySensor(BinarySensorEntity):
         }
 
     @property
-    def _entry_data(self) -> dict[str, Any]:
+    def _entry_data(self) -> Any:
         """Return integration entry data."""
 
         return self._entry.runtime_data
