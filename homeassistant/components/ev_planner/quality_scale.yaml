@@ -3,7 +3,9 @@ rules:
 # Bronze
 
   action-setup: done
-  appropriate-polling: done
+  appropriate-polling:
+    status: exempt
+    comment: The integration is not a polling integration; updates are initiated by Home Assistant automations or actions.
   brands: todo
   common-modules: done
   config-flow-test-coverage: done
