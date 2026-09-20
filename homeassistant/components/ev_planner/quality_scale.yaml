@@ -12,13 +12,13 @@ dependency-transparency: done
 docs-actions: done
 docs-conditions:
   status: exempt
-  comment: This integration does not provide conditions.
+  comment: This integration does not provide any conditions.
 docs-high-level-description: done
 docs-installation-instructions: done
 docs-removal-instructions: done
 docs-triggers:
   status: exempt
-  comment: This integration does not provide triggers.
+  comment: This integration does not provide any triggers.
 entity-event-setup:
   status: exempt
   comment: The integration does not explicitly subscribe entities to events.
