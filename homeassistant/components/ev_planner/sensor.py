@@ -14,7 +14,6 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from .const import DOMAIN, SIGNAL_SENSOR_UPDATE
 
 
-
 def _current_decision(data: dict[str, Any]) -> dict[str, Any] | None:
     """Return the planner decision active at the current time."""
 
@@ -63,7 +62,7 @@ class EVPlannerBaseSensor(SensorEntity):
         self._entry = entry
 
     @property
-    def _entry_data(self) -> dict[str, Any]:
+    def _entry_data(self) -> Any:
         """Return integration entry data."""
 
         return self._entry.runtime_data
