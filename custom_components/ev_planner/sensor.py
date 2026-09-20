@@ -14,9 +14,6 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from .const import DOMAIN, SIGNAL_SENSOR_UPDATE
 
 
-DATA_SENSOR_STATE = "sensor_state"
-DATA_SENSOR_DATA = "sensor_data"
-
 
 def _current_decision(data: dict[str, Any]) -> dict[str, Any] | None:
     """Return the planner decision active at the current time."""
@@ -44,33 +41,8 @@ async def async_setup_entry(
 ) -> None:
     """Set up EV Planner sensors."""
 
-    domain_data = hass.data.setdefault(DOMAIN, {})
-
-    entry_data = domain_data.setdefault(entry.entry_id, {})
-
-    entry_data.setdefault(DATA_SENSOR_STATE, "Geen actieve laadbeslissing")
-    entry_data.setdefault(
-        DATA_SENSOR_DATA,
-        {
-            "state": "Geen planning",
-            "attributes": {
-                "energy_needed_kwh": 0.0,
-                "energy_planned_kwh": 0.0,
-                "missing_energy_kwh": 0.0,
-                "free_energy_kwh": 0.0,
-                "paid_energy_kwh": 0.0,
-                "estimated_cost": 0.0,
-                "complete": False,
-                "departure_time": None,
-                "max_price": 0.0,
-                "charging_windows": 0,
-                "phase_switches": 0,
-                "max_phase_switches": 0,
-                "total_charging_minutes": 0.0,
-                "decisions": [],
-            },
-        },
-    )
+    if entry.runtime_data is None:
+        raise RuntimeError("EV Charge Planner runtime data is not initialized")
 
     async_add_entities(
         [
@@ -94,11 +66,10 @@ class EVPlannerBaseSensor(SensorEntity):
         self._entry = entry
 
     @property
-    def _entry_data(self) -> dict[str, Any]:
-        """Return integration entry data."""
+    def _controller(self):
+        """Return the controller stored in ConfigEntry.runtime_data."""
 
-        domain_data = self._hass.data.get(DOMAIN, {})
-        return domain_data.get(self._entry.entry_id, {})
+        return self._entry.runtime_data
 
     @property
     def device_info(self) -> dict[str, Any]:
@@ -147,7 +118,7 @@ class EVPlannerStateSensor(EVPlannerBaseSensor):
 
         return str(
             self._entry_data.get(
-                DATA_SENSOR_STATE,
+                "sensor_state",
                 "Geen actieve laadbeslissing",
             )
         )
@@ -169,7 +140,7 @@ class EVPlannerDataSensor(EVPlannerBaseSensor):
     def native_value(self) -> str:
         """Return the current plan state."""
 
-        data = self._entry_data.get(DATA_SENSOR_DATA, {})
+        data = self._entry_data.sensor_data
         return str(data.get("state", "Geen planning"))
 
     @property
