@@ -68,7 +68,7 @@ jobs:
           rm -rf ha-core/homeassistant/components/ev_planner
           cp -R homeassistant/components/ev_planner ha-core/homeassistant/components/ev_planner
           mkdir -p ha-core/tests/components/ev_planner
-          sed -e 's/from pytest_homeassistant_custom_component.common import MockConfigEntry/from tests.common import MockConfigEntry/' -e 's/from custom_components.ev_planner/from homeassistant.components.ev_planner/' -e 's/, enable_custom_integrations//' tests/components/ev_planner/test_ev_planner_integration.py > ha-core/tests/components/ev_planner/test_ev_planner_integration.py
+          sed -e 's/from pytest_homeassistant_custom_component.common import MockConfigEntry/from tests.common import MockConfigEntry/' -e 's/from custom_components.ev_planner/from homeassistant.components.ev_planner/' -e 's/, enable_custom_integrations: None//' tests/components/ev_planner/test_ev_planner_integration.py > ha-core/tests/components/ev_planner/test_ev_planner_integration.py
 
       - name: Run Core integration tests
         working-directory: ha-core
