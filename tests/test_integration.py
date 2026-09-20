@@ -267,3 +267,46 @@ async def test_full_planning_chain(hass):
 
     assert await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()
+
+
+@pytest.mark.usefixtures("enable_custom_integrations")
+async def test_service_rejects_unknown_config_entry(hass):
+    """Service actions reject an unknown config entry."""
+    from homeassistant.exceptions import ServiceValidationError
+
+    with pytest.raises(ServiceValidationError):
+        await hass.services.async_call(
+            DOMAIN,
+            "status",
+            {"config_entry_id": "does-not-exist"},
+            blocking=True,
+            return_response=True,
+        )
+
+
+@pytest.mark.usefixtures("enable_custom_integrations")
+async def test_service_rejects_unloaded_config_entry(hass):
+    """Service actions reject a config entry that is not loaded."""
+    from homeassistant.exceptions import ServiceValidationError
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="EV Planner",
+        data=make_config(),
+        unique_id="unloaded-entry",
+    )
+    entry.add_to_hass(hass)
+
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+
+    with pytest.raises(ServiceValidationError):
+        await hass.services.async_call(
+            DOMAIN,
+            "status",
+            {"config_entry_id": entry.entry_id},
+            blocking=True,
+            return_response=True,
+        )
