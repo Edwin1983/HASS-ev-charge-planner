@@ -1,0 +1,67 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "EV Charge Planner",
+        "description": "Kies de Home Assistant-entities die de planner als invoer gebruikt. EV Charge Planner bestuurt geen laadpaal.",
+        "data": {
+          "entity_prices": "Elektriciteitsprijzen",
+          "entity_solcast_today": "Solcast vandaag",
+          "entity_solcast_tomorrow": "Solcast morgen"
+        },
+        "data_description": {
+          "entity_prices": "Select the Home Assistant sensor that provides the electricity price forecast.",
+          "entity_solcast_today": "Select the Solcast sensor containing today's hourly PV forecast.",
+          "entity_solcast_tomorrow": "Select the Solcast sensor containing tomorrow's hourly PV forecast."
+        }
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Er kan maar één EV Charge Planner-configuratie worden toegevoegd."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "EV Charge Planner",
+        "description": "Pas de externe prijs- en Solcast-entities aan. De plannerinstellingen zijn native entities.",
+        "data": {
+          "entity_prices": "Elektriciteitsprijzen",
+          "entity_solcast_today": "Solcast vandaag",
+          "entity_solcast_tomorrow": "Solcast morgen"
+        },
+        "data_description": {
+          "entity_prices": "Select the Home Assistant sensor that provides the electricity price forecast.",
+          "entity_solcast_today": "Select the Solcast sensor containing today's hourly PV forecast.",
+          "entity_solcast_tomorrow": "Select the Solcast sensor containing tomorrow's hourly PV forecast."
+        }
+      }
+    }
+  },
+  "services": {
+    "update": {
+      "name": "Update",
+      "description": "Voert één EV Planner update uit."
+    },
+    "create_plan": {
+      "name": "Nieuwe planning",
+      "description": "Maakt een nieuwe EV laadplanning."
+    },
+    "replan": {
+      "name": "Opnieuw plannen",
+      "description": "Verwijdert de huidige planning en maakt direct een nieuwe."
+    },
+    "clear_plan": {
+      "name": "Planning wissen",
+      "description": "Wist de huidige EV laadplanning."
+    },
+    "status": {
+      "name": "Status",
+      "description": "Retourneert de actuele plannerstatus."
+    },
+    "dashboard": {
+      "name": "Dashboarddata",
+      "description": "Retourneert de actuele plannerdata."
+    }
+  }
+}

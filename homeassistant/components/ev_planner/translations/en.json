@@ -1,0 +1,39 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Configure EV Charge Planner",
+        "description": "Select the Home Assistant entities used as planner inputs. EV Charge Planner does not control a charger.",
+        "data": {
+          "entity_prices": "Electricity prices",
+          "entity_solcast_today": "Solcast today",
+          "entity_solcast_tomorrow": "Solcast tomorrow"
+        }
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Only one EV Charge Planner configuration is allowed."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Configure EV Charge Planner",
+        "description": "Change the external price and Solcast entities. Planner settings are native entities.",
+        "data": {
+          "entity_prices": "Electricity prices",
+          "entity_solcast_today": "Solcast today",
+          "entity_solcast_tomorrow": "Solcast tomorrow"
+        }
+      }
+    }
+  },
+  "services": {
+    "update": {"name": "Update", "description": "Runs one EV Planner update."},
+    "create_plan": {"name": "Create plan", "description": "Creates a new EV charging plan."},
+    "replan": {"name": "Replan", "description": "Clears the current plan and creates a new one."},
+    "clear_plan": {"name": "Clear plan", "description": "Clears the current EV charging plan."},
+    "status": {"name": "Status", "description": "Returns the current planner status."},
+    "dashboard": {"name": "Dashboard data", "description": "Returns the current planner data."}
+  }
+}
