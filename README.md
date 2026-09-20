@@ -2,7 +2,13 @@
 
 Native Home Assistant custom integration for EV charging planning using electricity prices and PV forecasts.
 
-**Current release: 1.1.0**
+**Current release: 1.1.1**
+
+## What's new in 1.1.1
+
+Version 1.1.1 is a maintenance release focused on validation and preparation for a future Home Assistant Core contribution.
+
+The 1.1.0 native-entity changes described below remain the functional baseline.
 
 ## What's new in 1.1.0
 
