@@ -1,6 +1,20 @@
 {
   "config": {
     "step": {
+      "reconfigure": {
+        "title": "Reconfigure EV Charge Planner",
+        "description": "Change the Home Assistant entities used as planner inputs.",
+        "data": {
+          "entity_prices": "Electricity prices",
+          "entity_solcast_today": "Solcast today",
+          "entity_solcast_tomorrow": "Solcast tomorrow"
+        },
+        "data_description": {
+          "entity_prices": "Select the Home Assistant sensor that provides the electricity price forecast.",
+          "entity_solcast_today": "Select the Solcast sensor containing today's hourly PV forecast.",
+          "entity_solcast_tomorrow": "Select the Solcast sensor containing tomorrow's hourly PV forecast."
+        }
+      },
       "user": {
         "title": "Configure EV Charge Planner",
         "description": "Select the Home Assistant entities used as planner inputs. EV Charge Planner does not control a charger.",
