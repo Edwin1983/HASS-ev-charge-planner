@@ -1,7 +1,5 @@
 """Config flow tests for EV Charge Planner."""
 
-from unittest.mock import patch
-
 from homeassistant import config_entries
 from homeassistant.const import CONF_PLATFORM
 from homeassistant.data_entry_flow import FlowResultType
