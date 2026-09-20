@@ -103,8 +103,8 @@ class EVPlannerOptionsFlow(config_entries.OptionsFlow):
             return self.async_create_entry(title="", data=user_input)
 
         current = {
-            **self._config_entry.data,
-            **self._config_entry.options,
+            **self.config_entry.data,
+            **self.config_entry.options,
         }
         defaults = {
             key: current.get(key, default)
