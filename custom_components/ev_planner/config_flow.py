@@ -25,7 +25,7 @@ _DEFAULTS = {
 }
 
 
-def _build_schema(defaults: dict) -> vol.Schema:
+def _build_schema(defaults: dict[str, str]) -> vol.Schema:
     """Build the EV Charge Planner configuration schema."""
     return vol.Schema(
         {
