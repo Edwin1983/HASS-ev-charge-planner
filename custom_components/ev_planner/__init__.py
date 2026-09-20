@@ -13,7 +13,6 @@ from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import ATTR_CONFIG_ENTRY_ID
 from homeassistant.core import (
     HomeAssistant,
-    HomeAssistantError,
     ServiceCall,
     SupportsResponse,
 )
