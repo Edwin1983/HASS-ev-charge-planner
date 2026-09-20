@@ -39,7 +39,7 @@ def make_config():
     }
 
 
-async def test_full_integration_setup_and_unload(hass):
+async def test_full_integration_setup_and_unload(hass, enable_custom_integrations):
     entry = MockConfigEntry(
         domain=DOMAIN,
         title="EV Planner",
@@ -100,7 +100,7 @@ async def test_full_integration_setup_and_unload(hass):
     assert hass.services.has_service(DOMAIN, "update")
 
 
-async def test_native_only_configuration(hass):
+async def test_native_only_configuration(hass, enable_custom_integrations):
     """The integration can be set up without legacy input helpers."""
     entry = MockConfigEntry(
         domain=DOMAIN, title="EV Planner",
@@ -125,7 +125,7 @@ async def test_native_only_configuration(hass):
     await hass.async_block_till_done()
 
 
-async def test_full_planning_chain(hass):
+async def test_full_planning_chain(hass, enable_custom_integrations):
     """Exercise config -> readers -> planner -> scheduler -> native output."""
     now = dt.datetime.now().astimezone()
     base = now.replace(minute=0, second=0, microsecond=0)
@@ -221,7 +221,7 @@ async def test_service_rejects_unknown_config_entry(hass):
         )
 
 
-async def test_service_rejects_unloaded_config_entry(hass):
+async def test_service_rejects_unloaded_config_entry(hass, enable_custom_integrations):
     """Service actions reject a config entry that is not loaded."""
     entry = MockConfigEntry(
         domain=DOMAIN, title="EV Planner", data=make_config(),
