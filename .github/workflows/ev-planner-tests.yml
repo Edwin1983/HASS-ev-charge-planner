@@ -1,5 +1,9 @@
 name: EV Planner Tests
 
+concurrency:
+  group: ev-planner-tests-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
     branches:
@@ -51,6 +55,7 @@ jobs:
   test:
     name: Tests and linting
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     env:
       PYTHONPATH: .
@@ -82,6 +87,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.core == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       - name: Checkout repository
