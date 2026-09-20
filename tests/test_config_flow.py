@@ -1,10 +1,8 @@
 """Config flow tests for EV Charge Planner."""
 
 from homeassistant import config_entries
-from homeassistant.const import CONF_PLATFORM
 from homeassistant.data_entry_flow import FlowResultType
 
-from custom_components.ev_planner.config_flow import EVPlannerConfigFlow
 from custom_components.ev_planner.const import (
     CONF_ENTITY_PRICES,
     CONF_ENTITY_SOLCAST_TODAY,
@@ -13,7 +11,7 @@ from custom_components.ev_planner.const import (
 )
 
 
-async def test_form_success(hass, valid_config):
+async def test_form_success(hass, valid_config, enable_custom_integrations):
     """Test the config flow creates an entry."""
 
     result = await hass.config_entries.flow.async_init(
