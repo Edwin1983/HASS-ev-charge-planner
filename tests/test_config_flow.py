@@ -46,7 +46,7 @@ async def test_single_instance(hass, config_entry, enable_custom_integrations):
     assert result["reason"] == "single_instance_allowed"
 
 
-async def test_options_flow(hass, config_entry, valid_config):
+async def test_options_flow(hass, config_entry, valid_config, enable_custom_integrations):
     """Test the options flow."""
 
     result = await hass.config_entries.options.async_init(config_entry.entry_id)
