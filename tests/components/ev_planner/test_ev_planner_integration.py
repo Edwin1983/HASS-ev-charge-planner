@@ -4,22 +4,6 @@ import datetime as dt
 
 import pytest
 
-from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ServiceValidationError
-from pytest_homeassistant_custom_component.common import MockConfigEntry
-
-
-
-@pytest.fixture
-def ignore_missing_translations() -> list[str]:
-    """Ignore unrelated Home Assistant Core translation checks."""
-    return [
-        "component.number.services.set_value.name",
-        "component.select.services.select_last.name",
-        "component.select.services.select_next.name",
-        "component.homeassistant.exceptions.service_not_found.message",
-    ]
-
 from custom_components.ev_planner.const import (
     CONF_ENTITY_DEPARTURE,
     CONF_ENTITY_DEPARTURE_DAY,
@@ -34,6 +18,20 @@ from custom_components.ev_planner.const import (
     CONF_MAX_CHARGE_POWER_KW,
     DOMAIN,
 )
+from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ServiceValidationError
+from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+
+@pytest.fixture
+def ignore_missing_translations() -> list[str]:
+    """Ignore unrelated Home Assistant Core translation checks."""
+    return [
+        "component.number.services.set_value.name",
+        "component.select.services.select_last.name",
+        "component.select.services.select_next.name",
+        "component.homeassistant.exceptions.service_not_found.message",
+    ]
 
 
 def make_config():
