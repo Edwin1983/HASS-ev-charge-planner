@@ -116,7 +116,7 @@ class EVPlannerMaxPrice(EVPlannerNumberBase):
     _attr_name = "Maximum grid price"
     _attr_icon = "mdi:cash"
     _attr_native_min_value = 0.0
-    _attr_native_max_value = 500.0
+    _attr_native_max_value = 100.0
     _attr_native_step = 1.0
     _attr_native_unit_of_measurement = "ct/kWh"
     _attr_mode = NumberMode.SLIDER
@@ -178,7 +178,7 @@ class EVPlannerMinPv(EVPlannerNumberBase):
     _attr_name = "Minimum PV for solar-only"
     _attr_icon = "mdi:solar-power"
     _attr_native_min_value = 0.0
-    _attr_native_max_value = 100.0
+    _attr_native_max_value = 5.0
     _attr_native_step = 0.1
     _attr_native_unit_of_measurement = "kWh"
     _attr_mode = NumberMode.SLIDER
