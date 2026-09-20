@@ -110,13 +110,6 @@ from .solcast import SolcastReader
 from .status import EVStatusManager
 
 
-# Keys used by the native sensor platform.
-DATA_SENSOR_STATE = "sensor_state"
-DATA_SENSOR_DATA = "sensor_data"
-
-# Key used by the native binary_sensor platform.
-DATA_CHARGING_ALLOWED = "charging_allowed"
-
 
 class EVPlannerController:
     """
@@ -272,6 +265,31 @@ class EVPlannerController:
 
         self.last_published_state = None
 
+        # Runtime data consumed by the native entities. Keeping this state on
+        # the controller lets ConfigEntry.runtime_data remain the single
+        # lifecycle owner; the Core integration does not need hass.data.
+        self.sensor_state = "Geen actieve laadbeslissing"
+        self.sensor_data = {
+            "state": "Geen planning",
+            "attributes": {
+                "energy_needed_kwh": 0.0,
+                "energy_planned_kwh": 0.0,
+                "missing_energy_kwh": 0.0,
+                "free_energy_kwh": 0.0,
+                "paid_energy_kwh": 0.0,
+                "estimated_cost": 0.0,
+                "complete": False,
+                "departure_time": None,
+                "max_price": 0.0,
+                "charging_windows": 0,
+                "phase_switches": 0,
+                "max_phase_switches": 0,
+                "total_charging_minutes": 0.0,
+                "decisions": [],
+            },
+        }
+        self.charging_allowed = False
+
         self.logger.debug("EV Planner controller geïnitialiseerd.")
 
         self.logger.debug(f"Smart Charging: {'aan' if self.enabled else 'uit'}")
@@ -280,50 +298,17 @@ class EVPlannerController:
     # Native sensor data
     ##########################################################################
 
-    def _get_entry_data(self) -> dict:
-        """
-        Geeft de gedeelde data van deze ConfigEntry terug.
-
-        Deze data wordt gelezen door sensor.py.
-        """
-
-        domain_data = self._hass.data.setdefault(
-            "ev_planner",
-            {},
-        )
-
-        return domain_data.setdefault(
-            self.entry_id,
-            {},
-        )
-
     def _signal_sensor_update(self) -> None:
-        """
-        Informeert de native sensors dat nieuwe plannerdata beschikbaar is.
-
-        De planner kan vanuit async_add_executor_job() in een worker thread
-        worden uitgevoerd. Daarom wordt de dispatcher-call thread-safe
-        terug naar de Home Assistant event loop gepland.
-        """
-
+        """Inform native entities that planner data has changed."""
         self._hass.loop.call_soon_threadsafe(
             async_dispatcher_send,
             self._hass,
             SIGNAL_SENSOR_UPDATE,
         )
 
-    def _update_native_sensor_state(
-        self,
-        state: str,
-    ) -> None:
-        """
-        Update de gedeelde state-data voor de native state sensor.
-        """
-
-        entry_data = self._get_entry_data()
-
-        entry_data[DATA_SENSOR_STATE] = str(state)
-
+    def _update_native_sensor_state(self, state: str) -> None:
+        """Update the shared state consumed by the native state sensor."""
+        self.sensor_state = str(state)
         self._signal_sensor_update()
 
     def _update_native_sensor_data(
@@ -331,33 +316,18 @@ class EVPlannerController:
         state: str,
         attributes: dict,
     ) -> None:
-        """
-        Update de gedeelde data voor de native planner data sensor.
-        """
-
-        entry_data = self._get_entry_data()
-
-        entry_data[DATA_SENSOR_DATA] = {
+        """Update the shared data consumed by the native planner sensor."""
+        self.sensor_data = {
             "state": str(state),
             "attributes": dict(attributes),
         }
-
         self._signal_sensor_update()
 
     def _publish_charging_allowed(self) -> None:
-        """
-        Publiceert of de planner op dit moment laden toestaat.
-
-        Dit is een afgeleide, alleen-lezen plannerstatus
-        (scheduler.charging_allowed) en GEEN besturingsinput.
-        """
-
-        entry_data = self._get_entry_data()
-
-        entry_data[DATA_CHARGING_ALLOWED] = bool(
+        """Publish the read-only planner charging decision."""
+        self.charging_allowed = bool(
             self.status.get_status().charging_allowed
         )
-
         self._signal_sensor_update()
 
     ##########################################################################
