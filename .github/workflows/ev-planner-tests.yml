@@ -93,6 +93,13 @@ jobs:
           repository: home-assistant/core
           path: ha-core
           fetch-depth: 1
+          sparse-checkout: |
+            homeassistant
+            tests
+            requirements_all.txt
+            requirements_test.txt
+            pyproject.toml
+          sparse-checkout-cone-mode: true
 
       - name: Set up Python
         uses: actions/setup-python@v6
