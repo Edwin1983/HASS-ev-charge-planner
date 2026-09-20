@@ -94,12 +94,34 @@ jobs:
           path: ha-core
           fetch-depth: 1
           sparse-checkout: |
-            homeassistant
+            homeassistant/__init__.py
+            homeassistant/auth
+            homeassistant/components/__init__.py
+            homeassistant/components/binary_sensor
+            homeassistant/components/device_tracker
+            homeassistant/components/ev_planner
+            homeassistant/components/number
+            homeassistant/components/recorder
+            homeassistant/components/select
+            homeassistant/components/sensor
+            homeassistant/components/switch
+            homeassistant/components/time
+            homeassistant/components/websocket_api
+            homeassistant/config.py
+            homeassistant/config_entries.py
+            homeassistant/const.py
+            homeassistant/core.py
+            homeassistant/exceptions.py
+            homeassistant/helpers
+            homeassistant/loader.py
+            homeassistant/runner.py
+            homeassistant/setup.py
+            homeassistant/util
             tests
             requirements_all.txt
             requirements_test.txt
             pyproject.toml
-          sparse-checkout-cone-mode: true
+          sparse-checkout-cone-mode: false
 
       - name: Set up Python
         uses: actions/setup-python@v6
