@@ -61,7 +61,8 @@ jobs:
         working-directory: ha-core
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r <(sed '/^hass-nabucasa==/d' requirements.txt) -r requirements_test.txt bleak-retry-connector==4.7.1
+          sed -e '/^-c homeassistant\/package_constraints.txt$/d' -e '/^hass-nabucasa==/d' requirements.txt > /tmp/ha-requirements.txt
+          python -m pip install -r /tmp/ha-requirements.txt -r requirements_test.txt bleak-retry-connector==4.7.1
 
       - name: Copy EV Charge Planner into Home Assistant Core
         run: |
