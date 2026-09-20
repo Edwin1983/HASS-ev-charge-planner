@@ -27,5 +27,13 @@
         }
       }
     }
+  },
+  "services": {
+    "update": {"name": "Update", "description": "Runs one EV Planner update."},
+    "create_plan": {"name": "Create plan", "description": "Creates a new EV charging plan."},
+    "replan": {"name": "Replan", "description": "Clears the current plan and creates a new one."},
+    "clear_plan": {"name": "Clear plan", "description": "Clears the current EV charging plan."},
+    "status": {"name": "Status", "description": "Returns the current planner status."},
+    "dashboard": {"name": "Dashboard data", "description": "Returns the current planner data."}
   }
 }
