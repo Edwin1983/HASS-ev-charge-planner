@@ -116,7 +116,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-import math
 
 from .logger import Logger
 from .solar import apply_solar_only
@@ -1318,7 +1317,6 @@ class EVPlanner:
 
         NONE_PHASE = 0
 
-        INF = float("inf")
 
         ENERGY_DECIMALS = 9
 
