@@ -7,6 +7,13 @@ from unittest.mock import patch
 import pytest
 
 from homeassistant.components import ev_planner
+from homeassistant.components.ev_planner.number import (
+    EVPlannerEnergyNeeded,
+    EVPlannerMaxChargePower,
+    EVPlannerMaxPhaseSwitches,
+    EVPlannerMaxPrice,
+    EVPlannerMinPv,
+)
 from homeassistant.components.ev_planner.sensor import _current_decision
 
 from custom_components.ev_planner.const import (
@@ -79,6 +86,81 @@ async def test_current_decision_ignores_invalid_timestamps() -> None:
     }
 
     assert _current_decision(data) is None
+
+
+async def test_number_restore_and_fallback_paths(hass: HomeAssistant) -> None:
+    """Cover native restore, legacy fallback, and default paths for numbers."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="EV Planner",
+        data=make_config(),
+        unique_id="number-fallbacks",
+    )
+    entry.add_to_hass(hass)
+
+    hass.states.async_set("input_number.ev_kwh_nodig", "7.5")
+    energy = EVPlannerEnergyNeeded(hass, entry)
+    with patch.object(
+        energy,
+        "async_get_last_state",
+        return_value=SimpleNamespace(state="not-a-number"),
+    ):
+        await energy._restore_or_legacy(10.0, CONF_ENTITY_ENERGY_NEEDED)
+    assert energy.native_value == 7.5
+
+    hass.states.async_set("input_number.ev_kwh_nodig", "not-a-number")
+    phase_switches = EVPlannerMaxPhaseSwitches(hass, entry)
+    with patch.object(
+        phase_switches,
+        "async_get_last_state",
+        return_value=SimpleNamespace(state="invalid"),
+    ):
+        await phase_switches._restore_or_legacy(8.0, CONF_ENTITY_MAX_PHASE_SWITCHES)
+    assert phase_switches.native_value == 8.0
+
+    hass.states.async_set("input_number.ev_max_prijs", "0.25")
+    max_price = EVPlannerMaxPrice(hass, entry)
+    with patch.object(
+        max_price,
+        "async_get_last_state",
+        return_value=SimpleNamespace(state="invalid", attributes={}),
+    ):
+        await max_price.async_added_to_hass()
+    assert max_price.native_value == 25.0
+
+    hass.states.async_set("input_number.ev_max_prijs", "invalid")
+    max_price = EVPlannerMaxPrice(hass, entry)
+    with patch.object(
+        max_price,
+        "async_get_last_state",
+        return_value=SimpleNamespace(state="invalid", attributes={}),
+    ):
+        await max_price.async_added_to_hass()
+    assert max_price.native_value == 0.0
+
+    max_power = EVPlannerMaxChargePower(hass, entry)
+    with patch.object(
+        max_power,
+        "async_get_last_state",
+        return_value=SimpleNamespace(state="invalid"),
+    ):
+        await max_power.async_added_to_hass()
+    assert max_power.native_value == 11.04
+
+    entry.options[CONF_MAX_CHARGE_POWER_KW] = "invalid"
+    max_power = EVPlannerMaxChargePower(hass, entry)
+    with patch.object(
+        max_power,
+        "async_get_last_state",
+        return_value=None,
+    ):
+        await max_power.async_added_to_hass()
+    assert max_power.native_value == 11.04
+
+    min_pv = EVPlannerMinPv(hass, entry)
+    with patch.object(min_pv, "async_get_last_state", return_value=None):
+        await min_pv._restore_or_legacy(0.0, CONF_ENTITY_MIN_PV_KWH)
+    assert min_pv.native_value == 0.0
 
 
 async def test_full_integration_setup_and_unload(
