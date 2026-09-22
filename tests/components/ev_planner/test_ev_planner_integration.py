@@ -356,7 +356,9 @@ async def test_service_actions_and_update_listener(
     replan.assert_called_once()
     clear_plan.assert_called_once()
 
-    entry.async_update_entry(options={"update_interval_minutes": 2})
+    hass.config_entries.async_update_entry(
+        entry, options={"update_interval_minutes": 2}
+    )
     await hass.async_block_till_done()
 
 
