@@ -24,6 +24,9 @@ from homeassistant.components.ev_planner.select import (
 )
 from homeassistant.components.ev_planner.sensor import _current_decision
 from homeassistant.components.ev_planner.time import EVPlannerDepartureTime
+from homeassistant.components.ev_planner.core.homeassistant import (
+    HomeAssistant as PlannerHomeAssistant,
+)
 
 from custom_components.ev_planner.const import (
     CONF_ENTITY_DEPARTURE,
@@ -121,6 +124,37 @@ async def test_time_parse_and_setter_paths(hass: HomeAssistant) -> None:
 
     assert entity.native_value == dt.time(7, 45)
     write_state.assert_called_once()
+
+
+async def test_homeassistant_wrapper_paths(hass: HomeAssistant) -> None:
+    """Cover Home Assistant state, attribute, and error handling paths."""
+    errors = []
+    warnings = []
+    logger = SimpleNamespace(error=errors.append, warning=warnings.append)
+    wrapper = PlannerHomeAssistant(hass, logger)
+
+    hass.states.async_set("sensor.test", "active", {"value": 42})
+    assert wrapper.get_state("sensor.test") == "active"
+    assert wrapper.get_state("sensor.test", "value") == 42
+    assert wrapper.get_state("sensor.missing") is None
+    assert wrapper.get_attributes("sensor.test") == {"value": 42}
+    assert wrapper.get_attributes("sensor.missing") == {}
+    assert wrapper.get_state_object("sensor.test") is not None
+
+    hass.states.async_set("sensor.bad_attributes", "active", None)
+    state = hass.states.get("sensor.bad_attributes")
+    assert state is not None
+    state.attributes = "invalid"
+    assert wrapper.get_state("sensor.bad_attributes", "value") is None
+    assert wrapper.get_attributes("sensor.bad_attributes") == {}
+
+    with patch.object(hass.states, "get", side_effect=RuntimeError("boom")):
+        assert wrapper.get_state("sensor.test") is None
+        assert wrapper.get_attributes("sensor.test") == {}
+        assert wrapper.get_state_object("sensor.test") is None
+
+    assert errors
+    assert warnings
 
 
 async def test_number_restore_and_fallback_paths(hass: HomeAssistant) -> None:
