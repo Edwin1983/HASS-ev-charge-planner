@@ -5,8 +5,8 @@ from __future__ import annotations
 import pytest
 
 from homeassistant import config_entries
-from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.core import HomeAssistant
+from homeassistant.data_entry_flow import FlowResultType
 
 from homeassistant.components.ev_planner.const import (
     CONF_ENTITY_PRICES,
@@ -47,9 +47,13 @@ async def test_form_success(hass: HomeAssistant, valid_config: dict[str, str]) -
     assert result["data"] == valid_config
 
 
-async def test_single_instance(hass: HomeAssistant, valid_config: dict[str, str]) -> None:
+async def test_single_instance(
+    hass: HomeAssistant, valid_config: dict[str, str]
+) -> None:
     """Test only one config entry can be created."""
-    entry = MockConfigEntry(domain=DOMAIN, title="EV Charge Planner", data=valid_config)
+    entry = MockConfigEntry(
+        domain=DOMAIN, title="EV Charge Planner", data=valid_config
+    )
     entry.add_to_hass(hass)
 
     result = await hass.config_entries.flow.async_init(
@@ -65,7 +69,9 @@ async def test_options_flow(
     hass: HomeAssistant, valid_config: dict[str, str]
 ) -> None:
     """Test the options flow."""
-    entry = MockConfigEntry(domain=DOMAIN, title="EV Charge Planner", data=valid_config)
+    entry = MockConfigEntry(
+        domain=DOMAIN, title="EV Charge Planner", data=valid_config
+    )
     entry.add_to_hass(hass)
 
     result = await hass.config_entries.options.async_init(entry.entry_id)
@@ -85,7 +91,9 @@ async def test_reconfigure(
     hass: HomeAssistant, valid_config: dict[str, str]
 ) -> None:
     """Test reconfiguring the planner input entities."""
-    entry = MockConfigEntry(domain=DOMAIN, title="EV Charge Planner", data=valid_config)
+    entry = MockConfigEntry(
+        domain=DOMAIN, title="EV Charge Planner", data=valid_config
+    )
     entry.add_to_hass(hass)
 
     new_config = {
