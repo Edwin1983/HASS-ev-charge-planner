@@ -147,7 +147,10 @@ async def test_number_restore_and_fallback_paths(hass: HomeAssistant) -> None:
         await max_power.async_added_to_hass()
     assert max_power.native_value == 11.04
 
-    entry.options[CONF_MAX_CHARGE_POWER_KW] = "invalid"
+    hass.config_entries.async_update_entry(
+        entry, options={CONF_MAX_CHARGE_POWER_KW: "invalid"}
+    )
+    await hass.async_block_till_done()
     max_power = EVPlannerMaxChargePower(hass, entry)
     with patch.object(
         max_power,
