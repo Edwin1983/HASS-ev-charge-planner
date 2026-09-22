@@ -148,10 +148,15 @@ async def test_homeassistant_wrapper_paths(hass: HomeAssistant) -> None:
     assert wrapper.get_state("sensor.bad_attributes", "value") is None
     assert wrapper.get_attributes("sensor.bad_attributes") == {}
 
-    with patch.object(hass.states, "get", side_effect=RuntimeError("boom")):
-        assert wrapper.get_state("sensor.test") is None
-        assert wrapper.get_attributes("sensor.test") == {}
-        assert wrapper.get_state_object("sensor.test") is None
+    error_states = SimpleNamespace(
+        get=lambda entity_id: (_ for _ in ()).throw(RuntimeError("boom"))
+    )
+    error_hass = SimpleNamespace(states=error_states)
+    error_wrapper = PlannerHomeAssistant(error_hass, logger)
+
+    assert error_wrapper.get_state("sensor.test") is None
+    assert error_wrapper.get_attributes("sensor.test") == {}
+    assert error_wrapper.get_state_object("sensor.test") is None
 
     assert errors
     assert warnings
