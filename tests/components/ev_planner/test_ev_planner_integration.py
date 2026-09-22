@@ -67,6 +67,19 @@ def make_config():
     }
 
 
+async def test_current_decision_ignores_invalid_timestamps() -> None:
+    """Invalid decision timestamps are ignored."""
+    data = {
+        "attributes": {
+            "decisions": [
+                {"start": "not-a-timestamp", "end": "also-invalid"},
+            ]
+        }
+    }
+
+    assert ev_planner._current_decision(data) is None
+
+
 async def test_full_integration_setup_and_unload(
     hass: HomeAssistant, enable_custom_integrations: None
 ):
