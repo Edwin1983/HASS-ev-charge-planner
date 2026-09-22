@@ -6,6 +6,8 @@ from unittest.mock import patch
 
 import pytest
 
+from homeassistant.components import ev_planner
+
 from custom_components.ev_planner.const import (
     CONF_ENTITY_DEPARTURE,
     CONF_ENTITY_DEPARTURE_DAY,
@@ -367,13 +369,14 @@ async def test_service_rejects_wrong_config_entry_domain(
     hass: HomeAssistant, enable_custom_integrations: None
 ):
     """Service actions reject a config entry from another domain."""
+    call = SimpleNamespace(
+        hass=hass,
+        data={"config_entry_id": "wrong-domain"},
+    )
     with patch.object(
         hass.config_entries,
         "async_get_entry",
         return_value=SimpleNamespace(domain="other_domain"),
     ):
         with pytest.raises(ServiceValidationError):
-            await hass.services.async_call(
-                DOMAIN, "status", {"config_entry_id": "wrong-domain"},
-                blocking=True, return_response=True,
-            )
+            await ev_planner._async_handle_status(call)
