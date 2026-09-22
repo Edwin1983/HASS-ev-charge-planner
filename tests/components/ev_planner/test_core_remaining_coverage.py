@@ -433,8 +433,8 @@ async def test_controller_remaining_branch_paths():
             async_get_entity_id=lambda platform, domain, unique_id: None
         ),
     ):
-        assert controller._planner_mode_entity_id() == controller.config["planner_mode"]
-        assert controller._pv_rounding_entity_id() == controller.config["pv_rounding"]
+        assert controller._planner_mode_entity_id() == "input_select.ev_planner_mode"
+        assert controller._pv_rounding_entity_id() == "input_select.ev_pv_rounding"
         assert controller._native_entity_id(
             "number", "missing", "legacy.number"
         ) == "legacy.number"
