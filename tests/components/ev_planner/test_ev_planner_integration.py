@@ -7,6 +7,7 @@ from unittest.mock import patch
 import pytest
 
 from homeassistant.components import ev_planner
+from homeassistant.components.ev_planner.sensor import _current_decision
 
 from custom_components.ev_planner.const import (
     CONF_ENTITY_DEPARTURE,
@@ -77,7 +78,7 @@ async def test_current_decision_ignores_invalid_timestamps() -> None:
         }
     }
 
-    assert ev_planner._current_decision(data) is None
+    assert _current_decision(data) is None
 
 
 async def test_full_integration_setup_and_unload(
