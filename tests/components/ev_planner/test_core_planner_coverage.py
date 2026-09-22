@@ -13,11 +13,12 @@ from homeassistant.components.ev_planner.core.planner import ChargingDecision, C
 
 
 def make_hour(start, duration=1.0, price=0.10, pv=0.0):
-    hour = Hour(start=start, end=start + dt.timedelta(hours=duration), price=price, price_raw=price * 10_000_000, tariff_group="normal", sustainability_score=50.0, hour_index=0)
-    hour.pv_estimate = pv
-    hour.pv_estimate10 = pv
-    hour.pv_estimate90 = pv
-    return hour
+    item = Hour(start=start, end=start + dt.timedelta(hours=duration), price=price, price_raw=price * 10_000_000, tariff_group="normal", sustainability_score=50.0, hour_index=0)
+    item.pv_estimate = pv
+    item.pv_estimate10 = pv
+    item.pv_estimate90 = pv
+    item.usable_pv = max(0.0, pv)
+    return item
 
 
 def make_settings(**changes):
@@ -77,7 +78,12 @@ async def test_planner_time_energy_power_paths():
     planner = make_planner()
     now = dt.datetime.now(tz)
     planner.settings.departure_time = now + dt.timedelta(hours=2)
-    filtered = planner._filter_available_time([hour(now - dt.timedelta(hours=2)), hour(now - dt.timedelta(minutes=30), pv=-1), hour(now + dt.timedelta(minutes=30), pv=20), hour(now + dt.timedelta(hours=3))])
+    filtered = planner._filter_available_time([
+        make_hour(now - dt.timedelta(hours=2)),
+        make_hour(now - dt.timedelta(minutes=30), pv=-1),
+        make_hour(now + dt.timedelta(minutes=30), pv=20),
+        make_hour(now + dt.timedelta(hours=3)),
+    ])
     assert len(filtered) == 2
     assert filtered[0].start >= now - dt.timedelta(minutes=1)
     assert filtered[1].end <= planner.settings.departure_time
@@ -85,16 +91,16 @@ async def test_planner_time_energy_power_paths():
     planner.settings.planner_mode = PLANNER_MODE_SOLAR_ONLY
     planner.settings.min_pv_kwh = 2
     zero = make_hour(now, duration=0)
-    result = planner._calculate_available_energy([zero, hour(now, pv=-1), hour(now, pv=20)])
+    result = planner._calculate_available_energy([zero, make_hour(now, pv=-1), make_hour(now, pv=20)])
     assert result[0].usable_pv == 0
     assert result[1].usable_pv == 0
     assert result[2].usable_pv <= 11.04
 
-    negative = hour(now, pv=-2)
+    negative = make_hour(now, pv=-2)
     negative.usable_pv = -2
     planner._prepare_hour(negative)
     assert negative.free_energy == 0
-    high = hour(now, pv=20)
+    high = make_hour(now, pv=20)
     high.usable_pv = 20
     planner._prepare_hour(high)
     assert high.free_energy <= 11.04
@@ -119,7 +125,6 @@ async def test_planner_optimize_and_build_paths():
     planner.settings.energy_needed_kwh = 0
     planner._optimize_hours([empty])
     assert not empty.selected
-
     planner.settings.energy_needed_kwh = 1
     planner.settings.max_phase_switches = -1
     planner._optimize_hours([make_hour(dt.datetime(2026, 9, 22, 10, tzinfo=dt.timezone.utc), pv=1)])
@@ -127,7 +132,6 @@ async def test_planner_optimize_and_build_paths():
     planner._optimize_hours([make_hour(dt.datetime(2026, 9, 22, 10, tzinfo=dt.timezone.utc), pv=1)])
     planner.settings.max_price = 0.01
     planner._optimize_hours([make_hour(dt.datetime(2026, 9, 22, 10, tzinfo=dt.timezone.utc), price=0.50)])
-
     selected = make_hour(dt.datetime(2026, 9, 22, 10, tzinfo=dt.timezone.utc), price=0.01)
     planner.settings.max_price = 0.10
     planner._prepare_hour(selected)
@@ -142,10 +146,12 @@ async def test_planner_final_validation_paths():
 
     def make_plan(price=0.10, energy=1.0, free=1.0, paid=0.0, power=1.38, current=6, phases=1):
         item = make_hour(start, price=price, pv=1.0)
+        item.usable_pv = free
         item.original_start = start
         item.original_end = start + dt.timedelta(hours=1)
         decision = ChargingDecision(item, energy, free, paid, price, paid * price, True, "", power, current, phases)
-        return ChargingPlan([decision], energy, energy, 0.0, free, paid, paid * price, True, start + dt.timedelta(hours=2), 0.30), decision
+        plan = ChargingPlan([decision], energy, energy, 0.0, free, paid, paid * price, True, start + dt.timedelta(hours=2), 0.30)
+        return plan, decision
 
     plan, _ = make_plan()
     planner._validate_final_plan(plan)
@@ -169,22 +175,18 @@ async def test_planner_final_validation_paths():
     planner.settings.max_charge_power_kw = 3.68
     with pytest.raises(ValueError):
         planner._validate_final_plan(plan)
-
     planner.settings.max_charge_power_kw = 11.04
     plan, _ = make_plan(power=12.0, current=16, phases=3, energy=12, free=0, paid=12)
     with patch.object(planner, "_actual_power_for_current", return_value=12.0), patch.object(planner, "_maximum_power_for_phases", return_value=20.0):
         with pytest.raises(ValueError):
             planner._validate_final_plan(plan)
-
     plan, _ = make_plan(power=4.0, current=16, phases=1, energy=4, free=0, paid=4)
     with patch.object(planner, "_actual_power_for_current", return_value=4.0), patch.object(planner, "_maximum_power_for_phases", return_value=10.0):
         with pytest.raises(ValueError):
             planner._validate_final_plan(plan)
-
     plan, _ = make_plan(price=0.50, energy=1.38, free=0, paid=1.38)
     with pytest.raises(ValueError):
         planner._validate_final_plan(plan)
-
     plan, decision = make_plan(energy=4.14, free=0, paid=4.14, power=4.14, current=6, phases=3)
     item2 = make_hour(start + dt.timedelta(hours=1), price=0.10)
     item2.original_start = item2.start
