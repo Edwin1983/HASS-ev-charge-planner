@@ -28,6 +28,34 @@ from homeassistant.components.ev_planner.core.homeassistant import (
     HomeAssistant as PlannerHomeAssistant,
 )
 from homeassistant.components.ev_planner.core.logger import Logger
+from homeassistant.components.ev_planner.const import (
+    PV_ROUNDING_DOWN,
+    PV_ROUNDING_UP,
+)
+from homeassistant.components.ev_planner.core.models import Hour
+from homeassistant.components.ev_planner.core.planner import (
+    ChargingDecision,
+    ChargingPlan,
+    PlannerSettings,
+)
+from homeassistant.components.ev_planner.core.scheduler import (
+    EVScheduler,
+    SchedulerSettings,
+)
+from homeassistant.components.ev_planner.core.solar import (
+    _option,
+    apply_solar_only,
+)
+from homeassistant.components.ev_planner.core.status import (
+    EVStatus,
+    EVStatusManager,
+)
+from homeassistant.components.ev_planner.core.utils import (
+    clamp,
+    hour_key,
+    overlap,
+    parse_datetime,
+)
 
 from custom_components.ev_planner.const import (
     CONF_ENTITY_DEPARTURE,
@@ -658,3 +686,272 @@ async def test_service_rejects_wrong_config_entry_domain(
     ):
         with pytest.raises(ServiceValidationError):
             await ev_planner._async_handle_status(call)
+
+
+async def test_core_utils_paths() -> None:
+    """Cover the small pure utility functions."""
+    value = dt.datetime(2026, 9, 22, 13, 42, 17, 123456)
+    assert parse_datetime(value.isoformat()) == value
+    assert clamp(5, 0, 10) == 5
+    assert clamp(-1, 0, 10) == 0
+    assert clamp(11, 0, 10) == 10
+    assert hour_key(value) == dt.datetime(2026, 9, 22, 13, 0, 0, tzinfo=value.tzinfo)
+    assert overlap(
+        dt.datetime(2026, 9, 22, 10),
+        dt.datetime(2026, 9, 22, 11),
+        dt.datetime(2026, 9, 22, 10, 30),
+        dt.datetime(2026, 9, 22, 12),
+    )
+    assert not overlap(
+        dt.datetime(2026, 9, 22, 10),
+        dt.datetime(2026, 9, 22, 11),
+        dt.datetime(2026, 9, 22, 11),
+        dt.datetime(2026, 9, 22, 12),
+    )
+
+
+def _solar_planner(pv_rounding: str = PV_ROUNDING_DOWN):
+    """Build a minimal planner double for solar-only tests."""
+    settings = SimpleNamespace(
+        pv_rounding=pv_rounding,
+        max_phase_switches=8,
+        min_pv_kwh=0.0,
+        energy_needed_kwh=99.0,
+    )
+    planner = SimpleNamespace(settings=settings)
+    planner._hour_duration = lambda hour: (
+        hour.end - hour.start
+    ).total_seconds() / 3600.0
+    planner._valid_currents = lambda phases: list(range(6, 17))
+    planner._actual_power_for_current = (
+        lambda current_a, phases: 0.23 * current_a * phases
+    )
+    return planner
+
+
+async def test_core_solar_option_paths() -> None:
+    """Cover solar option rounding, rejection, and invalid configuration."""
+    planner = _solar_planner()
+    start = dt.datetime(2026, 9, 22, 10, tzinfo=dt.timezone.utc)
+
+    hour = Hour(start=start, end=start + dt.timedelta(hours=1), pv_estimate=4.0)
+    option = _option(planner, hour, 1)
+    assert option is not None
+    assert option[0] == 16
+    assert option[1] == 1
+    assert option[3] == 3.68
+    assert option[4] == pytest.approx(0.0)
+
+    assert _option(
+        planner,
+        Hour(start=start, end=start, pv_estimate=4.0),
+        1,
+    ) is None
+    assert _option(
+        planner,
+        Hour(start=start, end=start + dt.timedelta(hours=1), pv_estimate=0.0),
+        1,
+    ) is None
+
+    planner.settings.pv_rounding = PV_ROUNDING_UP
+    option = _option(
+        planner,
+        Hour(start=start, end=start + dt.timedelta(hours=1), pv_estimate=1.0),
+        1,
+    )
+    assert option is not None
+    assert option[0] == 6
+    assert option[4] > 0
+
+    planner.settings.pv_rounding = "invalid"
+    with pytest.raises(ValueError, match="Ongeldige pv_rounding"):
+        _option(
+            planner,
+            Hour(start=start, end=start + dt.timedelta(hours=1), pv_estimate=2.0),
+            1,
+        )
+
+    planner._valid_currents = lambda phases: []
+    assert _option(
+        planner,
+        Hour(start=start, end=start + dt.timedelta(hours=1), pv_estimate=2.0),
+        1,
+    ) is None
+
+
+async def test_core_solar_apply_paths() -> None:
+    """Cover solar-only planning, skips, phase choices, and switch limits."""
+    planner = _solar_planner(PV_ROUNDING_DOWN)
+    start = dt.datetime(2026, 9, 22, 10, tzinfo=dt.timezone.utc)
+
+    hours = [
+        Hour(
+            start=start,
+            end=start + dt.timedelta(hours=1),
+            pv_estimate=3.0,
+        ),
+        Hour(
+            start=start + dt.timedelta(hours=1),
+            end=start + dt.timedelta(hours=2),
+            pv_estimate=0.0,
+        ),
+    ]
+    apply_solar_only(planner, hours)
+    assert hours[0].selected
+    assert hours[0].reason == "Alleen zonneladen"
+    assert not hours[1].selected
+    assert planner.settings.energy_needed_kwh > 0
+
+    planner.settings.min_pv_kwh = 4.0
+    apply_solar_only(planner, hours)
+    assert not hours[0].selected
+
+    planner.settings.min_pv_kwh = 0.0
+    planner.settings.max_phase_switches = 0
+    hours = [
+        Hour(
+            start=start,
+            end=start + dt.timedelta(hours=1),
+            pv_estimate=2.0,
+        ),
+        Hour(
+            start=start + dt.timedelta(hours=1),
+            end=start + dt.timedelta(hours=2),
+            pv_estimate=5.0,
+        ),
+    ]
+    apply_solar_only(planner, hours)
+    assert all(hour.selected for hour in hours)
+
+
+async def test_core_scheduler_paths() -> None:
+    """Cover scheduler setup, runtime transitions, selection and clearing."""
+    logger = Logger()
+    with pytest.raises(ValueError):
+        SchedulerSettings(-1)
+    with pytest.raises(TypeError):
+        EVScheduler(object(), logger)
+
+    settings = SchedulerSettings(min_charge_energy=0.5)
+    scheduler = EVScheduler(settings, logger)
+    assert not scheduler.has_plan()
+    assert scheduler.selected_hours() == []
+
+    start = dt.datetime(2026, 9, 22, 10, tzinfo=dt.timezone.utc)
+    hour = Hour(
+        start=start,
+        end=start + dt.timedelta(hours=1),
+        charge_energy=1.0,
+        free_energy=0.2,
+        paid_energy=0.8,
+        price=0.20,
+        charge_power_w=3680.0,
+        charge_current_a=16.0,
+        phases=1,
+        selected=True,
+        reason="test",
+    )
+    decision = ChargingDecision(
+        hour=hour,
+        energy_kwh=1.0,
+        free_energy_kwh=0.2,
+        paid_energy_kwh=0.8,
+        price=0.20,
+        cost=0.16,
+        selected=True,
+        reason="test",
+        charge_power_kw=3.68,
+        charge_current_a=16,
+        phases=1,
+    )
+    plan = ChargingPlan(
+        decisions=[decision],
+        energy_needed_kwh=1.0,
+        energy_planned_kwh=1.0,
+        missing_energy_kwh=0.0,
+        free_energy_kwh=0.2,
+        paid_energy_kwh=0.8,
+        estimated_cost=0.16,
+        complete=True,
+        departure_time=start + dt.timedelta(hours=2),
+        max_price=0.20,
+    )
+
+    with pytest.raises(TypeError):
+        scheduler.set_plan(object())
+    scheduler.set_plan(plan)
+    assert scheduler.has_plan()
+    assert scheduler.get_current_hour(start - dt.timedelta(minutes=1)) is None
+    assert scheduler.get_current_hour(start) is hour
+    assert scheduler.charging_allowed(start)
+    assert scheduler.next_selected_hour(start - dt.timedelta(hours=1)) is hour
+    assert scheduler.next_selected_hour(start + dt.timedelta(hours=1)) is None
+    assert scheduler.update(start)
+    assert scheduler.current_hour() is hour
+    assert scheduler.status.charging_allowed
+    assert scheduler.status.charge_power_w == 3680.0
+    assert scheduler.status.charge_current_a == 16.0
+    assert scheduler.status.phases == 1
+    assert not scheduler.update(start + dt.timedelta(minutes=10))
+    assert scheduler.update(start + dt.timedelta(hours=1))
+    assert scheduler.current_hour() is None
+    assert not scheduler.status.charging_allowed
+
+    scheduler.clear_plan()
+    assert not scheduler.has_plan()
+    assert scheduler.current_hour() is None
+    assert scheduler.selected_hours() == []
+    assert not scheduler.update(start)
+
+
+async def test_core_status_paths() -> None:
+    """Cover status serialization, manager update, and logging branches."""
+    start = dt.datetime(2026, 9, 22, 10, tzinfo=dt.timezone.utc)
+    hour = Hour(
+        start=start,
+        end=start + dt.timedelta(hours=1),
+        charge_energy=2.0,
+        free_energy=1.0,
+        paid_energy=1.0,
+        price=0.25,
+        charge_power_w=5520.0,
+        charge_current_a=8.0,
+        phases=3,
+        selected=True,
+        reason="PV",
+    )
+
+    idle = EVStatus()
+    idle_data = idle.as_dict()
+    assert idle_data["state"] == "idle"
+    assert idle_data["state_text"] == "Wachten"
+    assert idle_data["start"] is None
+
+    waiting = EVStatus(active=True, charging_allowed=False)
+    assert waiting.as_dict()["state"] == "waiting"
+    charging = EVStatus(active=True, charging_allowed=True)
+    assert charging.as_dict()["state"] == "charging"
+
+    scheduler = SimpleNamespace(
+        current_hour=lambda: None,
+        charging_allowed=lambda now: False,
+    )
+    manager = EVStatusManager(scheduler, Logger())
+    assert manager.update(start).active is False
+    assert manager.get_status().active is False
+    assert manager.as_dict()["state"] == "idle"
+    manager.log_status()
+
+    scheduler.current_hour = lambda: hour
+    scheduler.charging_allowed = lambda now: True
+    status = manager.update(start)
+    assert status.active
+    assert status.charging_allowed
+    assert status.start == start
+    assert status.end == start + dt.timedelta(hours=1)
+    assert status.charge_power_w == 5520.0
+    assert status.charge_current_a == 8.0
+    assert status.phases == 3
+    assert status.reason == "PV"
+    manager.log_status()
+    assert manager.as_dict()["state"] == "charging"
