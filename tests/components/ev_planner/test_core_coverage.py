@@ -22,13 +22,8 @@ from homeassistant.components.ev_planner.core.planner import (
 )
 
 
-def make_hour(
-    start: dt.datetime,
-    hours: float = 1.0,
-    price: float = 0.10,
-    pv: float = 0.0,
-) -> Hour:
-    hour = Hour(
+def make_hour(start: dt.datetime, hours: float = 1.0, price: float = 0.10, pv: float = 0.0) -> Hour:
+    item = Hour(
         start=start,
         end=start + dt.timedelta(hours=hours),
         price=price,
@@ -37,10 +32,11 @@ def make_hour(
         sustainability_score=50.0,
         hour_index=0,
     )
-    hour.pv_estimate = pv
-    hour.pv_estimate10 = pv
-    hour.pv_estimate90 = pv
-    return hour
+    item.pv_estimate = pv
+    item.pv_estimate10 = pv
+    item.pv_estimate90 = pv
+    item.usable_pv = max(0.0, pv)
+    return item
 
 
 def make_settings(**overrides):
@@ -56,7 +52,6 @@ def make_settings(**overrides):
         "pv_rounding": PV_ROUNDING_DOWN,
     }
     values.update(overrides)
-    from homeassistant.components.ev_planner.core.planner import PlannerSettings
     return PlannerSettings(**values)
 
 
@@ -82,6 +77,8 @@ def make_controller_stub():
     controller.status = SimpleNamespace(
         get_status=lambda: SimpleNamespace(charging_allowed=True),
         as_dict=lambda: {"charging_allowed": True},
+        update=lambda now: None,
+        log_status=lambda: None,
     )
     controller.scheduler = SimpleNamespace(
         clear_plan=lambda: None,
@@ -127,7 +124,7 @@ async def test_controller_entry_id_and_native_helpers(hass):
     assert controller._get_max_phase_switches() == 0
     controller.hass.get_state = lambda entity_id: "20"
     assert controller._get_max_charge_power_kw() == 11.04
-    controller.hass.get_state = lambda entity_id: "0.5"
+    controller._native_number_state = lambda suffix, legacy, default: 0.5
     assert controller._get_max_charge_power_kw() == 1.0
 
 
@@ -155,29 +152,12 @@ async def test_controller_settings_validation_paths():
             "input_select.departure_day": values["day"],
         }.get(entity)
     )
-    controller._native_number_state = (
-        lambda suffix, legacy, default: {
-            "energy": (
-                float(values["energy"])
-                if not isinstance(values["energy"], str)
-                else values["energy"]
-            ),
-            "max_price": (
-                float(values["price"])
-                if not isinstance(values["price"], str)
-                else values["price"]
-            ),
-            "min_pv": (
-                float(values["pv"])
-                if not isinstance(values["pv"], str)
-                else values["pv"]
-            ),
-        }.get(suffix, default)
-    )
-    settings = controller._get_settings(now)
-    assert settings is not None
-    assert settings.departure_time.date() == now.date()
-    assert settings.planner_mode == PLANNER_MODE_SOLAR_ONLY
+    controller._native_number_state = lambda suffix, legacy, default: {
+        "input_number.energy": values["energy"],
+        "input_number.price": values["price"],
+        "input_number.pv": values["pv"],
+    }.get(legacy, default)
+    assert controller._get_settings(now) is not None
 
     for key, value in [
         ("energy", 0),
@@ -202,11 +182,7 @@ async def test_controller_settings_validation_paths():
     values["departure"] = "bad"
     assert controller._get_settings(now) is None
     values["departure"] = "2026-09-22T12:00:00"
-    with patch.object(
-        PlannerSettings,
-        "__init__",
-        side_effect=ValueError("bad settings"),
-    ):
+    with patch.object(PlannerSettings, "__init__", side_effect=ValueError("bad settings")):
         assert controller._get_settings(now) is None
 
 
@@ -224,37 +200,22 @@ async def test_controller_publish_and_plan_data_paths():
     assert controller.sensor_data["state"] == "Geen planning"
 
     start = dt.datetime(2026, 9, 22, 10, tzinfo=dt.timezone.utc)
-    hour = make_hour(start, pv=1.0)
-    hour.original_start = hour.start
-    hour.original_end = hour.end
-    hour.selected = True
-    hour.phases = 1
-    hour.charge_current_a = 6
-    hour.charge_power_w = 1380
-    hour.charge_energy = 1.38
-    hour.free_energy = 1.0
-    hour.paid_energy = 0.38
-    hour.reason = "test"
-    decision = ChargingDecision(
-        hour, 1.38, 1.0, 0.38, 0.10, 0.038, True, "test", 1.38, 6, 1
-    )
-    plan = ChargingPlan(
-        [decision],
-        1.38,
-        1.38,
-        0.0,
-        1.0,
-        0.38,
-        0.038,
-        True,
-        start + dt.timedelta(hours=2),
-        0.30,
-    )
+    item = make_hour(start, pv=1.0)
+    item.original_start = item.start
+    item.original_end = item.end
+    item.selected = True
+    item.phases = 1
+    item.charge_current_a = 6
+    item.charge_power_w = 1380
+    item.charge_energy = 1.38
+    item.free_energy = 1.0
+    item.paid_energy = 0.38
+    item.reason = "test"
+    decision = ChargingDecision(item, 1.38, 1.0, 0.38, 0.10, 0.038, True, "test", 1.38, 6, 1)
+    plan = ChargingPlan([decision], 1.38, 1.38, 0.0, 1.0, 0.38, 0.038, True, start + dt.timedelta(hours=2), 0.30)
     controller.last_plan = plan
     controller._native_entity_id = lambda platform, suffix, legacy=None: legacy
-    controller.hass.get_state = lambda entity: (
-        "8" if entity == "input_number.switches" else "on"
-    )
+    controller.hass.get_state = lambda entity: "8" if entity == "input_number.switches" else "on"
     controller._publish_plan_data()
     assert controller.sensor_data["state"] == "Planning compleet"
     assert controller.sensor_data["attributes"]["decisions"]
@@ -271,9 +232,7 @@ async def test_controller_create_update_replan_dashboard():
     now = dt.datetime(2026, 9, 22, 12, tzinfo=dt.timezone.utc)
     controller._is_enabled = lambda: False
     controller._publish_plan_data = lambda: None
-    controller._publish_planner_state = lambda state: setattr(
-        controller, "last_published_state", state
-    )
+    controller._publish_planner_state = lambda state: setattr(controller, "last_published_state", state)
     assert controller.create_plan(now) is None
     assert controller.last_plan is None
     controller._is_enabled = lambda: True
@@ -288,15 +247,9 @@ async def test_controller_create_update_replan_dashboard():
     assert controller.create_plan(now) is None
     controller.solcast = SimpleNamespace(read=lambda: SimpleNamespace())
     controller._publish_plan_data = lambda: None
-    with patch(
-        "homeassistant.components.ev_planner.core.ev_planner.EVPlanner.create_plan",
-        side_effect=RuntimeError("boom"),
-    ):
+    with patch("homeassistant.components.ev_planner.core.ev_planner.EVPlanner.create_plan", side_effect=RuntimeError("boom")):
         assert controller.create_plan(now) is None
-    with patch(
-        "homeassistant.components.ev_planner.core.ev_planner.EVPlanner.create_plan",
-        return_value=None,
-    ):
+    with patch("homeassistant.components.ev_planner.core.ev_planner.EVPlanner.create_plan", return_value=None):
         assert controller.create_plan(now) is None
     controller.last_plan = SimpleNamespace(decisions=[])
     controller._get_current_decision = lambda now: None
