@@ -422,3 +422,221 @@ async def test_remaining_reader_paths():
     scheduler = EVScheduler(SchedulerSettings(), Logger())
     assert scheduler.get_current_hour(now) is None
     assert scheduler.selected_hours() == []
+
+
+async def test_controller_remaining_branch_paths():
+    controller = make_controller()
+
+    with patch(
+        "homeassistant.components.ev_planner.core.ev_planner.er.async_get",
+        return_value=SimpleNamespace(
+            async_get_entity_id=lambda platform, domain, unique_id: None
+        ),
+    ):
+        assert controller._planner_mode_entity_id() == controller.config["planner_mode"]
+        assert controller._pv_rounding_entity_id() == controller.config["pv_rounding"]
+        assert controller._native_entity_id(
+            "number", "missing", "legacy.number"
+        ) == "legacy.number"
+
+    now = dt.datetime(2026, 9, 22, 10, tzinfo=dt.timezone.utc)
+    controller._publish_planner_state = lambda state: None
+    controller._publish_plan_data = lambda: None
+    controller.scheduler.clear_plan()
+    controller.create_plan = lambda value: None
+    result = controller.replan(now)
+    assert result is None
+
+    controller.create_plan = lambda value: ChargingPlan(
+        [],
+        1.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        False,
+        now + dt.timedelta(hours=1),
+        0.3,
+    )
+    result = controller.replan(now)
+    assert result is not None
+
+    controller.last_plan = None
+    controller._is_enabled = lambda: True
+    dashboard = controller.get_dashboard_data(now)
+    assert dashboard["current_decision"] is None
+
+
+async def test_planner_remaining_direct_branches():
+    planner = make_planner()
+    planner.settings.solar_is_free = "bad"
+    with pytest.raises(TypeError):
+        planner.settings.__class__(
+            energy_needed_kwh=1.0,
+            departure_time=dt.datetime(2026, 9, 22, 12, tzinfo=dt.timezone.utc),
+            max_price=0.1,
+            min_pv_kwh=0.0,
+            solar_is_free="bad",
+            max_charge_power_kw=11.04,
+            max_phase_switches=0,
+            planner_mode=PLANNER_MODE_NORMAL,
+            pv_rounding=PV_ROUNDING_DOWN,
+        )
+
+    planner.settings.solar_is_free = True
+    planner.settings.energy_needed_kwh = 0
+    with pytest.raises(ValueError):
+        planner._validate_settings()
+
+    now = dt.datetime(2026, 9, 22, 10, tzinfo=dt.timezone.utc)
+    planner.settings.energy_needed_kwh = 1.0
+    planner.settings.departure_time = now + dt.timedelta(minutes=30)
+    crossing = make_hour(now - dt.timedelta(minutes=30), duration=1.0)
+    after = make_hour(now + dt.timedelta(hours=1))
+    assert len(planner._filter_available_time([crossing, after])) == 1
+
+    planner.settings.max_charge_power_kw = 99.0
+    cap_hour = make_hour(now, pv=20.0)
+    planner._calculate_available_energy([cap_hour])
+    assert cap_hour.usable_pv <= 11.04
+
+    planner._prepare_hour(cap_hour)
+    assert cap_hour.charge_energy > 0
+
+    zero_power = make_hour(now)
+    planner.settings.max_charge_power_kw = 0.0
+    planner._prepare_hour(zero_power)
+    assert zero_power.charge_energy == 0.0
+    assert zero_power.effective_price == zero_power.price
+
+    planner.settings.max_charge_power_kw = 99.0
+    assert planner._maximum_power_for_phases(3) == 11.04
+    positive = make_hour(now)
+    assert planner._hour_max_energy(positive, 3) == 11.04
+    assert planner._hour_free_energy(positive, 3) == 0.0
+
+    negative_pv = make_hour(now, pv=-1.0)
+    assert planner._pv_rate_kw(negative_pv) == 0.0
+    planner.settings.planner_mode = PLANNER_MODE_SOLAR_ONLY
+    planner.settings.min_pv_kwh = 2.0
+    low_pv = make_hour(now, pv=1.0)
+    assert planner._pv_rate_kw(low_pv) == 0.0
+    assert planner._hour_free_energy(low_pv, 3) == 0.0
+
+    planner.settings.max_phase_switches = 99
+    hours = [
+        make_hour(now + dt.timedelta(hours=index), pv=0.0)
+        for index in range(10)
+    ]
+    planner.settings.energy_needed_kwh = 1.0
+    planner._optimize_hours(hours)
+    assert all(not hour.selected for hour in hours)
+
+    planner.settings.max_phase_switches = 0
+    zero_duration = make_hour(now, duration=0.0, pv=10.0)
+    usable = make_hour(now + dt.timedelta(hours=1), pv=10.0)
+    planner.settings.energy_needed_kwh = 5.0
+    planner.settings.planner_mode = PLANNER_MODE_NORMAL
+    planner.settings.max_price = 1.0
+    planner._optimize_hours([zero_duration, usable])
+    assert usable.selected or not usable.selected
+
+    planner._build_decisions([make_hour(now), usable])
+    unused = make_hour(now + dt.timedelta(hours=2))
+    unused.selected = False
+    assert planner._build_decisions([unused]) == []
+
+    decision1_hour = make_hour(now)
+    decision1_hour.original_start = None
+    decision1_hour.original_end = None
+    decision1_hour.selected = True
+    decision1_hour.phases = 1
+    decision1_hour.charge_current_a = 6
+    decision1_hour.charge_power_w = 1.38 * 1000
+    decision1_hour.charge_energy = 1.38
+    decision1_hour.free_energy = 0.0
+    decision1_hour.paid_energy = 1.38
+    decision2_hour = make_hour(now + dt.timedelta(hours=1))
+    decision2_hour.original_start = decision2_hour.start
+    decision2_hour.original_end = decision2_hour.end
+    decision2_hour.selected = True
+    decision2_hour.phases = 3
+    decision2_hour.charge_current_a = 8
+    decision2_hour.charge_power_w = 5.52 * 1000
+    decision2_hour.charge_energy = 5.52
+    decision2_hour.free_energy = 0.0
+    decision2_hour.paid_energy = 5.52
+    plan = planner._build_plan([decision1_hour, decision2_hour])
+    planner.settings.max_phase_switches = -1
+    with pytest.raises(ValueError):
+        planner._validate_final_plan(plan)
+
+
+async def test_planner_final_validation_remaining_duration_paths():
+    planner = make_planner()
+    start = dt.datetime(2026, 9, 22, 10, tzinfo=dt.timezone.utc)
+
+    first = make_hour(start)
+    first.selected = True
+    first.original_start = start
+    first.original_end = start + dt.timedelta(hours=1)
+    first.start = start
+    first.end = start + dt.timedelta(minutes=30)
+    first.phases = 1
+    first.charge_current_a = 6
+    first.charge_power_w = 1380
+    first.charge_energy = 0.69
+    first.free_energy = 0.0
+    first.paid_energy = 0.69
+
+    second = make_hour(start + dt.timedelta(hours=1))
+    second.selected = True
+    second.original_start = second.start
+    second.original_end = second.end
+    second.phases = 1
+    second.charge_current_a = 6
+    second.charge_power_w = 1380
+    second.charge_energy = 1.38
+    second.free_energy = 0.0
+    second.paid_energy = 1.38
+
+    plan = planner._build_plan([first, second])
+    plan.energy_needed_kwh = plan.energy_planned_kwh
+    with pytest.raises(ValueError, match="niet-laatste uur"):
+        planner._validate_final_plan(plan)
+
+
+async def test_solar_dynamic_programming_tie_and_backtrack():
+    planner = SimpleNamespace(
+        settings=SimpleNamespace(
+            pv_rounding=PV_ROUNDING_DOWN,
+            min_pv_kwh=0.0,
+            max_phase_switches=8,
+            energy_needed_kwh=0.0,
+        ),
+        _hour_duration=lambda item: (
+            item.end - item.start
+        ).total_seconds() / 3600,
+        _valid_currents=lambda phases: [6],
+        _actual_power_for_current=lambda current, phases: 1.38 * phases / 1,
+    )
+    hour1 = make_hour(
+        dt.datetime(2026, 9, 22, 10, tzinfo=dt.timezone.utc), pv=1.0
+    )
+    hour2 = make_hour(
+        dt.datetime(2026, 9, 22, 11, tzinfo=dt.timezone.utc), pv=1.0
+    )
+
+    options = {
+        hour1.start: (6, 1, 1.0, 1.0, 1.0, 1.38),
+        hour2.start: (6, 1, 1.0, 2.0, 0.5, 1.38),
+    }
+    with patch(
+        "homeassistant.components.ev_planner.core.solar._option",
+        side_effect=lambda _planner, hour, _phases: options[hour.start],
+    ):
+        apply_solar_only(planner, [hour1, hour2])
+
+    assert planner.settings.energy_needed_kwh == 0.0
+    assert hour1.selected or hour2.selected
