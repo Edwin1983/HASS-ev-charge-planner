@@ -49,6 +49,7 @@ from homeassistant.components.ev_planner.core.status import (
     EVStatus,
     EVStatusManager,
 )
+from homeassistant.components.ev_planner.core.solcast import SolcastReader
 from homeassistant.components.ev_planner.core.utils import (
     clamp,
     hour_key,
@@ -954,3 +955,136 @@ async def test_core_status_paths() -> None:
     assert status.reason == "PV"
     manager.log_status()
     assert manager.as_dict()["state"] == "charging"
+
+
+async def test_core_solcast_paths() -> None:
+    """Cover Solcast parsing, validation, statistics, and reader branches."""
+    logger = Logger()
+    now = dt.datetime.now().astimezone()
+    base = now.replace(minute=0, second=0, microsecond=0)
+
+    valid = {
+        "period_start": base.isoformat(),
+        "pv_estimate": 1.5,
+        "pv_estimate10": -0.2,
+        "pv_estimate90": 2.5,
+    }
+    tomorrow = {
+        "period_start": (base + dt.timedelta(days=1)).isoformat(),
+        "pv_estimate": 2.0,
+        "pv_estimate10": 1.0,
+        "pv_estimate90": 3.0,
+    }
+
+    app = SimpleNamespace(
+        get_attributes=lambda entity_id: {
+            "today": {"detailedHourly": [valid]},
+            "tomorrow": {"detailedHourly": [tomorrow]},
+        }[entity_id]
+    )
+    reader = SolcastReader(app, logger, "today", "tomorrow")
+
+    data = reader.read()
+    assert len(data.hours) == 2
+    assert data.hours[0].pv_estimate10 == 0.0
+    assert data.total_today == pytest.approx(1.5)
+    assert data.total_tomorrow == pytest.approx(2.0)
+    assert data.valid_until == data.hours[-1].end
+    reader.dump(data)
+
+    with pytest.raises(RuntimeError, match="vandaag ontbreekt"):
+        SolcastReader(
+            SimpleNamespace(get_attributes=lambda entity_id: {}),
+            logger,
+            "today",
+            "tomorrow",
+        )._read_today()
+
+    with pytest.raises(RuntimeError, match="vandaag is geen lijst"):
+        SolcastReader(
+            SimpleNamespace(
+                get_attributes=lambda entity_id: {"detailedHourly": "invalid"}
+            ),
+            logger,
+            "today",
+            "tomorrow",
+        )._read_today()
+
+    assert SolcastReader(
+        SimpleNamespace(get_attributes=lambda entity_id: {}),
+        logger,
+        "today",
+        "tomorrow",
+    )._read_tomorrow() == []
+
+    assert SolcastReader(
+        SimpleNamespace(
+            get_attributes=lambda entity_id: {"detailedHourly": "invalid"}
+        ),
+        logger,
+        "today",
+        "tomorrow",
+    )._read_tomorrow() == []
+
+    assert reader._parse_forecast([valid, {"period_start": "invalid"}])
+    with pytest.raises(ValueError, match="Ontbrekende period_start"):
+        reader._create_hour({})
+
+    with pytest.raises(ValueError, match="Ongeldige period_start"):
+        reader._create_hour({"period_start": "not-a-date"})
+
+    with pytest.raises(ValueError, match="niet timezone-aware"):
+        reader._create_hour(
+            {"period_start": dt.datetime(2026, 9, 22, 10)}
+        )
+
+    with pytest.raises(ValueError, match="Ongeldige period_start"):
+        reader._create_hour({"period_start": 123})
+
+    with pytest.raises(ValueError, match="Ongeldige Solcast PV waarde"):
+        reader._create_hour(
+            {
+                "period_start": base.isoformat(),
+                "pv_estimate": "bad",
+            }
+        )
+
+    with pytest.raises(TypeError, match="geen dictionary"):
+        reader._create_hour([])
+
+    duplicate = reader._create_hour(valid)
+    unique = reader._create_hour(tomorrow)
+    assert len(reader._remove_duplicates([duplicate, duplicate, unique])) == 2
+
+    old = reader._create_hour(
+        {
+            "period_start": (base - dt.timedelta(hours=3)).isoformat(),
+            "pv_estimate": 1,
+        }
+    )
+    assert old not in reader._remove_past([old, duplicate])
+
+    gap_start = base + dt.timedelta(hours=3)
+    gap_with_pv = reader._create_hour(
+        {
+            "period_start": gap_start.isoformat(),
+            "pv_estimate": 1,
+        }
+    )
+    reader._validate_series([duplicate, gap_with_pv])
+
+    huge_gap = reader._create_hour(
+        {
+            "period_start": (base + dt.timedelta(hours=6)).isoformat(),
+            "pv_estimate": 1,
+        }
+    )
+    reader._validate_series([duplicate, huge_gap])
+
+    empty = reader._calculate_statistics([])
+    assert empty.hours == []
+
+    sorted_hours = [unique, duplicate]
+    result = reader._sort(sorted_hours)
+    assert result[0].start <= result[1].start
+    assert [hour.hour_index for hour in result] == [0, 1]
