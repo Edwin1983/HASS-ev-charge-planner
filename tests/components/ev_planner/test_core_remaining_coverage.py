@@ -191,8 +191,9 @@ async def test_controller_update_default_and_create_failure():
     assert controller.last_plan is None
 
 
-async def test_controller_phase_decision_dashboard_paths():
+async def test_controller_phase_decision_dashboard_paths(hass):
     controller = make_controller()
+    controller._hass = hass
     start = dt.datetime(2026, 9, 22, 10, tzinfo=dt.timezone.utc)
     h1 = make_hour(start)
     h2 = make_hour(start + dt.timedelta(hours=1))
