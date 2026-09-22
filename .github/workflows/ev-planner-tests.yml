@@ -47,7 +47,7 @@ jobs:
             fi
           fi
 
-          if grep -Eq '^(homeassistant/components/ev_planner/|\.github/workflows/ev-planner-tests\.yml$)' /tmp/changed-files; then
+          if grep -Eq '^(homeassistant/components/ev_planner/|tests/components/ev_planner/|\.github/workflows/ev-planner-tests\.yml$)' /tmp/changed-files; then
             echo "core=true" >> "$GITHUB_OUTPUT"
           else
             echo "core=false" >> "$GITHUB_OUTPUT"
@@ -139,6 +139,12 @@ jobs:
               > ha-core/tests/ev_planner/test_ev_planner_integration.py
           cp tests/components/ev_planner/test_config_flow.py \
               ha-core/tests/ev_planner/test_config_flow.py
+          cp tests/components/ev_planner/test_core_coverage.py \
+              ha-core/tests/ev_planner/test_core_coverage.py
+          cp tests/components/ev_planner/test_core_planner_coverage.py \
+              ha-core/tests/ev_planner/test_core_planner_coverage.py
+          cp tests/components/ev_planner/test_core_misc_coverage.py \
+              ha-core/tests/ev_planner/test_core_misc_coverage.py
 
       - name: Run Core integration tests with coverage
         working-directory: ha-core
