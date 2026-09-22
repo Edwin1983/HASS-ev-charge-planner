@@ -146,12 +146,19 @@ async def test_core_prices_paths() -> None:
     reader = PriceReader(app, logger, "sensor.test_prices")
 
     with pytest.raises(RuntimeError, match="geen dictionary"):
-        PriceReader(SimpleNamespace(get_attributes=lambda entity_id: None), logger)._read_forecast()
+        PriceReader(
+            SimpleNamespace(get_attributes=lambda entity_id: None), logger
+        )._read_forecast()
     with pytest.raises(RuntimeError, match="Forecast attribuut ontbreekt"):
-        PriceReader(SimpleNamespace(get_attributes=lambda entity_id: {}), logger)._read_forecast()
+        PriceReader(
+            SimpleNamespace(get_attributes=lambda entity_id: {}), logger
+        )._read_forecast()
     with pytest.raises(RuntimeError, match="Forecast is geen lijst"):
         PriceReader(
-            SimpleNamespace(get_attributes=lambda entity_id: {"forecast": "bad"}), logger
+            SimpleNamespace(
+                get_attributes=lambda entity_id: {"forecast": "bad"}
+            ),
+            logger,
         )._read_forecast()
     with pytest.raises(RuntimeError, match="geen prijzen"):
         reader._read_forecast()
