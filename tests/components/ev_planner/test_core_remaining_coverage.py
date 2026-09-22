@@ -434,7 +434,7 @@ async def test_controller_remaining_branch_paths():
         ),
     ):
         assert controller._planner_mode_entity_id() == "input_select.ev_planner_mode"
-        assert controller._pv_rounding_entity_id() == "input_select.ev_pv_rounding"
+        assert controller._pv_rounding_entity_id() == "input_select.ev_pv_afronding"
         assert controller._native_entity_id(
             "number", "missing", "legacy.number"
         ) == "legacy.number"
@@ -472,17 +472,7 @@ async def test_planner_remaining_direct_branches():
     planner = make_planner()
     planner.settings.solar_is_free = "bad"
     with pytest.raises(TypeError):
-        planner.settings.__class__(
-            energy_needed_kwh=1.0,
-            departure_time=dt.datetime(2026, 9, 22, 12, tzinfo=dt.timezone.utc),
-            max_price=0.1,
-            min_pv_kwh=0.0,
-            solar_is_free="bad",
-            max_charge_power_kw=11.04,
-            max_phase_switches=0,
-            planner_mode=PLANNER_MODE_NORMAL,
-            pv_rounding=PV_ROUNDING_DOWN,
-        )
+        planner._validate_settings()
 
     planner.settings.solar_is_free = True
     planner.settings.energy_needed_kwh = 0
@@ -612,31 +602,44 @@ async def test_solar_dynamic_programming_tie_and_backtrack():
         settings=SimpleNamespace(
             pv_rounding=PV_ROUNDING_DOWN,
             min_pv_kwh=0.0,
-            max_phase_switches=8,
+            max_phase_switches=2,
             energy_needed_kwh=0.0,
         ),
         _hour_duration=lambda item: (
             item.end - item.start
         ).total_seconds() / 3600,
         _valid_currents=lambda phases: [6],
-        _actual_power_for_current=lambda current, phases: 1.38 * phases / 1,
+        _actual_power_for_current=lambda current, phases: 1.38 * phases,
     )
-    hour1 = make_hour(
-        dt.datetime(2026, 9, 22, 10, tzinfo=dt.timezone.utc), pv=1.0
-    )
-    hour2 = make_hour(
-        dt.datetime(2026, 9, 22, 11, tzinfo=dt.timezone.utc), pv=1.0
-    )
+    hours = [
+        make_hour(
+            dt.datetime(2026, 9, 22, 10 + index, tzinfo=dt.timezone.utc),
+            pv=1.0,
+        )
+        for index in range(3)
+    ]
 
+    # Force a collision on state (1 phase, 1 switch) at hour 3:
+    # the existing path uses 1F in hour 2, while the candidate comes
+    # from 3F in hour 2. Both have equal free PV, but the candidate
+    # has less paid energy and must replace the current record.
     options = {
-        hour1.start: (6, 1, 1.0, 1.0, 1.0, 1.38),
-        hour2.start: (6, 1, 1.0, 2.0, 0.5, 1.38),
+        (hours[0].start, 1): (6, 1, 2.0, 1.0, 1.0, 1.38),
+        (hours[0].start, 3): (6, 3, 4.0, 1.0, 3.0, 4.14),
+        (hours[1].start, 1): (6, 1, 3.0, 1.0, 2.0, 1.38),
+        (hours[1].start, 3): (6, 3, 2.0, 1.0, 1.0, 4.14),
+        (hours[2].start, 1): (6, 1, 1.0, 1.0, 0.0, 1.38),
+        (hours[2].start, 3): (6, 3, 1.0, 1.0, 0.0, 4.14),
     }
+
+    def fake_option(_planner, hour, phases):
+        return options[(hour.start, phases)]
+
     with patch(
         "homeassistant.components.ev_planner.core.solar._option",
-        side_effect=lambda _planner, hour, _phases: options[hour.start],
+        side_effect=fake_option,
     ):
-        apply_solar_only(planner, [hour1, hour2])
+        apply_solar_only(planner, hours)
 
-    assert planner.settings.energy_needed_kwh == 0.0
-    assert hour1.selected or hour2.selected
+    assert planner.settings.energy_needed_kwh == pytest.approx(3.0)
+    assert any(hour.selected for hour in hours)
