@@ -8,6 +8,7 @@ from homeassistant import config_entries
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 
+from homeassistant.components.ev_planner.config_flow import EVPlannerConfigFlow
 from homeassistant.components.ev_planner.const import (
     CONF_ENTITY_PRICES,
     CONF_ENTITY_SOLCAST_TODAY,
@@ -60,6 +61,23 @@ async def test_single_instance(
         DOMAIN,
         context={"source": config_entries.SOURCE_USER},
     )
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "single_instance_allowed"
+
+
+async def test_single_instance_branch_direct(
+    valid_config: dict[str, str],
+) -> None:
+    """Test the single-instance branch directly."""
+    flow = EVPlannerConfigFlow()
+    entry = MockConfigEntry(
+        domain=DOMAIN, title="EV Charge Planner", data=valid_config
+    )
+
+    flow._async_current_entries = lambda: (entry,)  # type: ignore[method-assign]
+
+    result = await flow.async_step_user()
 
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "single_instance_allowed"
