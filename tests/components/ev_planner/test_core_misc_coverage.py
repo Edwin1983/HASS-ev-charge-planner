@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from homeassistant.components.ev_planner.const import PV_ROUNDING_DOWN, PV_ROUNDING_UP
+from homeassistant.components.ev_planner.const import PLANNER_MODE_NORMAL, PV_ROUNDING_DOWN, PV_ROUNDING_UP
 from homeassistant.components.ev_planner.core.logger import Logger
 from homeassistant.components.ev_planner.core.models import Hour
 from homeassistant.components.ev_planner.core.planner import ChargingPlan, EVPlanner, PlannerSettings
@@ -81,7 +81,7 @@ async def test_solar_remaining_paths():
             solar_is_free=True,
             max_charge_power_kw=11.04,
             max_phase_switches=8,
-            planner_mode="Normaal",
+            planner_mode=PLANNER_MODE_NORMAL,
             pv_rounding=PV_ROUNDING_DOWN,
         ),
         Logger(),
