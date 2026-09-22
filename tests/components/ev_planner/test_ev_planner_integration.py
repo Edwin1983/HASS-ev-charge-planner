@@ -14,6 +14,14 @@ from homeassistant.components.ev_planner.number import (
     EVPlannerMaxPrice,
     EVPlannerMinPv,
 )
+from homeassistant.components.ev_planner.select import (
+    DEPARTURE_DAYS,
+    PLANNER_MODES,
+    PV_ROUNDING_OPTIONS,
+    EVPlannerDepartureDaySelect,
+    EVPlannerModeSelect,
+    EVPlannerPvRoundingSelect,
+)
 from homeassistant.components.ev_planner.sensor import _current_decision
 
 from custom_components.ev_planner.const import (
@@ -23,6 +31,7 @@ from custom_components.ev_planner.const import (
     CONF_ENTITY_MAX_PHASE_SWITCHES,
     CONF_ENTITY_MAX_PRICE,
     CONF_ENTITY_MIN_PV_KWH,
+    CONF_ENTITY_PLANNER_MODE,
     CONF_ENTITY_PV_ROUNDING,
     CONF_ENTITY_PRICES,
     CONF_ENTITY_SOLCAST_TODAY,
@@ -182,6 +191,48 @@ async def test_number_restore_and_fallback_paths(hass: HomeAssistant) -> None:
     with patch.object(min_pv, "async_get_last_state", return_value=None):
         await min_pv._restore_or_legacy(0.0, CONF_ENTITY_MIN_PV_KWH)
     assert min_pv.native_value == 0.0
+
+
+async def test_select_fallback_and_setter_paths(hass: HomeAssistant) -> None:
+    """Cover select legacy fallbacks and option validation."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="EV Planner",
+        data={
+            CONF_ENTITY_DEPARTURE_DAY: "input_select.ev_vertrekdag",
+            CONF_ENTITY_PLANNER_MODE: "input_select.ev_planner_mode",
+            CONF_ENTITY_PV_ROUNDING: "input_select.ev_pv_afronding",
+        },
+        unique_id="select-fallbacks",
+    )
+    entry.add_to_hass(hass)
+
+    hass.states.async_set("input_select.ev_vertrekdag", DEPARTURE_DAYS[1])
+    departure = EVPlannerDepartureDaySelect(hass, entry)
+    with patch.object(departure, "async_get_last_state", return_value=None):
+        await departure.async_added_to_hass()
+    assert departure.current_option == DEPARTURE_DAYS[1]
+    await departure.async_select_option("invalid")
+    await departure.async_select_option(DEPARTURE_DAYS[1])
+    assert departure.current_option == DEPARTURE_DAYS[1]
+
+    hass.states.async_set("input_select.ev_planner_mode", PLANNER_MODES[1])
+    mode = EVPlannerModeSelect(hass, entry)
+    with patch.object(mode, "async_get_last_state", return_value=None):
+        await mode.async_added_to_hass()
+    assert mode.current_option == PLANNER_MODES[1]
+    await mode.async_select_option("invalid")
+    await mode.async_select_option(PLANNER_MODES[1])
+    assert mode.current_option == PLANNER_MODES[1]
+
+    hass.states.async_set("input_select.ev_pv_afronding", PV_ROUNDING_OPTIONS[1])
+    rounding = EVPlannerPvRoundingSelect(hass, entry)
+    with patch.object(rounding, "async_get_last_state", return_value=None):
+        await rounding.async_added_to_hass()
+    assert rounding.current_option == PV_ROUNDING_OPTIONS[1]
+    await rounding.async_select_option("invalid")
+    await rounding.async_select_option(PV_ROUNDING_OPTIONS[1])
+    assert rounding.current_option == PV_ROUNDING_OPTIONS[1]
 
 
 async def test_full_integration_setup_and_unload(
