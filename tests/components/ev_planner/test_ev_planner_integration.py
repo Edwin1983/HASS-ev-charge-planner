@@ -9,7 +9,6 @@ import pytest
 from homeassistant.components import ev_planner
 from homeassistant.components.ev_planner.number import (
     EVPlannerEnergyNeeded,
-    EVPlannerNumberBase,
     EVPlannerMaxChargePower,
     EVPlannerMaxPhaseSwitches,
     EVPlannerMaxPrice,
