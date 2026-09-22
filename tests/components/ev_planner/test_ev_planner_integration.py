@@ -23,6 +23,7 @@ from homeassistant.components.ev_planner.select import (
     EVPlannerPvRoundingSelect,
 )
 from homeassistant.components.ev_planner.sensor import _current_decision
+from homeassistant.components.ev_planner.time import EVPlannerDepartureTime
 
 from custom_components.ev_planner.const import (
     CONF_ENTITY_DEPARTURE,
@@ -95,6 +96,31 @@ async def test_current_decision_ignores_invalid_timestamps() -> None:
     }
 
     assert _current_decision(data) is None
+
+
+async def test_time_parse_and_setter_paths(hass: HomeAssistant) -> None:
+    """Cover time parsing fallbacks and the native value setter."""
+    assert EVPlannerDepartureTime._parse_state(None) is None
+    assert EVPlannerDepartureTime._parse_state("12:34:56") == dt.time(12, 34, 56)
+    assert EVPlannerDepartureTime._parse_state(
+        "2026-09-22T12:34:56"
+    ) == dt.time(12, 34, 56)
+    assert EVPlannerDepartureTime._parse_state("not-a-time") is None
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="EV Planner",
+        data=make_config(),
+        unique_id="time-setter",
+    )
+    entry.add_to_hass(hass)
+    entity = EVPlannerDepartureTime(hass, entry)
+
+    with patch.object(entity, "async_write_ha_state") as write_state:
+        await entity.async_set_value(dt.time(7, 45))
+
+    assert entity.native_value == dt.time(7, 45)
+    write_state.assert_called_once()
 
 
 async def test_number_restore_and_fallback_paths(hass: HomeAssistant) -> None:
