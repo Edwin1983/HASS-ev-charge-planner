@@ -266,14 +266,6 @@ async def test_full_planning_chain(
     assert hass.states.get("switch.ev_planner_smart_charging").state == "on"
 
     await hass.services.async_call(
-        "switch", "turn_off",
-        {"entity_id": "switch.ev_planner_smart_charging"},
-        blocking=True,
-    )
-    await hass.async_block_till_done()
-    assert hass.states.get("switch.ev_planner_smart_charging").state == "off"
-
-    await hass.services.async_call(
         DOMAIN, "update", {"config_entry_id": entry.entry_id}, blocking=True,
     )
     await hass.async_block_till_done()
@@ -313,6 +305,15 @@ async def test_full_planning_chain(
         "Geen prijsdata", "Geen PV-data",
         "Fout bij plannen", "Ongeldige plannerinstellingen",
     }
+
+    await hass.services.async_call(
+        "switch", "turn_off",
+        {"entity_id": "switch.ev_planner_smart_charging"},
+        blocking=True,
+    )
+    await hass.async_block_till_done()
+    assert hass.states.get("switch.ev_planner_smart_charging").state == "off"
+
     assert await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()
 
