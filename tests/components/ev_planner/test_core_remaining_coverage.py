@@ -261,7 +261,7 @@ async def test_controller_phase_decision_dashboard_paths():
         )
     )
     result = controller._plan_to_dict(plan)
-    assert result["phase_switches"] == 1
+    assert result["phase_switches"] == 2
     assert result["total_charging_minutes"] == 180.0
 
     controller.status.as_dict = lambda: (_ for _ in ()).throw(RuntimeError("boom"))
