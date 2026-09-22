@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as dt
+from unittest.mock import patch
 
 import pytest
 
@@ -312,6 +313,63 @@ async def test_service_rejects_unloaded_config_entry(
     await hass.async_block_till_done()
     assert await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()
+    with pytest.raises(ServiceValidationError):
+        await hass.services.async_call(
+            DOMAIN, "status", {"config_entry_id": entry.entry_id},
+            blocking=True, return_response=True,
+        )
+
+
+async def test_service_actions_and_update_listener(
+    hass: HomeAssistant, enable_custom_integrations: None
+):
+    """Exercise all non-response service handlers and the options listener."""
+    entry = MockConfigEntry(
+        domain=DOMAIN, title="EV Planner", data=make_config(),
+        unique_id="service-actions",
+    )
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    with (
+        patch.object(entry.runtime_data, "update") as update,
+        patch.object(entry.runtime_data, "create_plan") as create_plan,
+        patch.object(entry.runtime_data, "replan") as replan,
+        patch.object(entry.runtime_data, "clear_plan") as clear_plan,
+    ):
+        await hass.services.async_call(
+            DOMAIN, "update", {"config_entry_id": entry.entry_id}, blocking=True
+        )
+        await hass.services.async_call(
+            DOMAIN, "create_plan", {"config_entry_id": entry.entry_id}, blocking=True
+        )
+        await hass.services.async_call(
+            DOMAIN, "replan", {"config_entry_id": entry.entry_id}, blocking=True
+        )
+        await hass.services.async_call(
+            DOMAIN, "clear_plan", {"config_entry_id": entry.entry_id}, blocking=True
+        )
+
+    update.assert_called_once()
+    create_plan.assert_called_once()
+    replan.assert_called_once()
+    clear_plan.assert_called_once()
+
+    entry.async_update_entry(options={"update_interval_minutes": 2})
+    await hass.async_block_till_done()
+
+
+async def test_service_rejects_wrong_config_entry_domain(
+    hass: HomeAssistant, enable_custom_integrations: None
+):
+    """Service actions reject a config entry from another domain."""
+    entry = MockConfigEntry(
+        domain="other_domain", title="Other", data={},
+        unique_id="wrong-domain",
+    )
+    entry.add_to_hass(hass)
+
     with pytest.raises(ServiceValidationError):
         await hass.services.async_call(
             DOMAIN, "status", {"config_entry_id": entry.entry_id},
