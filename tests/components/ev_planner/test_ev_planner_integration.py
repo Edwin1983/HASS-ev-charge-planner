@@ -108,7 +108,9 @@ async def test_number_restore_and_fallback_paths(hass: HomeAssistant) -> None:
         await energy._restore_or_legacy(10.0, CONF_ENTITY_ENERGY_NEEDED)
     assert energy.native_value == 7.5
 
-    hass.states.async_set("input_number.ev_kwh_nodig", "not-a-number")
+    hass.states.async_set(
+        "input_number.ev_max_fasewisselingen", "not-a-number"
+    )
     phase_switches = EVPlannerMaxPhaseSwitches(hass, entry)
     with patch.object(
         phase_switches,
