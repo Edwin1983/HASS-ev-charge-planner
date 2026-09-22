@@ -213,8 +213,10 @@ async def test_select_fallback_and_setter_paths(hass: HomeAssistant) -> None:
         await departure.async_added_to_hass()
     assert departure.current_option == DEPARTURE_DAYS[1]
     await departure.async_select_option("invalid")
-    await departure.async_select_option(DEPARTURE_DAYS[1])
+    with patch.object(departure, "async_write_ha_state") as write_state:
+        await departure.async_select_option(DEPARTURE_DAYS[1])
     assert departure.current_option == DEPARTURE_DAYS[1]
+    write_state.assert_called_once()
 
     hass.states.async_set("input_select.ev_planner_mode", PLANNER_MODES[1])
     mode = EVPlannerModeSelect(hass, entry)
@@ -222,8 +224,10 @@ async def test_select_fallback_and_setter_paths(hass: HomeAssistant) -> None:
         await mode.async_added_to_hass()
     assert mode.current_option == PLANNER_MODES[1]
     await mode.async_select_option("invalid")
-    await mode.async_select_option(PLANNER_MODES[1])
+    with patch.object(mode, "async_write_ha_state") as write_state:
+        await mode.async_select_option(PLANNER_MODES[1])
     assert mode.current_option == PLANNER_MODES[1]
+    write_state.assert_called_once()
 
     hass.states.async_set("input_select.ev_pv_afronding", PV_ROUNDING_OPTIONS[1])
     rounding = EVPlannerPvRoundingSelect(hass, entry)
@@ -231,8 +235,10 @@ async def test_select_fallback_and_setter_paths(hass: HomeAssistant) -> None:
         await rounding.async_added_to_hass()
     assert rounding.current_option == PV_ROUNDING_OPTIONS[1]
     await rounding.async_select_option("invalid")
-    await rounding.async_select_option(PV_ROUNDING_OPTIONS[1])
+    with patch.object(rounding, "async_write_ha_state") as write_state:
+        await rounding.async_select_option(PV_ROUNDING_OPTIONS[1])
     assert rounding.current_option == PV_ROUNDING_OPTIONS[1]
+    write_state.assert_called_once()
 
 
 async def test_full_integration_setup_and_unload(
