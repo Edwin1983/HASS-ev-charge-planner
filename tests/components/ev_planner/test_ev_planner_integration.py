@@ -20,6 +20,7 @@ from custom_components.ev_planner.const import (
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
+from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 
@@ -94,10 +95,29 @@ async def test_full_integration_setup_and_unload(
     assert isinstance(dashboard_response, dict)
 
     states = hass.states
+    registry = er.async_get(hass)
+
+    sensor_state = registry.async_get_entity_id(
+        "sensor", DOMAIN, f"{entry.entry_id}_state"
+    )
+    sensor_data = registry.async_get_entity_id(
+        "sensor", DOMAIN, f"{entry.entry_id}_data"
+    )
+    sensor_charge_current = registry.async_get_entity_id(
+        "sensor", DOMAIN, f"{entry.entry_id}_desired_charge_current"
+    )
+    sensor_phases = registry.async_get_entity_id(
+        "sensor", DOMAIN, f"{entry.entry_id}_desired_phases"
+    )
+
+    assert sensor_state is not None
+    assert sensor_data is not None
+    assert sensor_charge_current is not None
+    assert sensor_phases is not None
+
     for entity_id in (
-        "sensor.ev_planner_state", "sensor.ev_planner_data",
-        "sensor.ev_planner_desired_charge_current",
-        "sensor.ev_planner_desired_phases",
+        sensor_state, sensor_data,
+        sensor_charge_current, sensor_phases,
         "binary_sensor.ev_planner_charging_allowed",
         "switch.ev_planner_smart_charging",
         "select.ev_charge_planner_departure_day",
@@ -231,17 +251,36 @@ async def test_full_planning_chain(
     )
     await hass.async_block_till_done()
 
-    data_state = hass.states.get("sensor.ev_planner_data")
+    registry = er.async_get(hass)
+    sensor_data = registry.async_get_entity_id(
+        "sensor", DOMAIN, f"{entry.entry_id}_data"
+    )
+    sensor_charge_current = registry.async_get_entity_id(
+        "sensor", DOMAIN, f"{entry.entry_id}_desired_charge_current"
+    )
+    sensor_phases = registry.async_get_entity_id(
+        "sensor", DOMAIN, f"{entry.entry_id}_desired_phases"
+    )
+    sensor_state = registry.async_get_entity_id(
+        "sensor", DOMAIN, f"{entry.entry_id}_state"
+    )
+
+    assert sensor_data is not None
+    assert sensor_charge_current is not None
+    assert sensor_phases is not None
+    assert sensor_state is not None
+
+    data_state = hass.states.get(sensor_data)
     assert data_state is not None
     assert data_state.attributes["decisions"]
     assert data_state.attributes["energy_planned_kwh"] > 0
-    charge_current = hass.states.get("sensor.ev_planner_desired_charge_current")
-    phases = hass.states.get("sensor.ev_planner_desired_phases")
+    charge_current = hass.states.get(sensor_charge_current)
+    phases = hass.states.get(sensor_phases)
     assert charge_current is not None
     assert phases is not None
     assert 0 <= int(charge_current.state) <= 16
     assert int(phases.state) in {0, 1, 3}
-    state = hass.states.get("sensor.ev_planner_state")
+    state = hass.states.get(sensor_state)
     assert state is not None
     assert state.state not in {
         "Geen prijsdata", "Geen PV-data",
