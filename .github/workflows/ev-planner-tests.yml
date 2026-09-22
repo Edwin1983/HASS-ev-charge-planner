@@ -76,8 +76,8 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements_test.txt
 
-      - name: Run pytest with coverage
-        run: python -m pytest --cov=homeassistant/components/ev_planner --cov-report=term-missing -q
+      - name: Run pytest
+        run: python -m pytest -q
 
       - name: Run Ruff
         run: python -m ruff check .
@@ -136,7 +136,9 @@ jobs:
               -e 's/, enable_custom_integrations: None//' \
               tests/components/ev_planner/test_ev_planner_integration.py \
               > ha-core/tests/ev_planner/test_ev_planner_integration.py
+          cp tests/components/ev_planner/test_config_flow.py \
+              ha-core/tests/ev_planner/test_config_flow.py
 
-      - name: Run Core integration tests
+      - name: Run Core integration tests with coverage
         working-directory: ha-core
-        run: .venv/bin/python -m pytest -q tests/ev_planner/test_ev_planner_integration.py
+        run: .venv/bin/python -m pytest --cov=homeassistant/components/ev_planner --cov-report=term-missing -q tests/ev_planner
