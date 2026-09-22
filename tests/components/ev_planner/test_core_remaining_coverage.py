@@ -472,7 +472,7 @@ async def test_planner_remaining_direct_branches():
     planner = make_planner()
     planner.settings.solar_is_free = "bad"
     with pytest.raises(TypeError):
-        planner._validate_settings()
+        planner.settings._validate()
 
     planner.settings.solar_is_free = True
     planner.settings.energy_needed_kwh = 0
@@ -616,20 +616,18 @@ async def test_solar_dynamic_programming_tie_and_backtrack():
             dt.datetime(2026, 9, 22, 10 + index, tzinfo=dt.timezone.utc),
             pv=1.0,
         )
-        for index in range(3)
+        for index in range(2)
     ]
 
-    # Force a collision on state (1 phase, 1 switch) at hour 3:
-    # the existing path uses 1F in hour 2, while the candidate comes
-    # from 3F in hour 2. Both have equal free PV, but the candidate
-    # has less paid energy and must replace the current record.
+    # At hour 2, state (1, 1) can be reached either from:
+    # - 3F with 0 switches, then switching to 1F
+    # - 1F with 1 switch, then staying at 1F
+    # The latter has less paid energy and must replace the former.
     options = {
-        (hours[0].start, 1): (6, 1, 2.0, 1.0, 1.0, 1.38),
-        (hours[0].start, 3): (6, 3, 4.0, 1.0, 3.0, 4.14),
-        (hours[1].start, 1): (6, 1, 3.0, 1.0, 2.0, 1.38),
-        (hours[1].start, 3): (6, 3, 2.0, 1.0, 1.0, 4.14),
-        (hours[2].start, 1): (6, 1, 1.0, 1.0, 0.0, 1.38),
-        (hours[2].start, 3): (6, 3, 1.0, 1.0, 0.0, 4.14),
+        (hours[0].start, 1): (6, 1, 1.0, 1.0, 0.0, 1.38),
+        (hours[0].start, 3): (6, 3, 2.0, 1.0, 1.0, 4.14),
+        (hours[1].start, 1): (6, 1, 1.0, 1.0, 0.0, 1.38),
+        (hours[1].start, 3): (6, 3, 1.0, 1.0, 0.0, 4.14),
     }
 
     def fake_option(_planner, hour, phases):
@@ -641,5 +639,5 @@ async def test_solar_dynamic_programming_tie_and_backtrack():
     ):
         apply_solar_only(planner, hours)
 
-    assert planner.settings.energy_needed_kwh == pytest.approx(3.0)
+    assert planner.settings.energy_needed_kwh == 0.0
     assert any(hour.selected for hour in hours)
