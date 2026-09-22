@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as dt
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -366,14 +367,13 @@ async def test_service_rejects_wrong_config_entry_domain(
     hass: HomeAssistant, enable_custom_integrations: None
 ):
     """Service actions reject a config entry from another domain."""
-    entry = MockConfigEntry(
-        domain="other_domain", title="Other", data={},
-        unique_id="wrong-domain",
-    )
-    entry.add_to_hass(hass)
-
-    with pytest.raises(ServiceValidationError):
-        await hass.services.async_call(
-            DOMAIN, "status", {"config_entry_id": entry.entry_id},
-            blocking=True, return_response=True,
-        )
+    with patch.object(
+        hass.config_entries,
+        "async_get_entry",
+        return_value=SimpleNamespace(domain="other_domain"),
+    ):
+        with pytest.raises(ServiceValidationError):
+            await hass.services.async_call(
+                DOMAIN, "status", {"config_entry_id": "wrong-domain"},
+                blocking=True, return_response=True,
+            )
