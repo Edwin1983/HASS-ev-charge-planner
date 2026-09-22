@@ -9,6 +9,7 @@ import pytest
 from homeassistant.components import ev_planner
 from homeassistant.components.ev_planner.number import (
     EVPlannerEnergyNeeded,
+    EVPlannerNumberBase,
     EVPlannerMaxChargePower,
     EVPlannerMaxPhaseSwitches,
     EVPlannerMaxPrice,
@@ -118,9 +119,10 @@ async def test_number_restore_and_fallback_paths(hass: HomeAssistant) -> None:
         await phase_switches._restore_or_legacy(8.0, CONF_ENTITY_MAX_PHASE_SWITCHES)
     assert phase_switches.native_value == 8.0
 
-    phase_switches.async_write_ha_state = lambda: None
-    await phase_switches.async_set_native_value(9.0)
+    with patch.object(phase_switches, "async_write_ha_state") as write_state:
+        await EVPlannerNumberBase.async_set_native_value(phase_switches, 9.0)
     assert phase_switches.native_value == 9.0
+    write_state.assert_called_once()
 
     hass.states.async_set("input_number.ev_max_prijs", "0.25")
     max_price = EVPlannerMaxPrice(hass, entry)
