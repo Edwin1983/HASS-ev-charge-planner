@@ -27,6 +27,7 @@ from homeassistant.components.ev_planner.time import EVPlannerDepartureTime
 from homeassistant.components.ev_planner.core.homeassistant import (
     HomeAssistant as PlannerHomeAssistant,
 )
+from homeassistant.components.ev_planner.core.logger import Logger
 
 from custom_components.ev_planner.const import (
     CONF_ENTITY_DEPARTURE,
@@ -160,6 +161,34 @@ async def test_homeassistant_wrapper_paths(hass: HomeAssistant) -> None:
 
     assert errors
     assert warnings
+
+
+async def test_logger_paths() -> None:
+    """Cover logger methods with and without configured callbacks."""
+    messages = []
+    logger = Logger(
+        debug=messages.append,
+        info=messages.append,
+        warning=messages.append,
+        error=messages.append,
+    )
+
+    logger.debug("debug")
+    logger.info("info")
+    logger.warning("warning")
+    logger.error("error")
+
+    assert messages == [
+        "[EV Planner] debug",
+        "[EV Planner] info",
+        "[EV Planner] WARNING: warning",
+        "[EV Planner] ERROR: error",
+    ]
+
+    Logger().debug("ignored")
+    Logger().info("ignored")
+    Logger().warning("ignored")
+    Logger().error("ignored")
 
 
 async def test_number_restore_and_fallback_paths(hass: HomeAssistant) -> None:
