@@ -263,7 +263,7 @@ async def test_full_planning_chain(
         blocking=True,
     )
     await hass.async_block_till_done()
-    assert hass.states["switch.ev_planner_smart_charging"].state == "on"
+    assert hass.states.get("switch.ev_planner_smart_charging").state == "on"
 
     await hass.services.async_call(
         "switch", "turn_off",
@@ -271,7 +271,7 @@ async def test_full_planning_chain(
         blocking=True,
     )
     await hass.async_block_till_done()
-    assert hass.states["switch.ev_planner_smart_charging"].state == "off"
+    assert hass.states.get("switch.ev_planner_smart_charging").state == "off"
 
     await hass.services.async_call(
         DOMAIN, "update", {"config_entry_id": entry.entry_id}, blocking=True,
