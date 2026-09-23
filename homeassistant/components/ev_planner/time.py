@@ -7,6 +7,7 @@ from datetime import datetime, time
 from homeassistant.components.time import TimeEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
@@ -26,7 +27,8 @@ class EVPlannerDepartureTime(TimeEntity, RestoreEntity):
     """Desired departure time."""
 
     _attr_has_entity_name = True
-    _attr_name = "Departure time"
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_translation_key = "departure_time"
     _attr_icon = "mdi:clock-outline"
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
