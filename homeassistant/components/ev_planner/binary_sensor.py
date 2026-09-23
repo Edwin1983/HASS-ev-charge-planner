@@ -42,7 +42,7 @@ class EVPlannerChargingAllowedBinarySensor(BinarySensorEntity):
     """
 
     _attr_has_entity_name = True
-    _attr_name = "Charging Allowed"
+    _attr_translation_key = "charging_allowed"
     _attr_icon = "mdi:car-electric"
 
     def __init__(
