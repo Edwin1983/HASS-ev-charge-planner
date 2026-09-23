@@ -7,6 +7,7 @@ from typing import Any
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.storage import Store
 
@@ -52,7 +53,8 @@ class EVPlannerSmartChargingSwitch(SwitchEntity):
     """EV Planner Smart Charging switch."""
 
     _attr_has_entity_name = True
-    _attr_name = "Smart Charging"
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_translation_key = "smart_charging"
     _attr_icon = "mdi:ev-station"
 
     def __init__(
