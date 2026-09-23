@@ -43,11 +43,88 @@
     }
   },
   "services": {
-    "update": {"name": "Update", "description": "Voert één EV Planner update uit."},
-    "create_plan": {"name": "Nieuwe planning", "description": "Maakt een nieuwe EV laadplanning."},
-    "replan": {"name": "Opnieuw plannen", "description": "Verwijdert de huidige planning en maakt direct een nieuwe."},
-    "clear_plan": {"name": "Planning wissen", "description": "Wist de huidige EV laadplanning."},
-    "status": {"name": "Status", "description": "Retourneert de actuele plannerstatus."},
-    "dashboard": {"name": "Dashboarddata", "description": "Retourneert de actuele plannerdata."}
+    "update": {
+      "name": "Update",
+      "description": "Voert één EV Planner update uit."
+    },
+    "create_plan": {
+      "name": "Nieuwe planning",
+      "description": "Maakt een nieuwe EV laadplanning."
+    },
+    "replan": {
+      "name": "Opnieuw plannen",
+      "description": "Verwijdert de huidige planning en maakt direct een nieuwe."
+    },
+    "clear_plan": {
+      "name": "Planning wissen",
+      "description": "Wist de huidige EV laadplanning."
+    },
+    "status": {
+      "name": "Status",
+      "description": "Retourneert de actuele plannerstatus."
+    },
+    "dashboard": {
+      "name": "Dashboarddata",
+      "description": "Retourneert de actuele plannerdata."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "state": {
+        "name": "Status"
+      },
+      "data": {
+        "name": "Planningsgegevens"
+      },
+      "desired_charge_current": {
+        "name": "Gewenste laadstroom"
+      },
+      "desired_phases": {
+        "name": "Gewenste fasen"
+      }
+    },
+    "binary_sensor": {
+      "charging_allowed": {
+        "name": "Laden toegestaan"
+      }
+    },
+    "number": {
+      "energy_needed": {
+        "name": "Benodigde energie"
+      },
+      "max_price": {
+        "name": "Maximale stroomprijs"
+      },
+      "max_phase_switches": {
+        "name": "Maximaal aantal fasewisselingen"
+      },
+      "min_pv_kwh": {
+        "name": "Minimale PV voor alleen zonneladen"
+      },
+      "max_charge_power": {
+        "name": "Maximaal laadvermogen"
+      }
+    },
+    "select": {
+      "departure_day": {
+        "name": "Vertrekdag"
+      },
+      "planner_mode": {
+        "name": "Plannerstand"
+      },
+      "pv_rounding": {
+        "name": "Afronding PV-laadstroom"
+      }
+    },
+    "time": {
+      "departure_time": {
+        "name": "Vertrektijd"
+      }
+    },
+    "switch": {
+      "smart_charging": {
+        "name": "Slim laden"
+      }
+    }
   }
 }
