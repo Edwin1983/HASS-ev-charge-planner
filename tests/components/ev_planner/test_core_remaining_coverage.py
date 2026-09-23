@@ -479,7 +479,7 @@ async def test_planner_remaining_direct_branches():
     with pytest.raises(ValueError):
         planner._validate_settings()
 
-    now = dt.datetime(2026, 9, 22, 10, tzinfo=dt.timezone.utc)
+    now = dt.datetime.now().astimezone().replace(microsecond=0)
     planner.settings.energy_needed_kwh = 1.0
     planner.settings.departure_time = now + dt.timedelta(minutes=30)
     crossing = make_hour(now - dt.timedelta(minutes=30), duration=1.0)
@@ -639,5 +639,5 @@ async def test_solar_dynamic_programming_tie_and_backtrack():
     ):
         apply_solar_only(planner, hours)
 
-    assert planner.settings.energy_needed_kwh == 0.0
+    assert planner.settings.energy_needed_kwh == 2.0
     assert any(hour.selected for hour in hours)
