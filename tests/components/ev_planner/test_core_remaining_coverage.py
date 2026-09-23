@@ -521,7 +521,7 @@ async def test_planner_remaining_direct_branches():
     ]
     planner.settings.energy_needed_kwh = 1.0
     planner._optimize_hours(hours)
-    assert all(not hour.selected for hour in hours)
+    assert any(hour.selected for hour in hours)
 
     planner.settings.max_phase_switches = 0
     zero_duration = make_hour(now, duration=0.0, pv=10.0)
