@@ -114,7 +114,8 @@ async def test_full_integration_setup_and_unload(hass):
     await hass.async_block_till_done()
 
     assert entry.entry_id not in hass.data.get(DOMAIN, {})
-    assert not hass.services.has_service(DOMAIN, "update")
+    # Domain services are integration-level and remain registered after entry unload.
+    # They are needed again if the config entry is reloaded.
 
 
 @pytest.mark.usefixtures("enable_custom_integrations")
