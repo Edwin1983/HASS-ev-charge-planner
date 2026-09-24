@@ -9,6 +9,20 @@
           "entity_solcast_today": "Solcast vandaag",
           "entity_solcast_tomorrow": "Solcast morgen"
         }
+      },
+      "reconfigure": {
+        "title": "EV Charge Planner opnieuw configureren",
+        "description": "Wijzig de Home Assistant-entities die de planner als invoer gebruikt.",
+        "data": {
+          "entity_prices": "Elektriciteitsprijzen",
+          "entity_solcast_today": "Solcast vandaag",
+          "entity_solcast_tomorrow": "Solcast morgen"
+        },
+        "data_description": {
+          "entity_prices": "Selecteer de Home Assistant-sensor met de elektriciteitsprijsvoorspelling.",
+          "entity_solcast_today": "Selecteer de Solcast-sensor met de voorspelling per uur voor vandaag.",
+          "entity_solcast_tomorrow": "Selecteer de Solcast-sensor met de voorspelling per uur voor morgen."
+        }
       }
     },
     "abort": {
@@ -25,6 +39,91 @@
           "entity_solcast_today": "Solcast vandaag",
           "entity_solcast_tomorrow": "Solcast morgen"
         }
+      }
+    }
+  },
+  "services": {
+    "update": {
+      "name": "Update",
+      "description": "Voert één EV Planner update uit."
+    },
+    "create_plan": {
+      "name": "Nieuwe planning",
+      "description": "Maakt een nieuwe EV laadplanning."
+    },
+    "replan": {
+      "name": "Opnieuw plannen",
+      "description": "Verwijdert de huidige planning en maakt direct een nieuwe."
+    },
+    "clear_plan": {
+      "name": "Planning wissen",
+      "description": "Wist de huidige EV laadplanning."
+    },
+    "status": {
+      "name": "Status",
+      "description": "Retourneert de actuele plannerstatus."
+    },
+    "dashboard": {
+      "name": "Dashboarddata",
+      "description": "Retourneert de actuele plannerdata."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "state": {
+        "name": "Status"
+      },
+      "data": {
+        "name": "Data"
+      },
+      "desired_charge_current": {
+        "name": "Gewenste laadstroom"
+      },
+      "desired_phases": {
+        "name": "Gewenste fase"
+      }
+    },
+    "binary_sensor": {
+      "charging_allowed": {
+        "name": "Laden toegestaan"
+      }
+    },
+    "number": {
+      "energy_needed": {
+        "name": "Benodigde energie"
+      },
+      "maximum_grid_price": {
+        "name": "Maximale netprijs"
+      },
+      "maximum_phase_switches": {
+        "name": "Maximaal aantal fasewisselingen"
+      },
+      "minimum_pv_solar_only": {
+        "name": "Minimale PV voor alleen zonneladen"
+      },
+      "maximum_charging_power": {
+        "name": "Maximaal laadvermogen"
+      }
+    },
+    "select": {
+      "departure_day": {
+        "name": "Vertrekdag"
+      },
+      "planner_mode": {
+        "name": "Plannerstand"
+      },
+      "pv_charging_current_rounding": {
+        "name": "Afronding PV-laadstroom"
+      }
+    },
+    "time": {
+      "departure_time": {
+        "name": "Vertrektijd"
+      }
+    },
+    "switch": {
+      "smart_charging": {
+        "name": "Slim laden"
       }
     }
   }

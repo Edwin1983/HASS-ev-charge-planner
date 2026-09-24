@@ -6,6 +6,7 @@ from homeassistant.components.number import NumberEntity, NumberMode
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.restore_state import RestoreEntity
 
 from .const import (
@@ -45,6 +46,7 @@ class EVPlannerNumberBase(NumberEntity, RestoreEntity):
     """Base class for EV Charge Planner number entities."""
 
     _attr_has_entity_name = True
+    _attr_entity_category = EntityCategory.CONFIG
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         """Initialize the number."""
@@ -93,7 +95,7 @@ class EVPlannerNumberBase(NumberEntity, RestoreEntity):
 class EVPlannerEnergyNeeded(EVPlannerNumberBase):
     """Required charging energy."""
 
-    _attr_name = "Energy needed"
+    _attr_translation_key = "energy_needed"
     _attr_icon = "mdi:battery-plus"
     _attr_native_min_value = 0.1
     _attr_native_max_value = 100.0
@@ -113,7 +115,7 @@ class EVPlannerEnergyNeeded(EVPlannerNumberBase):
 class EVPlannerMaxPrice(EVPlannerNumberBase):
     """Maximum grid price."""
 
-    _attr_name = "Maximum grid price"
+    _attr_translation_key = "maximum_grid_price"
     _attr_icon = "mdi:cash"
     _attr_native_min_value = 0.0
     _attr_native_max_value = 100.0
@@ -155,7 +157,7 @@ class EVPlannerMaxPrice(EVPlannerNumberBase):
 class EVPlannerMaxPhaseSwitches(EVPlannerNumberBase):
     """Maximum phase switches."""
 
-    _attr_name = "Maximum phase switches"
+    _attr_translation_key = "maximum_phase_switches"
     _attr_icon = "mdi:swap-horizontal"
     _attr_native_min_value = 0
     _attr_native_max_value = 100
@@ -175,7 +177,7 @@ class EVPlannerMaxPhaseSwitches(EVPlannerNumberBase):
 class EVPlannerMinPv(EVPlannerNumberBase):
     """Minimum PV energy for solar-only mode."""
 
-    _attr_name = "Minimum PV for solar-only"
+    _attr_translation_key = "minimum_pv_solar_only"
     _attr_icon = "mdi:solar-power"
     _attr_native_min_value = 0.0
     _attr_native_max_value = 5.0
@@ -195,7 +197,7 @@ class EVPlannerMinPv(EVPlannerNumberBase):
 class EVPlannerMaxChargePower(EVPlannerNumberBase):
     """Maximum charging power used by the planner."""
 
-    _attr_name = "Maximum charging power"
+    _attr_translation_key = "maximum_charging_power"
     _attr_icon = "mdi:flash"
     _attr_native_min_value = 1.0
     _attr_native_max_value = 11.04

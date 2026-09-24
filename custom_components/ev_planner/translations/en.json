@@ -9,6 +9,20 @@
           "entity_solcast_today": "Solcast today",
           "entity_solcast_tomorrow": "Solcast tomorrow"
         }
+      },
+      "reconfigure": {
+        "title": "Reconfigure EV Charge Planner",
+        "description": "Change the Home Assistant entities used as planner inputs.",
+        "data": {
+          "entity_prices": "Electricity prices",
+          "entity_solcast_today": "Solcast today",
+          "entity_solcast_tomorrow": "Solcast tomorrow"
+        },
+        "data_description": {
+          "entity_prices": "Select the Home Assistant sensor that provides the electricity price forecast.",
+          "entity_solcast_today": "Select the Solcast sensor containing today's hourly PV forecast.",
+          "entity_solcast_tomorrow": "Select the Solcast sensor containing tomorrow's hourly PV forecast."
+        }
       }
     },
     "abort": {
@@ -25,6 +39,91 @@
           "entity_solcast_today": "Solcast today",
           "entity_solcast_tomorrow": "Solcast tomorrow"
         }
+      }
+    }
+  },
+  "services": {
+    "update": {
+      "name": "Update",
+      "description": "Runs one EV Planner update."
+    },
+    "create_plan": {
+      "name": "Create plan",
+      "description": "Creates a new EV charging plan."
+    },
+    "replan": {
+      "name": "Replan",
+      "description": "Clears the current plan and creates a new one."
+    },
+    "clear_plan": {
+      "name": "Clear plan",
+      "description": "Clears the current EV charging plan."
+    },
+    "status": {
+      "name": "Status",
+      "description": "Returns the current planner status."
+    },
+    "dashboard": {
+      "name": "Dashboard data",
+      "description": "Returns the current planner data."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "state": {
+        "name": "State"
+      },
+      "data": {
+        "name": "Data"
+      },
+      "desired_charge_current": {
+        "name": "Desired charge current"
+      },
+      "desired_phases": {
+        "name": "Desired phases"
+      }
+    },
+    "binary_sensor": {
+      "charging_allowed": {
+        "name": "Charging allowed"
+      }
+    },
+    "number": {
+      "energy_needed": {
+        "name": "Energy needed"
+      },
+      "maximum_grid_price": {
+        "name": "Maximum grid price"
+      },
+      "maximum_phase_switches": {
+        "name": "Maximum phase switches"
+      },
+      "minimum_pv_solar_only": {
+        "name": "Minimum PV for solar-only"
+      },
+      "maximum_charging_power": {
+        "name": "Maximum charging power"
+      }
+    },
+    "select": {
+      "departure_day": {
+        "name": "Departure day"
+      },
+      "planner_mode": {
+        "name": "Planner mode"
+      },
+      "pv_charging_current_rounding": {
+        "name": "PV charging current rounding"
+      }
+    },
+    "time": {
+      "departure_time": {
+        "name": "Departure time"
+      }
+    },
+    "switch": {
+      "smart_charging": {
+        "name": "Smart charging"
       }
     }
   }
