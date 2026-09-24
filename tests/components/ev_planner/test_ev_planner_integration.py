@@ -466,8 +466,10 @@ async def test_full_integration_setup_and_unload(
 
     assert await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()
-    assert hass.states.get("switch.ev_planner_smart_charging").state == "unavailable"
-    assert hass.states.get("switch.ev_planner_smart_charging").attributes["restored"] is True
+    restored_switch = hass.states.get("switch.ev_planner_smart_charging")
+    assert restored_switch is not None
+    assert restored_switch.state == "unavailable"
+    assert restored_switch.attributes["restored"] is True
     assert hass.services.has_service(DOMAIN, "update")
 
 
@@ -613,6 +615,10 @@ async def test_full_planning_chain(
         "Geen prijsdata", "Geen PV-data",
         "Fout bij plannen", "Ongeldige plannerinstellingen",
     }
+
+    charging_allowed = hass.states.get("binary_sensor.ev_planner_charging_allowed")
+    assert charging_allowed is not None
+    assert charging_allowed.state in {"on", "off"}
 
     await hass.services.async_call(
         "switch", "turn_off",
@@ -918,8 +924,44 @@ async def test_core_scheduler_paths() -> None:
     assert scheduler.status.charge_power_w == 3680.0
     assert scheduler.status.charge_current_a == 16.0
     assert scheduler.status.phases == 1
+
+    second_hour = Hour(
+        start=start + dt.timedelta(hours=1),
+        end=start + dt.timedelta(hours=2),
+        charge_energy=2.0,
+        free_energy=2.0,
+        paid_energy=0.0,
+        price=0.0,
+        charge_power_w=5520.0,
+        charge_current_a=8.0,
+        phases=3,
+        selected=True,
+        reason="PV",
+    )
+    second_decision = ChargingDecision(
+        hour=second_hour,
+        energy_kwh=2.0,
+        free_energy_kwh=2.0,
+        paid_energy_kwh=0.0,
+        price=0.0,
+        cost=0.0,
+        selected=True,
+        reason="PV",
+        charge_power_kw=5.52,
+        charge_current_a=8,
+        phases=3,
+    )
+    plan.decisions.append(second_decision)
+
     assert not scheduler.update(start + dt.timedelta(minutes=10))
     assert scheduler.update(start + dt.timedelta(hours=1))
+    assert scheduler.current_hour() is second_hour
+    assert scheduler.status.charging_allowed
+    assert scheduler.status.charge_power_w == 5520.0
+    assert scheduler.status.charge_current_a == 8.0
+    assert scheduler.status.phases == 3
+    assert not scheduler.update(start + dt.timedelta(hours=1, minutes=10))
+    assert scheduler.update(start + dt.timedelta(hours=2))
     assert scheduler.current_hour() is None
     assert not scheduler.status.charging_allowed
 
@@ -980,7 +1022,19 @@ async def test_core_status_paths() -> None:
     assert status.phases == 3
     assert status.reason == "PV"
     manager.log_status()
-    assert manager.as_dict()["state"] == "charging"
+    status_data = manager.as_dict()
+    assert status_data["state"] == "charging"
+    assert status_data["state_text"] == "Laden"
+    assert status_data["active"] is True
+    assert status_data["charging_allowed"] is True
+    assert status_data["energy_kwh"] == 2.0
+    assert status_data["free_energy_kwh"] == 1.0
+    assert status_data["paid_energy_kwh"] == 1.0
+    assert status_data["price"] == 0.25
+    assert status_data["charge_power_w"] == 5520.0
+    assert status_data["charge_current_a"] == 8.0
+    assert status_data["phases"] == 3
+    assert status_data["reason"] == "PV"
 
 
 async def test_core_solcast_paths() -> None:
