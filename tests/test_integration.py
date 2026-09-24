@@ -51,7 +51,7 @@ async def test_full_integration_setup_and_unload(hass):
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
 
-    assert hass.data[DOMAIN][entry.entry_id]["controller"] is not None
+    assert entry.runtime_data is not None
 
     assert hass.services.has_service(DOMAIN, "update")
     assert hass.services.has_service(DOMAIN, "create_plan")
@@ -63,7 +63,7 @@ async def test_full_integration_setup_and_unload(hass):
     status_response = await hass.services.async_call(
         DOMAIN,
         "status",
-        {},
+        {"config_entry_id": entry.entry_id},
         blocking=True,
         return_response=True,
     )
@@ -72,7 +72,7 @@ async def test_full_integration_setup_and_unload(hass):
     dashboard_response = await hass.services.async_call(
         DOMAIN,
         "dashboard",
-        {},
+        {"config_entry_id": entry.entry_id},
         blocking=True,
         return_response=True,
     )
@@ -81,8 +81,8 @@ async def test_full_integration_setup_and_unload(hass):
     states = hass.states
     assert states.get("sensor.ev_planner_state") is not None
     assert states.get("sensor.ev_planner_data") is not None
-    assert states.get("sensor.ev_planner_gewenste_laadstroom") is not None
-    assert states.get("sensor.ev_planner_gewenste_fase") is not None
+    assert states.get("sensor.ev_planner_desired_charge_current") is not None
+    assert states.get("sensor.ev_planner_desired_phases") is not None
     assert states.get("binary_sensor.ev_planner_charging_allowed") is not None
     assert states.get("switch.ev_planner_smart_charging") is not None
     assert states.get("select.ev_charge_planner_departure_day") is not None
@@ -236,7 +236,7 @@ async def test_full_planning_chain(hass):
     )
     await hass.async_block_till_done()
 
-    controller = hass.data[DOMAIN][entry.entry_id]["controller"]
+    controller = entry.runtime_data
     controller.update(now)
     await hass.async_block_till_done()
 
@@ -250,8 +250,8 @@ async def test_full_planning_chain(hass):
     assert data_state.attributes["decisions"]
     assert data_state.attributes["energy_planned_kwh"] > 0
 
-    charge_current = hass.states.get("sensor.ev_planner_gewenste_laadstroom")
-    phases = hass.states.get("sensor.ev_planner_gewenste_fase")
+    charge_current = hass.states.get("sensor.ev_planner_desired_charge_current")
+    phases = hass.states.get("sensor.ev_planner_desired_phases")
     assert charge_current is not None
     assert phases is not None
     assert 0 <= int(charge_current.state) <= 16
