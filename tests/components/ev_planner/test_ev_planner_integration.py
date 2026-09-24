@@ -466,8 +466,8 @@ async def test_full_integration_setup_and_unload(
 
     assert await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()
-    assert hass.states.get("switch.ev_planner_smart_charging") is None
-    assert hass.states.get(sensor_state) is None
+    assert hass.states.get("switch.ev_planner_smart_charging").state == "unavailable"
+    assert hass.states.get("switch.ev_planner_smart_charging").attributes["restored"] is True
     assert hass.services.has_service(DOMAIN, "update")
 
 
