@@ -1,11 +1,13 @@
 {
   "domain": "ev_planner",
   "name": "EV Charge Planner",
-  "codeowners": ["@Edwin1983"],
+  "codeowners": [
+    "@Edwin1983"
+  ],
   "config_flow": true,
   "documentation": "https://github.com/Edwin1983/HASS-ev-charge-planner",
   "integration_type": "service",
-  "iot_class": "local_polling",
+  "iot_class": "calculated",
   "issue_tracker": "https://github.com/Edwin1983/HASS-ev-charge-planner/issues",
   "requirements": [],
   "single_config_entry": true,

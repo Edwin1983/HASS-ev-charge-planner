@@ -1,24 +1,50 @@
-"""Native Home Assistant custom integration for the EV Planner."""
+"""Native Home Assistant integration for EV Charge Planner."""
 
 from __future__ import annotations
 
 from datetime import datetime as dt_datetime
 import logging
+from typing import Any, cast
 
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
+import voluptuous as vol
+
+from homeassistant.helpers import config_validation as cv
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState
+from homeassistant.const import ATTR_CONFIG_ENTRY_ID
+from homeassistant.core import (
+    HomeAssistant,
+    ServiceCall,
+    SupportsResponse,
+)
+from homeassistant.exceptions import ServiceValidationError
 
 from .const import DOMAIN, PLATFORMS
 from .core.ev_planner import EVPlannerController
 from .core.logger import Logger
 
-
 _LOGGER = logging.getLogger(__name__)
+
+SERVICE_NAMES = (
+    "update",
+    "create_plan",
+    "replan",
+    "clear_plan",
+    "status",
+    "dashboard",
+)
+RESPONSE_SERVICES = {"status", "dashboard"}
+
+type EVPlannerConfigEntry = ConfigEntry[EVPlannerController]
+
+SERVICE_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_CONFIG_ENTRY_ID): cv.string,
+    }
+)
 
 
 def _make_logger() -> Logger:
-    """Create the EV Planner logger."""
-
+    """Create the EV Charge Planner logger."""
     return Logger(
         _LOGGER.debug,
         _LOGGER.info,
@@ -27,18 +53,29 @@ def _make_logger() -> Logger:
     )
 
 
+def _get_controller(
+    hass: HomeAssistant,
+    call: ServiceCall,
+) -> EVPlannerController:
+    """Return the controller for the targeted config entry."""
+    entry_id = call.data[ATTR_CONFIG_ENTRY_ID]
+    entry = hass.config_entries.async_get_entry(entry_id)
+
+    if entry is None or entry.domain != DOMAIN:
+        raise ServiceValidationError("EV Charge Planner config entry not found")
+
+    if entry.state is not ConfigEntryState.LOADED:
+        raise ServiceValidationError("EV Charge Planner config entry is not loaded")
+
+    return cast(EVPlannerConfigEntry, entry).runtime_data
+
+
 async def _run(
     hass: HomeAssistant,
     controller: EVPlannerController,
     method: str,
-):
-    """
-    Run a synchronous controller method in the executor.
-
-    The EV Planner core is synchronous and therefore runs
-    outside the Home Assistant event loop.
-    """
-
+) -> Any:
+    """Run a synchronous controller method outside the event loop."""
     func = getattr(controller, method)
 
     if method == "clear_plan":
@@ -50,19 +87,74 @@ async def _run(
     )
 
 
+async def _async_handle_update(call: ServiceCall) -> None:
+    """Handle the update action."""
+    await _run(call.hass, _get_controller(call.hass, call), "update")
+
+
+async def _async_handle_create_plan(call: ServiceCall) -> None:
+    """Handle the create_plan action."""
+    await _run(call.hass, _get_controller(call.hass, call), "create_plan")
+
+
+async def _async_handle_replan(call: ServiceCall) -> None:
+    """Handle the replan action."""
+    await _run(call.hass, _get_controller(call.hass, call), "replan")
+
+
+async def _async_handle_clear_plan(call: ServiceCall) -> None:
+    """Handle the clear_plan action."""
+    await _run(call.hass, _get_controller(call.hass, call), "clear_plan")
+
+
+async def _async_handle_status(call: ServiceCall) -> dict:
+    """Handle the status action."""
+    controller = _get_controller(call.hass, call)
+    return await call.hass.async_add_executor_job(controller.get_status)
+
+
+async def _async_handle_dashboard(call: ServiceCall) -> dict:
+    """Handle the dashboard action."""
+    controller = _get_controller(call.hass, call)
+    return await call.hass.async_add_executor_job(
+        controller.get_dashboard_data,
+        dt_datetime.now().astimezone(),
+    )
+
+
+SERVICE_HANDLERS = {
+    "update": _async_handle_update,
+    "create_plan": _async_handle_create_plan,
+    "replan": _async_handle_replan,
+    "clear_plan": _async_handle_clear_plan,
+    "status": _async_handle_status,
+    "dashboard": _async_handle_dashboard,
+}
+
+
+async def async_setup(hass: HomeAssistant, config: dict) -> bool:
+    """Set up EV Charge Planner services."""
+    for name in SERVICE_NAMES:
+        hass.services.async_register(
+            DOMAIN,
+            name,
+            SERVICE_HANDLERS[name],
+            schema=SERVICE_SCHEMA,
+            supports_response=(
+                SupportsResponse.ONLY
+                if name in RESPONSE_SERVICES
+                else SupportsResponse.NONE
+            ),
+        )
+
+    return True
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
+    entry: EVPlannerConfigEntry,
 ) -> bool:
-    """Set up EV Planner from a config entry."""
-
-    # ------------------------------------------------------------------
-    # Create controller
-    #
-    # entry.options overschrijft entry.data zodra de gebruiker de
-    # instellingen via de options flow ("Configureren") heeft aangepast.
-    # ------------------------------------------------------------------
-
+    """Set up EV Charge Planner from a config entry."""
     merged_config = {
         **entry.data,
         **entry.options,
@@ -74,221 +166,35 @@ async def async_setup_entry(
         config=merged_config,
         entry_id=entry.entry_id,
     )
-
-    # ------------------------------------------------------------------
-    # Store controller
-    # ------------------------------------------------------------------
-
-    domain_data = hass.data.setdefault(
-        DOMAIN,
-        {},
-    )
-
-    domain_data[entry.entry_id] = {
-        "controller": controller,
-    }
-
-    # ------------------------------------------------------------------
-    # Platforms
-    # ------------------------------------------------------------------
+    entry.runtime_data = controller
 
     await hass.config_entries.async_forward_entry_setups(
         entry,
         PLATFORMS,
     )
 
-    # ------------------------------------------------------------------
-    # Services
-    #
-    # Home Assistant bepaalt zelf wanneer deze worden aangeroepen.
-    # De integratie start GEEN eigen periodieke update.
-    # ------------------------------------------------------------------
-
-    async def handle_update(
-        call: ServiceCall,
-    ):
-        """Update the planner."""
-
-        await _run(
-            hass,
-            controller,
-            "update",
-        )
-
-    async def handle_create_plan(
-        call: ServiceCall,
-    ):
-        """Create a new charging plan."""
-
-        await _run(
-            hass,
-            controller,
-            "create_plan",
-        )
-
-    async def handle_replan(
-        call: ServiceCall,
-    ):
-        """Create a new plan from scratch."""
-
-        await _run(
-            hass,
-            controller,
-            "replan",
-        )
-
-    async def handle_clear_plan(
-        call: ServiceCall,
-    ):
-        """Clear the current plan."""
-
-        await _run(
-            hass,
-            controller,
-            "clear_plan",
-        )
-
-    async def handle_status(
-        call: ServiceCall,
-    ):
-        """Return planner status."""
-
-        return await hass.async_add_executor_job(
-            controller.get_status,
-        )
-
-    async def handle_dashboard(
-        call: ServiceCall,
-    ):
-        """Return dashboard data."""
-
-        return await hass.async_add_executor_job(
-            controller.get_dashboard_data,
-            dt_datetime.now().astimezone(),
-        )
-
-    handlers = {
-        "update": handle_update,
-        "create_plan": handle_create_plan,
-        "replan": handle_replan,
-        "clear_plan": handle_clear_plan,
-        "status": handle_status,
-        "dashboard": handle_dashboard,
-    }
-
-    # Services die een dictionary teruggeven en dus response data
-    # ondersteunen (bruikbaar met `response_variable` in scripts/
-    # automations).
-    RESPONSE_SERVICES = {
-        "status",
-        "dashboard",
-    }
-
-    # ------------------------------------------------------------------
-    # Register services
-    # ------------------------------------------------------------------
-
-    for name, handler in handlers.items():
-        if hass.services.has_service(
-            DOMAIN,
-            name,
-        ):
-            continue
-
-        hass.services.async_register(
-            DOMAIN,
-            name,
-            handler,
-            supports_response=(
-                SupportsResponse.OPTIONAL
-                if name in RESPONSE_SERVICES
-                else SupportsResponse.NONE
-            ),
-        )
-
-    # ------------------------------------------------------------------
-    # Opties
-    #
-    # Herlaad de entry automatisch zodra de gebruiker instellingen
-    # via de options flow ("Configureren") aanpast.
-    # ------------------------------------------------------------------
-
     entry.async_on_unload(
-        entry.add_update_listener(
-            _async_update_listener
-        )
+        entry.add_update_listener(_async_update_listener)
     )
 
-    _LOGGER.info(
-        "EV Planner native integratie geladen."
-    )
-
+    _LOGGER.info("EV Charge Planner native integratie geladen.")
     return True
 
 
 async def _async_update_listener(
     hass: HomeAssistant,
-    entry: ConfigEntry,
+    entry: EVPlannerConfigEntry,
 ) -> None:
-    """Herlaad de config entry wanneer de opties wijzigen."""
-
-    await hass.config_entries.async_reload(
-        entry.entry_id
-    )
+    """Reload the config entry when options change."""
+    await hass.config_entries.async_reload(entry.entry_id)
 
 
 async def async_unload_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
+    entry: EVPlannerConfigEntry,
 ) -> bool:
-    """Unload EV Planner."""
-
-    # ------------------------------------------------------------------
-    # Unload platforms
-    # ------------------------------------------------------------------
-
-    unload_ok = await hass.config_entries.async_unload_platforms(
+    """Unload EV Charge Planner."""
+    return await hass.config_entries.async_unload_platforms(
         entry,
         PLATFORMS,
     )
-
-    if not unload_ok:
-        return False
-
-    # ------------------------------------------------------------------
-    # Remove controller
-    # ------------------------------------------------------------------
-
-    domain_data = hass.data.get(
-        DOMAIN,
-        {},
-    )
-
-    domain_data.pop(
-        entry.entry_id,
-        None,
-    )
-
-    # ------------------------------------------------------------------
-    # Remove services when last entry is unloaded
-    # ------------------------------------------------------------------
-
-    if not domain_data:
-        for service in (
-            "update",
-            "create_plan",
-            "replan",
-            "clear_plan",
-            "status",
-            "dashboard",
-        ):
-            if hass.services.has_service(
-                DOMAIN,
-                service,
-            ):
-                hass.services.async_remove(
-                    DOMAIN,
-                    service,
-                )
-
-    return True

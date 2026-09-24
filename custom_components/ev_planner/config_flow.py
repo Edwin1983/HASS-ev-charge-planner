@@ -25,7 +25,7 @@ _DEFAULTS = {
 }
 
 
-def _build_schema(defaults: dict) -> vol.Schema:
+def _build_schema(defaults: dict[str, str]) -> vol.Schema:
     """Build the EV Charge Planner configuration schema."""
     return vol.Schema(
         {
@@ -61,7 +61,7 @@ class EVPlannerConfigFlow(
 
     async def async_step_user(
         self,
-        user_input=None,
+        user_input: dict[str, str] | None = None,
     ) -> FlowResult:
         """Create the EV Charge Planner integration."""
         if self._async_current_entries():
@@ -86,6 +86,28 @@ class EVPlannerConfigFlow(
         """Return the options flow for this entry."""
         return EVPlannerOptionsFlow(config_entry)
 
+    async def async_step_reconfigure(
+        self,
+        user_input: dict[str, str] | None = None,
+    ) -> FlowResult:
+        """Handle reconfiguration of the planner input entities."""
+        if user_input is not None:
+            return self.async_update_reload_and_abort(
+                self._get_reconfigure_entry(),
+                data_updates=user_input,
+            )
+
+        current = self._get_reconfigure_entry().data
+        defaults = {
+            key: current.get(key, default)
+            for key, default in _DEFAULTS.items()
+        }
+
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=_build_schema(defaults),
+        )
+
 
 class EVPlannerOptionsFlow(config_entries.OptionsFlow):
     """Options flow for EV Charge Planner."""
@@ -96,15 +118,15 @@ class EVPlannerOptionsFlow(config_entries.OptionsFlow):
 
     async def async_step_init(
         self,
-        user_input=None,
+        user_input: dict[str, str] | None = None,
     ) -> FlowResult:
         """Manage the options."""
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
 
         current = {
-            **self._config_entry.data,
-            **self._config_entry.options,
+            **self.config_entry.data,
+            **self.config_entry.options,
         }
         defaults = {
             key: current.get(key, default)
