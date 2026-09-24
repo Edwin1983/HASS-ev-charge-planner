@@ -257,3 +257,35 @@ async def test_core_prices_paths() -> None:
     reader.app.get_attributes = lambda entity_id: {"forecast": forecast}
     result = reader.read()
     assert result.hours
+
+
+async def test_form_defaults_are_used_and_options_merge_with_data(
+    hass: HomeAssistant, valid_config: dict[str, str]
+) -> None:
+    """Test default entity selectors and options-over-data merging."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": config_entries.SOURCE_USER},
+    )
+    assert result["type"] is FlowResultType.FORM
+    schema = result["data_schema"]
+    assert schema({}) == {
+        CONF_ENTITY_PRICES: "sensor.zonneplan_current_electricity_tariff",
+        CONF_ENTITY_SOLCAST_TODAY: "sensor.solcast_pv_forecast_forecast_today",
+        CONF_ENTITY_SOLCAST_TOMORROW: "sensor.solcast_pv_forecast_forecast_tomorrow",
+    }
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="EV Charge Planner",
+        data=valid_config,
+        options={CONF_ENTITY_PRICES: "sensor.option_prices"},
+    )
+    entry.add_to_hass(hass)
+    options_result = await hass.config_entries.options.async_init(entry.entry_id)
+    assert options_result["type"] is FlowResultType.FORM
+    assert options_result["data_schema"]({}) == {
+        CONF_ENTITY_PRICES: "sensor.option_prices",
+        CONF_ENTITY_SOLCAST_TODAY: valid_config[CONF_ENTITY_SOLCAST_TODAY],
+        CONF_ENTITY_SOLCAST_TOMORROW: valid_config[CONF_ENTITY_SOLCAST_TOMORROW],
+    }
