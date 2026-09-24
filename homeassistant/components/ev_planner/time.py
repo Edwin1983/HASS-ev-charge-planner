@@ -27,9 +27,9 @@ class EVPlannerDepartureTime(TimeEntity, RestoreEntity):
     """Desired departure time."""
 
     _attr_has_entity_name = True
+    _attr_entity_category = EntityCategory.CONFIG
     _attr_translation_key = "departure_time"
     _attr_icon = "mdi:clock-outline"
-    _attr_entity_category = EntityCategory.CONFIG
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         """Initialize the departure time."""

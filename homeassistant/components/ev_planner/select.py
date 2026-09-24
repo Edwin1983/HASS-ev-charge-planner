@@ -150,7 +150,7 @@ class EVPlannerModeSelect(EVPlannerBaseSelect):
 class EVPlannerPvRoundingSelect(EVPlannerBaseSelect):
     """Select the PV charging current rounding mode."""
 
-    _attr_translation_key = "pv_charging_current_rounding"
+    _attr_translation_key = "pv_rounding"
     _attr_icon = "mdi:solar-power"
     _attr_options = PV_ROUNDING_OPTIONS
 

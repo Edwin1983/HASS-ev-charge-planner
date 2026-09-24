@@ -40,9 +40,6 @@ async def async_setup_entry(
 ) -> None:
     """Set up EV Planner sensors."""
 
-    if entry.runtime_data is None:
-        raise RuntimeError("EV Charge Planner runtime data is not initialized")
-
     async_add_entities(
         [
             EVPlannerStateSensor(hass=hass, entry=entry),
@@ -65,8 +62,8 @@ class EVPlannerBaseSensor(SensorEntity):
         self._entry = entry
 
     @property
-    def _controller(self):
-        """Return the controller stored in ConfigEntry.runtime_data."""
+    def _entry_data(self) -> Any:
+        """Return integration entry data."""
 
         return self._entry.runtime_data
 
@@ -115,7 +112,9 @@ class EVPlannerStateSensor(EVPlannerBaseSensor):
     def native_value(self) -> str:
         """Return the current planner state."""
 
-        return str(self._controller.sensor_state)
+        return str(
+            self._entry_data.sensor_state
+        )
 
 
 class EVPlannerDataSensor(EVPlannerBaseSensor):
@@ -134,13 +133,15 @@ class EVPlannerDataSensor(EVPlannerBaseSensor):
     def native_value(self) -> str:
         """Return the current plan state."""
 
-        return str(self._controller.sensor_data.get("state", "Geen planning"))
+        data = self._entry_data.sensor_data
+        return str(data.get("state", "Geen planning"))
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return planner data attributes."""
 
-        return dict(self._controller.sensor_data.get("attributes", {}))
+        data = self._entry_data.sensor_data
+        return dict(data.get("attributes", {}))
 
 
 class EVPlannerChargeCurrentSensor(EVPlannerBaseSensor):
@@ -161,7 +162,8 @@ class EVPlannerChargeCurrentSensor(EVPlannerBaseSensor):
     def native_value(self) -> int:
         """Return the desired charging current at this moment."""
 
-        decision = _current_decision(self._controller.sensor_data)
+        data = self._entry_data.sensor_data
+        decision = _current_decision(data)
         if decision is None:
             return 0
         return int(decision.get("charge_current_a", 0))
@@ -183,7 +185,8 @@ class EVPlannerPhasesSensor(EVPlannerBaseSensor):
     def native_value(self) -> int:
         """Return the desired number of charging phases at this moment."""
 
-        decision = _current_decision(self._controller.sensor_data)
+        data = self._entry_data.sensor_data
+        decision = _current_decision(data)
         if decision is None:
             return 0
         return int(decision.get("phases", 0))

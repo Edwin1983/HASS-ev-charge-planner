@@ -5,8 +5,8 @@ from __future__ import annotations
 from homeassistant.components.number import NumberEntity, NumberMode
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.entity import EntityCategory
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
 from .const import (
@@ -115,7 +115,7 @@ class EVPlannerEnergyNeeded(EVPlannerNumberBase):
 class EVPlannerMaxPrice(EVPlannerNumberBase):
     """Maximum grid price."""
 
-    _attr_translation_key = "maximum_grid_price"
+    _attr_translation_key = "max_price"
     _attr_icon = "mdi:cash"
     _attr_native_min_value = 0.0
     _attr_native_max_value = 100.0
@@ -157,12 +157,11 @@ class EVPlannerMaxPrice(EVPlannerNumberBase):
 class EVPlannerMaxPhaseSwitches(EVPlannerNumberBase):
     """Maximum phase switches."""
 
-    _attr_translation_key = "maximum_phase_switches"
+    _attr_translation_key = "max_phase_switches"
     _attr_icon = "mdi:swap-horizontal"
     _attr_native_min_value = 0
     _attr_native_max_value = 100
     _attr_native_step = 1
-    _attr_native_unit_of_measurement = "switches"
     _attr_mode = NumberMode.BOX
 
     def __init__(self, hass, entry):
@@ -177,7 +176,7 @@ class EVPlannerMaxPhaseSwitches(EVPlannerNumberBase):
 class EVPlannerMinPv(EVPlannerNumberBase):
     """Minimum PV energy for solar-only mode."""
 
-    _attr_translation_key = "minimum_pv_solar_only"
+    _attr_translation_key = "min_pv_kwh"
     _attr_icon = "mdi:solar-power"
     _attr_native_min_value = 0.0
     _attr_native_max_value = 5.0
@@ -197,7 +196,7 @@ class EVPlannerMinPv(EVPlannerNumberBase):
 class EVPlannerMaxChargePower(EVPlannerNumberBase):
     """Maximum charging power used by the planner."""
 
-    _attr_translation_key = "maximum_charging_power"
+    _attr_translation_key = "max_charge_power"
     _attr_icon = "mdi:flash"
     _attr_native_min_value = 1.0
     _attr_native_max_value = 11.04

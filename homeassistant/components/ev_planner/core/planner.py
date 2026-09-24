@@ -1317,7 +1317,6 @@ class EVPlanner:
 
         NONE_PHASE = 0
 
-
         ENERGY_DECIMALS = 9
 
         def energy_key(value):

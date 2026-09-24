@@ -78,14 +78,6 @@ class EVPlannerConfigFlow(
             data_schema=_build_schema(_DEFAULTS),
         )
 
-    @staticmethod
-    @callback
-    def async_get_options_flow(
-        config_entry: config_entries.ConfigEntry,
-    ) -> "EVPlannerOptionsFlow":
-        """Return the options flow for this entry."""
-        return EVPlannerOptionsFlow(config_entry)
-
     async def async_step_reconfigure(
         self,
         user_input: dict[str, str] | None = None,
@@ -102,11 +94,18 @@ class EVPlannerConfigFlow(
             key: current.get(key, default)
             for key, default in _DEFAULTS.items()
         }
-
         return self.async_show_form(
             step_id="reconfigure",
             data_schema=_build_schema(defaults),
         )
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(
+        config_entry: config_entries.ConfigEntry,
+    ) -> "EVPlannerOptionsFlow":
+        """Return the options flow for this entry."""
+        return EVPlannerOptionsFlow(config_entry)
 
 
 class EVPlannerOptionsFlow(config_entries.OptionsFlow):

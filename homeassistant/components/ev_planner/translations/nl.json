@@ -1,15 +1,6 @@
 {
   "config": {
     "step": {
-      "user": {
-        "title": "EV Charge Planner configureren",
-        "description": "Kies de Home Assistant-entities die de planner als invoer gebruikt. EV Charge Planner bestuurt geen laadpaal.",
-        "data": {
-          "entity_prices": "Elektriciteitsprijzen",
-          "entity_solcast_today": "Solcast vandaag",
-          "entity_solcast_tomorrow": "Solcast morgen"
-        }
-      },
       "reconfigure": {
         "title": "EV Charge Planner opnieuw configureren",
         "description": "Wijzig de Home Assistant-entities die de planner als invoer gebruikt.",
@@ -19,9 +10,18 @@
           "entity_solcast_tomorrow": "Solcast morgen"
         },
         "data_description": {
-          "entity_prices": "Selecteer de Home Assistant-sensor met de elektriciteitsprijsvoorspelling.",
-          "entity_solcast_today": "Selecteer de Solcast-sensor met de voorspelling per uur voor vandaag.",
-          "entity_solcast_tomorrow": "Selecteer de Solcast-sensor met de voorspelling per uur voor morgen."
+          "entity_prices": "Selecteer de Home Assistant-sensor die de elektriciteitsprijsvoorspelling levert.",
+          "entity_solcast_today": "Selecteer de Solcast-sensor met de uurvoorspelling voor vandaag.",
+          "entity_solcast_tomorrow": "Selecteer de Solcast-sensor met de uurvoorspelling voor morgen."
+        }
+      },
+      "user": {
+        "title": "EV Charge Planner configureren",
+        "description": "Kies de Home Assistant-entities die de planner als invoer gebruikt. EV Charge Planner bestuurt geen laadpaal.",
+        "data": {
+          "entity_prices": "Elektriciteitsprijzen",
+          "entity_solcast_today": "Solcast vandaag",
+          "entity_solcast_tomorrow": "Solcast morgen"
         }
       }
     },
@@ -74,13 +74,13 @@
         "name": "Status"
       },
       "data": {
-        "name": "Data"
+        "name": "Planningsgegevens"
       },
       "desired_charge_current": {
         "name": "Gewenste laadstroom"
       },
       "desired_phases": {
-        "name": "Gewenste fase"
+        "name": "Gewenste fasen"
       }
     },
     "binary_sensor": {
@@ -92,16 +92,16 @@
       "energy_needed": {
         "name": "Benodigde energie"
       },
-      "maximum_grid_price": {
-        "name": "Maximale netprijs"
+      "max_price": {
+        "name": "Maximale stroomprijs"
       },
-      "maximum_phase_switches": {
+      "max_phase_switches": {
         "name": "Maximaal aantal fasewisselingen"
       },
-      "minimum_pv_solar_only": {
+      "min_pv_kwh": {
         "name": "Minimale PV voor alleen zonneladen"
       },
-      "maximum_charging_power": {
+      "max_charge_power": {
         "name": "Maximaal laadvermogen"
       }
     },
@@ -112,7 +112,7 @@
       "planner_mode": {
         "name": "Plannerstand"
       },
-      "pv_charging_current_rounding": {
+      "pv_rounding": {
         "name": "Afronding PV-laadstroom"
       }
     },

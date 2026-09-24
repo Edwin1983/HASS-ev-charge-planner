@@ -110,6 +110,7 @@ from .solcast import SolcastReader
 from .status import EVStatusManager
 
 
+
 class EVPlannerController:
     """
     Centrale controller van de EV Planner.
@@ -264,8 +265,9 @@ class EVPlannerController:
 
         self.last_published_state = None
 
-        # Runtime data for native entities. This belongs to the config entry,
-        # not in the global hass.data dictionary.
+        # Runtime data consumed by the native entities. Keeping this state on
+        # the controller lets ConfigEntry.runtime_data remain the single
+        # lifecycle owner; the Core integration does not need hass.data.
         self.sensor_state = "Geen actieve laadbeslissing"
         self.sensor_data = {
             "state": "Geen planning",
@@ -297,8 +299,7 @@ class EVPlannerController:
     ##########################################################################
 
     def _signal_sensor_update(self) -> None:
-        """Notify native entities that planner data changed."""
-
+        """Inform native entities that planner data has changed."""
         self._hass.loop.call_soon_threadsafe(
             async_dispatcher_send,
             self._hass,
@@ -306,8 +307,7 @@ class EVPlannerController:
         )
 
     def _update_native_sensor_state(self, state: str) -> None:
-        """Update the planner state stored in ConfigEntry.runtime_data."""
-
+        """Update the shared state consumed by the native state sensor."""
         self.sensor_state = str(state)
         self._signal_sensor_update()
 
@@ -316,8 +316,7 @@ class EVPlannerController:
         state: str,
         attributes: dict,
     ) -> None:
-        """Update planner data stored in ConfigEntry.runtime_data."""
-
+        """Update the shared data consumed by the native planner sensor."""
         self.sensor_data = {
             "state": str(state),
             "attributes": dict(attributes),
@@ -325,8 +324,7 @@ class EVPlannerController:
         self._signal_sensor_update()
 
     def _publish_charging_allowed(self) -> None:
-        """Publish the read-only planner charging status."""
-
+        """Publish the read-only planner charging decision."""
         self.charging_allowed = bool(
             self.status.get_status().charging_allowed
         )

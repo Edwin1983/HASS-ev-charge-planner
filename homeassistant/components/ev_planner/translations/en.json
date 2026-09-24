@@ -1,13 +1,13 @@
 {
   "config": {
     "step": {
-      "user": {
-        "title": "Configure EV Charge Planner",
-        "description": "Select the Home Assistant entities used as planner inputs. EV Charge Planner does not control a charger.",
+      "reconfigure": {
+        "title": "Reconfigure EV Charge Planner",
+        "description": "Change the Home Assistant entities used as planner inputs.",
         "data": {
-          "entity_prices": "Elektriciteitsprijzen",
-          "entity_solcast_today": "Solcast vandaag",
-          "entity_solcast_tomorrow": "Solcast morgen"
+          "entity_prices": "Electricity prices",
+          "entity_solcast_today": "Solcast today",
+          "entity_solcast_tomorrow": "Solcast tomorrow"
         },
         "data_description": {
           "entity_prices": "Select the Home Assistant sensor that provides the electricity price forecast.",
@@ -15,18 +15,13 @@
           "entity_solcast_tomorrow": "Select the Solcast sensor containing tomorrow's hourly PV forecast."
         }
       },
-      "reconfigure": {
-        "title": "EV Charge Planner opnieuw configureren",
-        "description": "Wijzig de Home Assistant-entities die de planner als invoer gebruikt.",
+      "user": {
+        "title": "Configure EV Charge Planner",
+        "description": "Select the Home Assistant entities used as planner inputs. EV Charge Planner does not control a charger.",
         "data": {
-          "entity_prices": "Elektriciteitsprijzen",
-          "entity_solcast_today": "Solcast vandaag",
-          "entity_solcast_tomorrow": "Solcast morgen"
-        },
-        "data_description": {
-          "entity_prices": "Selecteer de Home Assistant-sensor met de elektriciteitsprijsvoorspelling.",
-          "entity_solcast_today": "Selecteer de Solcast-sensor met de voorspelling per uur voor vandaag.",
-          "entity_solcast_tomorrow": "Selecteer de Solcast-sensor met de voorspelling per uur voor morgen."
+          "entity_prices": "Electricity prices",
+          "entity_solcast_today": "Solcast today",
+          "entity_solcast_tomorrow": "Solcast tomorrow"
         }
       }
     },
@@ -40,14 +35,9 @@
         "title": "Configure EV Charge Planner",
         "description": "Change the external price and Solcast entities. Planner settings are native entities.",
         "data": {
-          "entity_prices": "Elektriciteitsprijzen",
-          "entity_solcast_today": "Solcast vandaag",
-          "entity_solcast_tomorrow": "Solcast morgen"
-        },
-        "data_description": {
-          "entity_prices": "Select the Home Assistant sensor that provides the electricity price forecast.",
-          "entity_solcast_today": "Select the Solcast sensor containing today's hourly PV forecast.",
-          "entity_solcast_tomorrow": "Select the Solcast sensor containing tomorrow's hourly PV forecast."
+          "entity_prices": "Electricity prices",
+          "entity_solcast_today": "Solcast today",
+          "entity_solcast_tomorrow": "Solcast tomorrow"
         }
       }
     }
@@ -84,7 +74,7 @@
         "name": "State"
       },
       "data": {
-        "name": "Data"
+        "name": "Plan data"
       },
       "desired_charge_current": {
         "name": "Desired charge current"
@@ -102,16 +92,16 @@
       "energy_needed": {
         "name": "Energy needed"
       },
-      "maximum_grid_price": {
+      "max_price": {
         "name": "Maximum grid price"
       },
-      "maximum_phase_switches": {
+      "max_phase_switches": {
         "name": "Maximum phase switches"
       },
-      "minimum_pv_solar_only": {
+      "min_pv_kwh": {
         "name": "Minimum PV for solar-only"
       },
-      "maximum_charging_power": {
+      "max_charge_power": {
         "name": "Maximum charging power"
       }
     },
@@ -122,7 +112,7 @@
       "planner_mode": {
         "name": "Planner mode"
       },
-      "pv_charging_current_rounding": {
+      "pv_rounding": {
         "name": "PV charging current rounding"
       }
     },
