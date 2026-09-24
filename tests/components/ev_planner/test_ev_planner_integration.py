@@ -75,6 +75,7 @@ from custom_components.ev_planner.const import (
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.entity import EntityCategory
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 
@@ -440,8 +441,33 @@ async def test_full_integration_setup_and_unload(
     assert min_pv.attributes["mode"] == "slider"
     assert max_grid_price.attributes["unit_of_measurement"] == "ct/kWh"
     assert max_grid_price.attributes["step"] == 1.0
+
+    config_entities = (
+        "switch.ev_planner_smart_charging",
+        "select.ev_charge_planner_departure_day",
+        "select.ev_charge_planner_planner_mode",
+        "select.ev_charge_planner_pv_charging_current_rounding",
+        "time.ev_charge_planner_departure_time",
+        "number.ev_charge_planner_energy_needed",
+        "number.ev_charge_planner_maximum_grid_price",
+        "number.ev_charge_planner_maximum_phase_switches",
+        "number.ev_charge_planner_minimum_pv_for_solar_only",
+        "number.ev_charge_planner_maximum_charging_power",
+    )
+    for entity_id in config_entities:
+        registry_entry = registry.async_get(entity_id)
+        assert registry_entry is not None
+        assert registry_entry.entity_category is EntityCategory.CONFIG
+        assert registry_entry.unique_id.startswith(f"{entry.entry_id}_")
+
+    charging_allowed = registry.async_get("binary_sensor.ev_planner_charging_allowed")
+    assert charging_allowed is not None
+    assert charging_allowed.unique_id == f"{entry.entry_id}_charging_allowed"
+
     assert await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()
+    assert hass.states.get("switch.ev_planner_smart_charging") is None
+    assert hass.states.get(sensor_state) is None
     assert hass.services.has_service(DOMAIN, "update")
 
 
