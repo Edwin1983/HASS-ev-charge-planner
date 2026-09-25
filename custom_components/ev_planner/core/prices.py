@@ -700,25 +700,18 @@ class PriceReader:
             tariff_group = ""
 
         sustainability_score = item.get(
-            "sustainability_score"
+            "sustainability_score",
+            0,
         )
 
-        if sustainability_score is None:
-            score_block = item.get(
-                "sustainability_score"
+        if isinstance(
+            sustainability_score,
+            dict,
+        ):
+            sustainability_score = sustainability_score.get(
+                "permille",
+                0,
             )
-
-            if isinstance(
-                score_block,
-                dict,
-            ):
-                sustainability_score = score_block.get(
-                    "permille",
-                    0,
-                )
-
-        if sustainability_score is None:
-            sustainability_score = 0
 
         try:
 
