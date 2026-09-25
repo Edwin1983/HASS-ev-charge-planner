@@ -2,14 +2,16 @@
 
 Native Home Assistant custom integration for EV charging planning using electricity prices and PV forecasts.
 
-**Current release: 1.1.0**
+**Current release: 1.1.3**
 
-## What's new in 1.1.0
+## What's new in 1.1.3
 
-Version 1.1.0 makes the planner settings native Home Assistant entities instead of requiring user-created `input_*` helpers.
+Version 1.1.3 improves backwards compatibility for existing Home Assistant automations while retaining the native Home Assistant entity model introduced in 1.1.0.
 
 Highlights:
 
+- existing service calls without `config_entry_id` continue to work when exactly one EV Charge Planner configuration is loaded;
+- `config_entry_id` can still be supplied explicitly, and is required when multiple EV Charge Planner configurations are loaded;
 - native departure **time** plus separate departure **day**;
 - native sliders for energy needed, maximum grid price and minimum PV;
 - maximum grid price is configured in **ct/kWh**;
@@ -22,6 +24,14 @@ Highlights:
 - improved integration and regression test coverage.
 
 The planner remains a decision layer only: Home Assistant automations are responsible for translating planner outputs into physical charger control.
+
+## Dashboard
+
+A dashboard can be built directly from the native planner entities. The example below shows the main planner settings, status and planning outputs in Home Assistant.
+
+![EV Charge Planner dashboard](images/Dashboard.png)
+
+The dashboard is an example only. Entity IDs may differ between installations, so use the entities created by your own EV Charge Planner config entry.
 
 ## What it does
 
@@ -159,6 +169,8 @@ Runs one planner update cycle. The integration does not start its own periodic b
 ### `ev_planner.create_plan`
 
 Creates a new charging plan from the current inputs.
+
+For a single configured EV Charge Planner instance, `config_entry_id` is optional for backwards compatibility. When multiple instances are configured, specify the target `config_entry_id`.
 
 ### `ev_planner.replan`
 
