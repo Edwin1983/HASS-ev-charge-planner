@@ -1589,7 +1589,7 @@ class EVPlanner:
                             if amount > remaining + 0.000001:
                                 continue
 
-                                    new_energy = (
+                            new_energy = (
                                 energy_value + amount
                             )
 
