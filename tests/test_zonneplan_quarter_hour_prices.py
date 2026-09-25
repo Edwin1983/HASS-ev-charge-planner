@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from custom_components.ev_planner.core.models import Hour
 from custom_components.ev_planner.core.planner import EVPlanner
 from custom_components.ev_planner.core.prices import PriceReader
+from custom_components.ev_planner.core.solcast import SolcastReader
 
 
 class DummyLogger:
@@ -142,3 +143,99 @@ def test_four_quarters_preserve_total_hourly_solcast_energy():
         total += combined.pv_estimate
 
     assert abs(total - 4.0) < 0.000000001
+
+
+class DummyApp:
+    def __init__(self, attributes):
+        self.attributes = attributes
+
+    def get_attributes(self, entity_id):
+        return self.attributes
+
+
+def test_solcast_half_hour_record_has_correct_duration_and_energy():
+    reader = SolcastReader(
+        app=DummyApp({}),
+        logger=DummyLogger(),
+    )
+
+    hour = reader._create_hour(
+        {
+            "period_start": "2026-09-25T16:00:00+02:00",
+            "pv_estimate": 4.0,
+            "pv_estimate10": 2.0,
+            "pv_estimate90": 6.0,
+        },
+        interval_minutes=30,
+    )
+
+    assert hour.start == datetime.fromisoformat(
+        "2026-09-25T16:00:00+02:00"
+    )
+    assert hour.end == datetime.fromisoformat(
+        "2026-09-25T16:30:00+02:00"
+    )
+    assert abs(hour.pv_estimate - 2.0) < 0.000000001
+    assert abs(hour.pv_estimate10 - 1.0) < 0.000000001
+    assert abs(hour.pv_estimate90 - 3.0) < 0.000000001
+
+
+def test_solcast_prefers_half_hourly_detailed_forecast():
+    app = DummyApp(
+        {
+            "detailedForecast": [
+                {
+                    "period_start": "2026-09-25T16:00:00+02:00",
+                    "pv_estimate": 4.0,
+                }
+            ],
+            "detailedHourly": [
+                {
+                    "period_start": "2026-09-25T16:00:00+02:00",
+                    "pv_estimate": 9.0,
+                }
+            ],
+        }
+    )
+
+    reader = SolcastReader(
+        app=app,
+        logger=DummyLogger(),
+    )
+
+    forecast = reader._read_today()
+    hours = reader._parse_forecast(forecast, reader._forecast_interval_minutes)
+
+    assert reader._forecast_interval_minutes == 30
+    assert len(hours) == 1
+    assert hours[0].end == datetime.fromisoformat(
+        "2026-09-25T16:30:00+02:00"
+    )
+    assert abs(hours[0].pv_estimate - 2.0) < 0.000000001
+
+
+def test_solcast_falls_back_to_hourly_detailed_forecast():
+    app = DummyApp(
+        {
+            "detailedHourly": [
+                {
+                    "period_start": "2026-09-25T16:00:00+02:00",
+                    "pv_estimate": 4.0,
+                }
+            ]
+        }
+    )
+
+    reader = SolcastReader(
+        app=app,
+        logger=DummyLogger(),
+    )
+
+    forecast = reader._read_today()
+    hours = reader._parse_forecast(forecast, reader._forecast_interval_minutes)
+
+    assert reader._forecast_interval_minutes == 60
+    assert hours[0].end == datetime.fromisoformat(
+        "2026-09-25T17:00:00+02:00"
+    )
+    assert abs(hours[0].pv_estimate - 4.0) < 0.000000001
