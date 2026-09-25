@@ -1,5 +1,7 @@
 name: EV Planner Tests
 
+run-name: EV Planner Tests - performance=${{ inputs.performance }}
+
 on:
   push:
     branches:
@@ -37,6 +39,11 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements_test.txt
+
+      - name: Show performance configuration
+        run: |
+          echo "workflow_dispatch performance input: ${{ inputs.performance }}"
+          echo "EV_PLANNER_RUN_PERFORMANCE: $EV_PLANNER_RUN_PERFORMANCE"
 
       - name: Run pytest
         run: python -m pytest -q
