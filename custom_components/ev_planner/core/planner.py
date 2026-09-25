@@ -1387,81 +1387,81 @@ class EVPlanner:
 
         quarter_energy_kwh = float(QUARTER_HOUR_ENERGY_PER_AMP_KWH)
 
-            for phase in (1, 3):
-                options = []
+                for phase in (1, 3):
+                    options = []
 
-                if duration > 0:
-                    for current_a in valid_currents_by_phase[phase]:
-                        power = power_by_phase_current[phase][current_a]
+                    if duration > 0:
+                        for current_a in valid_currents_by_phase[phase]:
+                            power = power_by_phase_current[phase][current_a]
 
-                        amount = float(power * duration)
+                            amount = float(power * duration)
 
-                        free = float(
-                            min(
-                                pv_rates[index],
-                                power,
+                            free = float(
+                                min(
+                                    pv_rates[index],
+                                    power,
+                                )
+                                * duration
                             )
-                            * duration
-                        )
 
-                        paid = amount - free
+                            paid = amount - free
 
-                        if paid < 0:
-                            paid = 0.0
+                            if paid < 0:
+                                paid = 0.0
 
-                        ##########################################################
-                        # max_price: een uur boven de maximumprijs
-                        # mag als VOL uur alleen worden gebruikt als
-                        # de volledige hoeveelheid gratis is (dus de
-                        # gekozen stroom niet boven het
-                        # zonvermogen ligt).
-                        ##########################################################
+                            ##########################################################
+                            # max_price: een uur boven de maximumprijs
+                            # mag als VOL uur alleen worden gebruikt als
+                            # de volledige hoeveelheid gratis is (dus de
+                            # gekozen stroom niet boven het
+                            # zonvermogen ligt).
+                            ##########################################################
 
-                        if prices[index] > max_price and paid > 0.000001:
-                            continue
+                            if prices[index] > max_price and paid > 0.000001:
+                                continue
 
-                        amount_quantum = 0
-                        if use_quarter_energy:
-                            amount_quantum = int(
-                                round(
-                                    amount / quarter_energy_kwh,
+                            amount_quantum = 0
+                            if use_quarter_energy:
+                                amount_quantum = int(
+                                    round(
+                                        amount / quarter_energy_kwh,
+                                    )
+                                )
+
+                            options.append(
+                                (
+                                    current_a,
+                                    amount,
+                                    free,
+                                    paid,
+                                    amount_quantum,
                                 )
                             )
 
-                        options.append(
-                            (
+                    full_options[(index, phase)] = options
+
+                    best_finish = None
+
+                    if duration > 0:
+                        for current_a in valid_currents_by_phase[phase]:
+                            power = power_by_phase_current[phase][current_a]
+
+                            if prices[index] > max_price:
+                                free_energy = min(
+                                    pv_rates[index],
+                                    power,
+                                ) * duration
+
+                                if free_energy < power * duration - 0.000001:
+                                    continue
+
+                            best_finish = (
                                 current_a,
-                                amount,
-                                free,
-                                paid,
-                                amount_quantum,
-                            )
-                        )
-
-                full_options[(index, phase)] = options
-
-                best_finish = None
-
-                if duration > 0:
-                    for current_a in valid_currents_by_phase[phase]:
-                        power = power_by_phase_current[phase][current_a]
-
-                        if prices[index] > max_price:
-                            free_energy = min(
-                                pv_rates[index],
                                 power,
-                            ) * duration
+                            )
+                            break
 
-                            if free_energy < power * duration - 0.000001:
-                                continue
-
-                        best_finish = (
-                            current_a,
-                            power,
-                        )
-                        break
-
-                finish_options[(index, phase)] = best_finish
+                    finish_options[(index, phase)] = best_finish
 
         ######################################################################
         # Veilige bovengrens voor resterende energie.
