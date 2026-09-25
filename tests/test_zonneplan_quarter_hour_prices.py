@@ -284,9 +284,6 @@ def test_half_hour_solcast_is_split_correctly_over_zonneplan_quarters():
 
 
 def test_planner_selects_individual_zonneplan_quarters_by_price():
-    from custom_components.ev_planner.core.config import (
-        MIN_CURRENT,
-    )
     from custom_components.ev_planner.core.logger import Logger
     from custom_components.ev_planner.core.models import PriceData, SolcastData
     from custom_components.ev_planner.core.planner import PlannerSettings
@@ -343,9 +340,9 @@ def test_planner_selects_individual_zonneplan_quarters_by_price():
         for decision in plan.decisions
     ] == [
         (
+            start,
             start + timedelta(minutes=15),
-            start + timedelta(minutes=30),
-            0.40,
+            0.20,
         ),
         (
             start + timedelta(minutes=30),
@@ -354,7 +351,7 @@ def test_planner_selects_individual_zonneplan_quarters_by_price():
         ),
     ]
     assert all(
-        decision.charge_current_a == int(MIN_CURRENT)
+        decision.charge_current_a == 6
         for decision in plan.decisions
     )
 
@@ -411,10 +408,9 @@ def test_scheduler_treats_selected_quarters_as_separate_runtime_windows():
     )
     scheduler.set_plan(plan)
 
-    assert scheduler.get_current_hour(start + timedelta(minutes=15)) is not None
-    assert scheduler.get_current_hour(start + timedelta(minutes=15)).start == (
-        start + timedelta(minutes=15)
-    )
+    assert scheduler.get_current_hour(start) is not None
+    assert scheduler.get_current_hour(start).start == start
+    assert scheduler.get_current_hour(start + timedelta(minutes=15)) is None
     assert scheduler.get_current_hour(start + timedelta(minutes=30)) is not None
     assert scheduler.get_current_hour(start + timedelta(minutes=30)).start == (
         start + timedelta(minutes=30)
