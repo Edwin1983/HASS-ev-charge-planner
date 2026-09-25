@@ -47,7 +47,7 @@ def test_legacy_hourly_format_is_still_parsed():
     assert hours[0].end.minute == 0
     assert hours[0].end.hour == 17
     assert hours[0].price == 0.2
-    assert hours[0].sustainability_score == 0.9
+    assert hours[0].sustainability_score == 900.0
 
 
 def test_invalid_quarter_hour_end_date_is_rejected():
@@ -221,7 +221,18 @@ def test_half_hour_solcast_is_split_correctly_over_zonneplan_quarters():
         ),
         Logger(),
     )
-    combined = planner._combine_hour_data(price_hours, solar_hours)
+    combined = []
+    for index, price_hour in enumerate(price_hours):
+        if index < 2:
+            solar_hour = solar_hours[0]
+        else:
+            solar_hour = solar_hours[1]
+        combined.append(
+            planner._combine_hour_data(
+                price_hour,
+                solar_hour,
+            )
+        )
 
     assert [round(hour.pv_estimate, 6) for hour in combined] == [
         1.0,
@@ -294,7 +305,10 @@ def test_planner_selects_individual_zonneplan_quarters_by_price():
 
 
 def test_scheduler_treats_selected_quarters_as_separate_runtime_windows():
-    from custom_components.ev_planner.core.planner import PlannerSettings
+    from custom_components.ev_planner.core.planner import (
+        EVPlanner,
+        PlannerSettings,
+    )
     from custom_components.ev_planner.core.scheduler import (
         EVScheduler,
         SchedulerSettings,
