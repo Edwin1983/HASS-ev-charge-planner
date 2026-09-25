@@ -46,7 +46,7 @@ jobs:
           echo "EV_PLANNER_RUN_PERFORMANCE: $EV_PLANNER_RUN_PERFORMANCE"
 
       - name: Run pytest
-        run: python -m pytest -q
+        run: python -m pytest -q ${{ inputs.performance == true && '-s' || '' }}
 
       - name: Run Ruff
         run: python -m ruff check .
