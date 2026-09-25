@@ -2098,3 +2098,299 @@ class EVPlanner:
 
         for decision in sorted(
             plan.decisions,
+            key=lambda decision: decision.hour.start,
+        ):
+            phase = int(decision.phases)
+
+            if previous_phase is not None and phase != previous_phase:
+                switches += 1
+
+            previous_phase = phase
+
+        if switches > max_switches:
+            raise ValueError(
+                "PLANCONTROLE: aantal fasewisselingen "
+                f"({switches}) overschrijdt het budget "
+                f"({max_switches})."
+            )
+
+        ######################################################################
+        # Beslissingen controleren.
+        ######################################################################
+
+        max_price = float(self.settings.max_price)
+
+        for decision in plan.decisions:
+            phases = int(decision.phases)
+
+            current = int(decision.charge_current_a)
+
+            power = float(decision.charge_power_kw)
+
+            hour = decision.hour
+
+            ##################################################################
+            # Geldige faseconfiguratie
+            ##################################################################
+
+            if phases != 1 and phases != 3:
+                raise ValueError("Ongeldige faseconfiguratie in laadplan.")
+
+            ##################################################################
+            # Geldige, gehele laadstroom
+            ##################################################################
+
+            if current < MIN_CHARGE_CURRENT_A:
+                raise ValueError(
+                    "Laadstroom lager dan minimale "
+                    f"{MIN_CHARGE_CURRENT_A} A: {current} A."
+                )
+
+            if current > MAX_CHARGE_CURRENT_A:
+                raise ValueError(
+                    "Laadstroom hoger dan maximale "
+                    f"{MAX_CHARGE_CURRENT_A} A: {current} A."
+                )
+
+            ##################################################################
+            # Werkelijk vermogen controleren
+            ##################################################################
+
+            calculated_power = self._actual_power_for_current(
+                current,
+                phases,
+            )
+
+            if abs(calculated_power - power) > TOLERANCE:
+                raise ValueError(
+                    "PLANCONTROLE: vermogen komt niet exact "
+                    "overeen met stroom/fasen. "
+                    f"{power:.6f} kW versus "
+                    f"{calculated_power:.6f} kW."
+                )
+
+            ##################################################################
+            # Configuratiemaximum
+            ##################################################################
+
+            maximum_power = self._maximum_power_for_phases(phases)
+
+            if power > maximum_power + TOLERANCE:
+                raise ValueError(
+                    "Laadvermogen overschrijdt technisch maximum: "
+                    f"{power:.6f} > "
+                    f"{maximum_power:.6f} kW."
+                )
+
+            ##################################################################
+            # Absolute maximum
+            ##################################################################
+
+            if power > ABSOLUTE_MAX_POWER_KW + TOLERANCE:
+                raise ValueError(
+                    "Laadvermogen overschrijdt absolute "
+                    f"grens van {ABSOLUTE_MAX_POWER_KW:.2f} kW."
+                )
+
+            ##################################################################
+            # 1-fase harde grens
+            ##################################################################
+
+            if phases == 1 and power > MAX_POWER_1PH_KW + TOLERANCE:
+                raise ValueError(
+                    f"1-fase laadvermogen overschrijdt {MAX_POWER_1PH_KW:.2f} kW."
+                )
+
+            ##################################################################
+            # PV mag nooit boven Solcast uitkomen.
+            ##################################################################
+
+            if float(decision.free_energy_kwh) > float(hour.usable_pv) + TOLERANCE:
+                raise ValueError("Gratis PV-energie overschrijdt beschikbare PV.")
+
+            ##################################################################
+            # Gratis + betaald moet exact de laadenergie vormen.
+            ##################################################################
+
+            calculated_energy = float(decision.free_energy_kwh) + float(
+                decision.paid_energy_kwh
+            )
+
+            if abs(calculated_energy - float(decision.energy_kwh)) > TOLERANCE:
+                raise ValueError(
+                    "Gratis + betaalde energie komt niet overeen "
+                    "met de totale laadenergie."
+                )
+
+            ##################################################################
+            # Maximumprijs: boven de maximumprijs mag een uur geen
+            # betaalde energie bevatten.
+            ##################################################################
+
+            if (
+                float(hour.price) > max_price + TOLERANCE
+                and float(decision.paid_energy_kwh) > TOLERANCE
+                and not (
+                    self.settings.planner_mode == PLANNER_MODE_SOLAR_ONLY
+                    and self.settings.pv_rounding == PV_ROUNDING_UP
+                )
+            ):
+                raise ValueError(
+                    "PLANCONTROLE: betaalde energie in een uur "
+                    "boven de maximumprijs. "
+                    f"prijs={hour.price:.4f} "
+                    f"max_price={max_price:.4f} "
+                    f"betaald={decision.paid_energy_kwh:.4f} kWh."
+                )
+
+            ##################################################################
+            # Harde uurgrens: een laadvenster mag nooit buiten zijn
+            # eigen oorspronkelijke uur vallen.
+            ##################################################################
+
+            if (
+                hour.original_start is not None
+                and hour.start < hour.original_start - timedelta(seconds=1)
+            ):
+                raise ValueError(
+                    "PLANCONTROLE: laadvenster begint vóór het "
+                    "eigen oorspronkelijke uur "
+                    f"({hour.start} < {hour.original_start})."
+                )
+
+            if (
+                hour.original_end is not None
+                and hour.end > hour.original_end + timedelta(seconds=1)
+            ):
+                raise ValueError(
+                    "PLANCONTROLE: laadvenster eindigt na het "
+                    "eigen oorspronkelijke uur "
+                    f"({hour.end} > {hour.original_end})."
+                )
+
+        ######################################################################
+        # Hele-uur-regel: alleen het chronologisch LAATSTE actieve
+        # uur mag korter zijn dan zijn eigen oorspronkelijke duur.
+        ######################################################################
+
+        ordered_decisions = sorted(
+            plan.decisions,
+            key=lambda decision: decision.hour.start,
+        )
+
+        for position in range(len(ordered_decisions)):
+            is_last = position == len(ordered_decisions) - 1
+
+            if is_last:
+                continue
+
+            decision = ordered_decisions[position]
+
+            hour = decision.hour
+
+            if hour.original_start is None or hour.original_end is None:
+                continue
+
+            own_duration = (hour.original_end - hour.original_start).total_seconds()
+
+            actual_duration = (hour.end - hour.start).total_seconds()
+
+            if own_duration - actual_duration > 1.0:
+                raise ValueError(
+                    "PLANCONTROLE: een niet-laatste uur is "
+                    "korter dan zijn eigen volledige duur "
+                    f"({hour.start} - dit mag alleen bij het "
+                    "allerlaatste actieve uur van de sessie)."
+                )
+
+        ######################################################################
+        # Plancontrole logging
+        ######################################################################
+
+        self.logger.debug(
+            "PLANCONTROLE: "
+            f"{planned:.3f} kWh gepland "
+            f"van {needed:.3f} kWh benodigd "
+            f"| wisselingen={switches}/{max_switches} "
+            f"| compleet={plan.complete}"
+        )
+
+    ##########################################################################
+    # Planning loggen
+    ##########################################################################
+
+    def _log_plan(
+        self,
+        plan: ChargingPlan,
+    ) -> None:
+
+        self.logger.debug("------------- EV PLANNING -------------")
+
+        self.logger.debug(f"Benodigd       : {plan.energy_needed_kwh:.2f} kWh")
+
+        self.logger.debug(f"Gepland        : {plan.energy_planned_kwh:.2f} kWh")
+
+        self.logger.debug(f"Gratis PV      : {plan.free_energy_kwh:.2f} kWh")
+
+        self.logger.debug(f"Betaald        : {plan.paid_energy_kwh:.2f} kWh")
+
+        self.logger.debug(f"Geschatte kosten: €{plan.estimated_cost:.2f}")
+
+        self.logger.debug(f"Compleet       : {plan.complete}")
+
+        self.logger.debug(f"Vertrek        : {plan.departure_time}")
+
+        self.logger.debug(f"Max prijs      : €{plan.max_price:.3f}/kWh")
+
+        self.logger.debug(f"Max fasewisselingen: {self.settings.max_phase_switches}")
+
+        self.logger.debug(
+            f"Max laadvermogen: {self.settings.max_charge_power_kw:.2f} kW"
+        )
+
+        self.logger.debug(f"Min laadstroom: {MIN_CHARGE_CURRENT_A} A")
+
+        self.logger.debug(f"Max laadstroom: {MAX_CHARGE_CURRENT_A} A")
+
+        self.logger.debug(f"Netspanning: {VOLTAGE_V:.0f} V")
+
+        self.logger.debug(f"Fasewisselgrens: {PHASE_CHANGE_POWER_KW:.2f} kW")
+
+        self.logger.debug(f"1-fase maximum: {MAX_POWER_1PH_KW:.2f} kW")
+
+        self.logger.debug(f"3-fase maximum: {MAX_POWER_3PH_KW:.2f} kW")
+
+        ######################################################################
+        # Individuele laadbeslissingen
+        ######################################################################
+
+        for decision in plan.decisions:
+            duration_minutes = self._hour_duration(decision.hour) * 60.0
+
+            self.logger.debug(
+                f"{decision.hour.start:%d-%m %H:%M}"
+                f" - "
+                f"{decision.hour.end:%H:%M}"
+                f" | "
+                f"{decision.energy_kwh:.2f} kWh"
+                f" | duur="
+                f"{duration_minutes:.1f} min"
+                f" | vermogen="
+                f"{decision.charge_power_kw:.2f} kW"
+                f" | stroom="
+                f"{decision.charge_current_a} A"
+                f" | fasen="
+                f"{decision.phases}"
+                f" | gratis="
+                f"{decision.free_energy_kwh:.2f}"
+                f" | betaald="
+                f"{decision.paid_energy_kwh:.2f}"
+                f" | prijs=€"
+                f"{decision.price:.3f}"
+                f" | kosten=€"
+                f"{decision.cost:.2f}"
+                f" | "
+                f"{decision.reason}"
+            )
+
+        self.logger.debug("---------------------------------------")
