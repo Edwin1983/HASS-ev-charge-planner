@@ -1,7 +1,8 @@
 """
 prices.py
 
-Leest Zonneplan energieprijzen uit Home Assistant. Ondersteunt zowel\nuurprijzen als kwartierprijzen.
+Leest Zonneplan energieprijzen uit Home Assistant. Ondersteunt zowel
+uurprijzen als kwartierprijzen.
 
 Extra DEBUG/WARNING logging toegevoegd om Pyscript-problemen
 gericht te lokaliseren.
@@ -306,7 +307,7 @@ class PriceReader:
         #     #     f"PRICE DEBUG 46 - eerste record type: "
         #     #     f"{type(first_item).__name__}"
         #     # )
-        
+
         #     if isinstance(
         #         first_item,
         #         dict,
