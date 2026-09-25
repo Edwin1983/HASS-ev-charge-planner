@@ -288,7 +288,7 @@ def test_planner_selects_individual_zonneplan_quarters_by_price():
     from custom_components.ev_planner.core.models import PriceData, SolcastData
     from custom_components.ev_planner.core.planner import PlannerSettings
 
-    start = datetime.fromisoformat("2026-09-25T16:00:00+02:00")
+    start = datetime.now().astimezone().replace(second=0, microsecond=0) + timedelta(hours=2)
     prices = [0.20, 0.40, 0.05, 0.30]
     price_hours = []
     solar_hours = []
@@ -359,7 +359,7 @@ def test_scheduler_treats_selected_quarters_as_separate_runtime_windows():
     from custom_components.ev_planner.core.planner import PlannerSettings
     from custom_components.ev_planner.core.scheduler import EVScheduler, SchedulerSettings
 
-    start = datetime.fromisoformat("2026-09-25T16:00:00+02:00")
+    start = datetime.now().astimezone().replace(second=0, microsecond=0) + timedelta(hours=2)
     price_hours = []
     solar_hours = []
 
@@ -370,8 +370,8 @@ def test_scheduler_treats_selected_quarters_as_separate_runtime_windows():
             Hour(
                 start=quarter_start,
                 end=quarter_end,
-                price=0.10 + (index * 0.10),
-                price_raw=(0.10 + (index * 0.10)) * 10000000,
+                price=[0.30, 0.40, 0.10, 0.20][index],
+                price_raw=[0.30, 0.40, 0.10, 0.20][index] * 10000000,
             )
         )
         solar_hours.append(
@@ -411,4 +411,8 @@ def test_scheduler_treats_selected_quarters_as_separate_runtime_windows():
     assert scheduler.get_current_hour(start + timedelta(minutes=30)).start == (
         start + timedelta(minutes=30)
     )
-    assert scheduler.get_current_hour(start + timedelta(minutes=45)) is None
+    assert scheduler.get_current_hour(start + timedelta(minutes=45)) is not None
+    assert scheduler.get_current_hour(start + timedelta(minutes=45)).start == (
+        start + timedelta(minutes=45)
+    )
+    assert scheduler.get_current_hour(start + timedelta(hours=1)) is None
