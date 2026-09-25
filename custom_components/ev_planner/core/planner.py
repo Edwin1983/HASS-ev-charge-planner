@@ -1470,6 +1470,26 @@ class EVPlanner:
 
             return float(value)
 
+        # When the requested energy is exactly representable by the
+        # quarter-hour energy quantum, the plan should consist of complete
+        # price slots.  A partial "finish" in the cheapest slot would
+        # otherwise defeat the purpose of quarter-hour pricing and can
+        # make the scheduler see a single runtime window where two
+        # quarter-hour windows are required.
+        target_quantized = False
+
+        if quarter_hour_mode:
+            target_quanta = round(
+                target / QUARTER_HOUR_KWH,
+            )
+            target_quantized = (
+                abs(
+                    target
+                    - target_quanta * QUARTER_HOUR_KWH
+                )
+                <= QUARTER_EPSILON
+            )
+
         start_state = (
             NONE_PHASE,
             0,
@@ -1631,6 +1651,12 @@ class EVPlanner:
                         duration = durations[index]
 
                         if duration <= 0:
+                            continue
+
+                        # For an exactly representable quarter-hour target,
+                        # only complete quarter-hour options are allowed.
+                        # Full options above already cover this case.
+                        if quarter_hour_mode and target_quantized:
                             continue
 
                         pv_rate = pv_rates[index]
