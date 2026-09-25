@@ -60,8 +60,8 @@ def test_invalid_quarter_hour_end_date_is_rejected():
             }
         ]
     }
-    reader = PriceReader(None, "sensor.zonneplan", attributes=attributes)
-    assert reader.read() == []
+    reader = PriceReader(DummyApp(attributes), Logger(), "sensor.zonneplan")
+    assert reader._parse_forecast(attributes["forecast"]) == []
 
 
 def test_solcast_half_hour_record_has_correct_duration_and_energy():
@@ -77,7 +77,12 @@ def test_solcast_half_hour_record_has_correct_duration_and_energy():
             ]
         }
     )
-    reader = SolcastReader(app, Logger(), "sensor.solcast", "sensor.solcast_tomorrow")
+    reader = SolcastReader(
+        app,
+        Logger(),
+        "sensor.solcast",
+        "sensor.solcast_tomorrow",
+    )
     hours = reader._parse_forecast(app.attributes["detailedForecast"], 30)
     assert len(hours) == 1
     assert hours[0].end.hour == 16
