@@ -67,6 +67,13 @@ async def test_full_integration_setup_and_unload(hass):
         blocking=True,
         return_response=True,
     )
+
+    await hass.services.async_call(
+        DOMAIN,
+        "create_plan",
+        {},
+        blocking=True,
+    )
     assert isinstance(status_response, dict)
 
     dashboard_response = await hass.services.async_call(
