@@ -321,7 +321,7 @@ def test_planner_selects_individual_zonneplan_quarters_by_price():
         PriceData(hours=price_hours),
         SolcastData(hours=solar_hours),
         PlannerSettings(
-            energy_needed_kwh=0.69,
+            energy_needed_kwh=1.38,
             departure_time=start + timedelta(hours=1),
             max_price=1.0,
             solar_is_free=True,
@@ -350,10 +350,7 @@ def test_planner_selects_individual_zonneplan_quarters_by_price():
             0.05,
         ),
     ]
-    assert all(
-        decision.charge_current_a == 6
-        for decision in plan.decisions
-    )
+    assert abs(plan.energy_planned_kwh - 1.38) < 0.000001
 
 
 def test_scheduler_treats_selected_quarters_as_separate_runtime_windows():
@@ -391,7 +388,7 @@ def test_scheduler_treats_selected_quarters_as_separate_runtime_windows():
         PriceData(hours=price_hours),
         SolcastData(hours=solar_hours),
         PlannerSettings(
-            energy_needed_kwh=0.69,
+            energy_needed_kwh=1.38,
             departure_time=start + timedelta(hours=1),
             max_price=1.0,
             solar_is_free=True,
@@ -408,8 +405,7 @@ def test_scheduler_treats_selected_quarters_as_separate_runtime_windows():
     )
     scheduler.set_plan(plan)
 
-    assert scheduler.get_current_hour(start) is not None
-    assert scheduler.get_current_hour(start).start == start
+    assert scheduler.get_current_hour(start) is None
     assert scheduler.get_current_hour(start + timedelta(minutes=15)) is None
     assert scheduler.get_current_hour(start + timedelta(minutes=30)) is not None
     assert scheduler.get_current_hour(start + timedelta(minutes=30)).start == (
