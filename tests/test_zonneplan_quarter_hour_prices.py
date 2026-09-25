@@ -281,3 +281,142 @@ def test_half_hour_solcast_is_split_correctly_over_zonneplan_quarters():
 
     assert quarter_pv == [1.0, 1.0, 0.5, 0.5]
     assert abs(sum(quarter_pv) - 3.0) < 0.000000001
+
+
+def test_planner_selects_individual_zonneplan_quarters_by_price():
+    from custom_components.ev_planner.core.config import (
+        MIN_CURRENT,
+    )
+    from custom_components.ev_planner.core.logger import Logger
+    from custom_components.ev_planner.core.models import PriceData, SolcastData
+    from custom_components.ev_planner.core.planner import PlannerSettings
+
+    start = datetime.fromisoformat("2026-09-25T16:00:00+02:00")
+    prices = [0.20, 0.40, 0.05, 0.30]
+    price_hours = []
+    solar_hours = []
+
+    for index in range(4):
+        quarter_start = start + timedelta(minutes=15 * index)
+        quarter_end = quarter_start + timedelta(minutes=15)
+        hour = Hour(
+            start=quarter_start,
+            end=quarter_end,
+            price=prices[index],
+            price_raw=prices[index] * 10000000,
+        )
+        hour.pv_estimate = 0.0
+        hour.pv_estimate10 = 0.0
+        hour.pv_estimate90 = 0.0
+        price_hours.append(hour)
+
+        solar_hours.append(
+            Hour(
+                start=quarter_start,
+                end=quarter_end,
+                pv_estimate=0.0,
+                pv_estimate10=0.0,
+                pv_estimate90=0.0,
+            )
+        )
+
+    planner = EVPlanner(
+        PriceData(hours=price_hours),
+        SolcastData(hours=solar_hours),
+        PlannerSettings(
+            energy_needed_kwh=0.69,
+            departure_time=start + timedelta(hours=1),
+            max_price=1.0,
+            solar_is_free=True,
+            max_charge_power_kw=3.68,
+            max_phase_switches=8,
+        ),
+        Logger(),
+    )
+
+    plan = planner.create_plan()
+
+    assert plan.complete
+    assert len(plan.decisions) == 2
+    assert [
+        (decision.hour.start, decision.hour.end, decision.price)
+        for decision in plan.decisions
+    ] == [
+        (
+            start + timedelta(minutes=15),
+            start + timedelta(minutes=30),
+            0.40,
+        ),
+        (
+            start + timedelta(minutes=30),
+            start + timedelta(minutes=45),
+            0.05,
+        ),
+    ]
+    assert all(
+        decision.charge_current_a == int(MIN_CURRENT)
+        for decision in plan.decisions
+    )
+
+
+def test_scheduler_treats_selected_quarters_as_separate_runtime_windows():
+    from custom_components.ev_planner.core.logger import Logger
+    from custom_components.ev_planner.core.models import PriceData, SolcastData
+    from custom_components.ev_planner.core.planner import PlannerSettings
+    from custom_components.ev_planner.core.scheduler import EVScheduler, SchedulerSettings
+
+    start = datetime.fromisoformat("2026-09-25T16:00:00+02:00")
+    price_hours = []
+    solar_hours = []
+
+    for index in range(4):
+        quarter_start = start + timedelta(minutes=15 * index)
+        quarter_end = quarter_start + timedelta(minutes=15)
+        price_hours.append(
+            Hour(
+                start=quarter_start,
+                end=quarter_end,
+                price=0.10 + (index * 0.10),
+                price_raw=(0.10 + (index * 0.10)) * 10000000,
+            )
+        )
+        solar_hours.append(
+            Hour(
+                start=quarter_start,
+                end=quarter_end,
+                pv_estimate=0.0,
+                pv_estimate10=0.0,
+                pv_estimate90=0.0,
+            )
+        )
+
+    planner = EVPlanner(
+        PriceData(hours=price_hours),
+        SolcastData(hours=solar_hours),
+        PlannerSettings(
+            energy_needed_kwh=0.69,
+            departure_time=start + timedelta(hours=1),
+            max_price=1.0,
+            solar_is_free=True,
+            max_charge_power_kw=3.68,
+            max_phase_switches=8,
+        ),
+        Logger(),
+    )
+    plan = planner.create_plan()
+
+    scheduler = EVScheduler(
+        SchedulerSettings(),
+        Logger(),
+    )
+    scheduler.set_plan(plan)
+
+    assert scheduler.get_current_hour(start + timedelta(minutes=15)) is not None
+    assert scheduler.get_current_hour(start + timedelta(minutes=15)).start == (
+        start + timedelta(minutes=15)
+    )
+    assert scheduler.get_current_hour(start + timedelta(minutes=30)) is not None
+    assert scheduler.get_current_hour(start + timedelta(minutes=30)).start == (
+        start + timedelta(minutes=30)
+    )
+    assert scheduler.get_current_hour(start + timedelta(minutes=45)) is None
