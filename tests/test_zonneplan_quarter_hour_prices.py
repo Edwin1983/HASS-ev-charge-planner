@@ -441,3 +441,103 @@ class DummyApp:
 
     def get_attributes(self, entity_id):
         return self.attributes
+
+
+def test_57kwh_quarter_hour_planning_regression():
+    """Benchmark a realistic 57 kWh quarter-hour planning problem.
+
+    This is intentionally opt-in because the current exact optimizer is
+    known to be computationally expensive for long quarter-hour horizons.
+    Run with EV_PLANNER_RUN_PERFORMANCE=1 and pytest -s to capture the
+    wall-clock baseline before changing the optimizer.
+    """
+    import os
+    import time
+
+    if os.getenv("EV_PLANNER_RUN_PERFORMANCE") != "1":
+        import pytest
+
+        pytest.skip("Performance benchmark disabled")
+
+    from custom_components.ev_planner.core.planner import (
+        EVPlanner,
+        PlannerSettings,
+    )
+
+    start = (
+        datetime.now()
+        .astimezone()
+        .replace(second=0, microsecond=0)
+        + timedelta(minutes=15)
+    )
+
+    price_hours = []
+    solar_hours = []
+
+    for index in range(60):
+        quarter_start = start + timedelta(minutes=15 * index)
+        quarter_end = quarter_start + timedelta(minutes=15)
+
+        # Mix cheap and expensive quarters so the optimizer must actually
+        # compare alternatives rather than simply filling every slot.
+        price = [0.18, 0.42, 0.27, 0.11][index % 4]
+
+        price_hours.append(
+            Hour(
+                start=quarter_start,
+                end=quarter_end,
+                price=price,
+            )
+        )
+
+        solar_hours.append(
+            Hour(
+                start=quarter_start,
+                end=quarter_end,
+                pv_estimate=0.0,
+                pv_estimate10=0.0,
+                pv_estimate90=0.0,
+            )
+        )
+
+    planner = EVPlanner(
+        PriceData(hours=price_hours),
+        SolcastData(hours=solar_hours),
+        PlannerSettings(
+            energy_needed_kwh=57.0,
+            departure_time=start + timedelta(minutes=15 * 60),
+            max_price=1.0,
+            solar_is_free=False,
+            max_charge_power_kw=11.04,
+            max_phase_switches=8,
+        ),
+        Logger(),
+    )
+
+    started = time.perf_counter()
+    plan = planner.create_plan()
+    elapsed = time.perf_counter() - started
+
+    print(f"57 kWh / 60 quarter-hours planner runtime: {elapsed:.3f}s")
+
+    assert plan.complete
+    assert abs(plan.energy_planned_kwh - 57.0) < 0.000001
+    assert plan.missing_energy_kwh < 0.000001
+
+    selected = [decision for decision in plan.decisions if decision.selected]
+    assert selected
+
+    switches = 0
+    previous_phase = None
+
+    for decision in selected:
+        if previous_phase is not None and decision.phases != previous_phase:
+            switches += 1
+        previous_phase = decision.phases
+
+    assert switches <= 8
+
+    for decision in selected:
+        assert decision.hour.end <= planner.settings.departure_time
+        assert decision.charge_current_a >= 6
+        assert decision.charge_current_a <= 16
