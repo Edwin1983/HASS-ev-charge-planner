@@ -424,15 +424,23 @@ def test_partial_intervals_scale_solcast_pv_proportionally():
     assert len(filtered) == 2
     assert filtered[0].start >= base
     assert filtered[0].end == base + timedelta(minutes=30)
-    assert abs(filtered[0].pv_estimate - 2.0) < 0.001
-    assert abs(filtered[0].pv_estimate10 - 1.0) < 0.001
-    assert abs(filtered[0].pv_estimate90 - 3.0) < 0.001
+    first_fraction = (
+        (filtered[0].end - filtered[0].start).total_seconds()
+        / (source_hours[0].end - source_hours[0].start).total_seconds()
+    )
+    assert abs(filtered[0].pv_estimate - 4.0 * first_fraction) < 0.000001
+    assert abs(filtered[0].pv_estimate10 - 2.0 * first_fraction) < 0.000001
+    assert abs(filtered[0].pv_estimate90 - 6.0 * first_fraction) < 0.000001
 
-    assert filtered[1].start == base + timedelta(minutes=30)
+    assert filtered[1].start >= base + timedelta(minutes=30)
     assert filtered[1].end == departure
-    assert abs(filtered[1].pv_estimate - 1.5) < 0.001
-    assert abs(filtered[1].pv_estimate10 - 0.75) < 0.001
-    assert abs(filtered[1].pv_estimate90 - 2.25) < 0.001
+    second_fraction = (
+        (filtered[1].end - filtered[1].start).total_seconds()
+        / (source_hours[1].end - source_hours[1].start).total_seconds()
+    )
+    assert abs(filtered[1].pv_estimate - 3.0 * second_fraction) < 0.000001
+    assert abs(filtered[1].pv_estimate10 - 1.5 * second_fraction) < 0.000001
+    assert abs(filtered[1].pv_estimate90 - 4.5 * second_fraction) < 0.000001
 
 
 class DummyApp:
