@@ -5,7 +5,7 @@ update:
     config_entry_id:
       name: Configuratie-entry
       description: De ID van de EV Charge Planner-configuratie.
-      required: true
+      required: false
       selector:
         config_entry:
 
@@ -16,7 +16,7 @@ create_plan:
     config_entry_id:
       name: Configuratie-entry
       description: De ID van de EV Charge Planner-configuratie.
-      required: true
+      required: false
       selector:
         config_entry:
 
@@ -27,7 +27,7 @@ replan:
     config_entry_id:
       name: Configuratie-entry
       description: De ID van de EV Charge Planner-configuratie.
-      required: true
+      required: false
       selector:
         config_entry:
 
@@ -38,7 +38,7 @@ clear_plan:
     config_entry_id:
       name: Configuratie-entry
       description: De ID van de EV Charge Planner-configuratie.
-      required: true
+      required: false
       selector:
         config_entry:
 
@@ -49,7 +49,7 @@ status:
     config_entry_id:
       name: Configuratie-entry
       description: De ID van de EV Charge Planner-configuratie.
-      required: true
+      required: false
       selector:
         config_entry:
 
@@ -60,6 +60,6 @@ dashboard:
     config_entry_id:
       name: Configuratie-entry
       description: De ID van de EV Charge Planner-configuratie.
-      required: true
+      required: false
       selector:
         config_entry:
