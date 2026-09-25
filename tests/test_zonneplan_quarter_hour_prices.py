@@ -3,7 +3,11 @@
 from datetime import datetime, timedelta
 
 from custom_components.ev_planner.core.logger import Logger
-from custom_components.ev_planner.core.models import Hour, PriceData, SolcastData
+from custom_components.ev_planner.core.models import (
+    Hour,
+    PriceData,
+    SolcastData,
+)
 from custom_components.ev_planner.core.prices import PriceReader
 from custom_components.ev_planner.core.solcast import SolcastReader
 
@@ -37,8 +41,8 @@ def test_legacy_hourly_format_is_still_parsed():
             }
         ]
     }
-    reader = PriceReader(None, "sensor.zonneplan", attributes=attributes)
-    hours = reader.read()
+    reader = PriceReader(DummyApp(attributes), Logger(), "sensor.zonneplan")
+    hours = reader._parse_forecast(attributes["forecast"])
     assert len(hours) == 1
     assert hours[0].end.minute == 0
     assert hours[0].end.hour == 17
@@ -74,7 +78,7 @@ def test_solcast_half_hour_record_has_correct_duration_and_energy():
         }
     )
     reader = SolcastReader(app, Logger(), "sensor.solcast", "sensor.solcast_tomorrow")
-    hours = reader._parse_forecast(attributes, 30)
+    hours = reader._parse_forecast(app.attributes["detailedForecast"], 30)
     assert len(hours) == 1
     assert hours[0].end.hour == 16
     assert hours[0].end.minute == 30
@@ -101,7 +105,7 @@ def test_solcast_prefers_half_hourly_detailed_forecast():
         }
     )
     reader = SolcastReader(app, Logger(), "sensor.solcast", "sensor.solcast_tomorrow")
-    hours = reader._parse_forecast(attributes, 60)
+    hours = reader._parse_forecast(app.attributes["detailedForecast"], 30)
     assert len(hours) == 1
     assert hours[0].end.minute == 30
     assert hours[0].pv_estimate == 2.0
@@ -118,8 +122,13 @@ def test_solcast_falls_back_to_hourly_detailed_forecast():
             ]
         }
     )
-    reader = SolcastReader(app, "sensor.solcast", "sensor.solcast_tomorrow")
-    hours = reader.read()
+    reader = SolcastReader(
+        app,
+        Logger(),
+        "sensor.solcast",
+        "sensor.solcast_tomorrow",
+    )
+    hours = reader._parse_forecast(app.attributes["detailedHourly"], 60)
     assert len(hours) == 1
     assert hours[0].end.hour == 17
     assert hours[0].end.minute == 0
@@ -127,7 +136,10 @@ def test_solcast_falls_back_to_hourly_detailed_forecast():
 
 
 def test_half_hour_solcast_is_split_correctly_over_zonneplan_quarters():
-    from custom_components.ev_planner.core.planner import EVPlanner
+    from custom_components.ev_planner.core.planner import (
+        EVPlanner,
+        PlannerSettings,
+    )
 
     price_hours = [
         Hour(
