@@ -1385,6 +1385,28 @@ class EVPlanner:
                 full_options[(index, phase)] = options
 
         ######################################################################
+        # Veilige bovengrens voor resterende energie.
+        #
+        # Deze suffixsom negeert prijs- en fasewisselbeperkingen en
+        # veronderstelt overal maximaal 3-fasenvermogen. Daardoor is het
+        # uitsluitend een noodzakelijke haalbaarheidsgrens: een state die
+        # hiermee het doel niet meer kan halen, kan nooit deel uitmaken
+        # van een complete planning. Het verwijderen van zulke states
+        # verandert dus de optimale oplossing niet.
+        ######################################################################
+
+        suffix_max_energy = [0.0] * (count + 1)
+
+        for index in range(count - 1, -1, -1):
+            suffix_max_energy[index] = (
+                suffix_max_energy[index + 1]
+                + self._hour_max_energy(
+                    ordered_hours[index],
+                    3,
+                )
+            )
+
+        ######################################################################
         # Dynamic programming.
         #
         # state key: (fase, wisselingen) -- fase 0 = "nog geen
@@ -1452,6 +1474,23 @@ class EVPlanner:
                     _action,
                 ) in energies.items():
                     remaining = target - energy_k
+
+                    ##############################################################
+                    # Veilige haalbaarheidspruning.
+                    #
+                    # Als zelfs maximaal 3-fasenladen in alle resterende
+                    # slots het ontbrekende vermogen niet kan leveren,
+                    # heeft deze state geen complete oplossing meer.
+                    # Prijs en fasewisselingen worden bewust genegeerd:
+                    # daardoor is dit alleen een noodzakelijke bovengrens
+                    # en dus exact-safe.
+                    ##############################################################
+
+                    if (
+                        energy_k + suffix_max_energy[index]
+                        < target - 0.000001
+                    ):
+                        continue
 
                     ##############################################################
                     # Overslaan: altijd toegestaan, ook als het doel
@@ -1569,7 +1608,12 @@ class EVPlanner:
                                 # actieve uur mogen onvolledig zijn.
                                 ####################################################
 
-                                if free < amount - 0.000001:
+                                free_energy = min(
+                                    pv_rate,
+                                    power,
+                                ) * duration
+
+                                if free_energy < power * duration - 0.000001:
                                     continue
 
                             if power * duration >= remaining - 0.000001:
