@@ -43,7 +43,7 @@ ENTITIES = {
     # ----------------------------------------------------------------------
 
     "prices":
-        "sensor.zonneplan_current_electricity_tariff",
+        "sensor.zonneplan_current_quarter_hourly_electricity_tariff",
 
 
     # ----------------------------------------------------------------------

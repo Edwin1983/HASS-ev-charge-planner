@@ -1,5 +1,7 @@
 name: EV Planner Tests
 
+run-name: EV Planner Tests - performance=${{ inputs.performance }}
+
 on:
   push:
     branches:
@@ -8,6 +10,12 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      performance:
+        description: "Run the 57 kWh quarter-hour performance benchmark"
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   test:
@@ -16,6 +24,7 @@ jobs:
 
     env:
       PYTHONPATH: .
+      EV_PLANNER_RUN_PERFORMANCE: ${{ inputs.performance == true && '1' || '0' }}
 
     steps:
       - name: Checkout repository
@@ -31,8 +40,13 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements_test.txt
 
+      - name: Show performance configuration
+        run: |
+          echo "workflow_dispatch performance input: ${{ inputs.performance }}"
+          echo "EV_PLANNER_RUN_PERFORMANCE: $EV_PLANNER_RUN_PERFORMANCE"
+
       - name: Run pytest
-        run: python -m pytest -q
+        run: python -m pytest -q ${{ inputs.performance == true && '-s' || '' }}
 
       - name: Run Ruff
         run: python -m ruff check .

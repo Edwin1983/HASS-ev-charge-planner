@@ -2,9 +2,9 @@
 
 Native Home Assistant custom integration for EV charging planning using electricity prices and PV forecasts.
 
-**Current release: 1.1.3**
+**Next release: 1.1.5**
 
-## What's new in 1.1.3
+## What's new in 1.1.5
 
 Version 1.1.3 improves backwards compatibility for existing Home Assistant automations while retaining the native Home Assistant entity model introduced in 1.1.0.
 
@@ -21,7 +21,11 @@ Highlights:
 - compatibility fallbacks for existing installations using the previous `input_*` helpers;
 - refined normal-mode and solar-only planning behavior;
 - source-hour-aligned charging windows, with partial intervals only where required at the beginning or end;
-- improved integration and regression test coverage.
+- improved integration and regression test coverage;
+- support for Zonneplan quarter-hour electricity prices;
+- legacy Zonneplan hourly price data remains supported;
+- Solcast half-hourly and hourly forecast data are converted to interval energy correctly;
+- Solcast PV energy is proportionally distributed across quarter-hour price slots so PV is not counted multiple times.
 
 The planner remains a decision layer only: Home Assistant automations are responsible for translating planner outputs into physical charger control.
 
@@ -239,12 +243,22 @@ The planning data sensor exposes the plan summary and individual decisions, incl
 
 Individual decisions contain the source hour and the calculated charging settings, including charging current, number of phases and active charging interval.
 
+## Zonneplan quarter-hour prices
+
+The planner supports the current Zonneplan quarter-hour price format. Each price record can contain `start_date`, `end_date` and `price_tax_included.amount`. The amount is converted to €/kWh using Zonneplan's price representation.
+
+Quarter-hour prices are treated as individual planning intervals. This means the planner can select some 15-minute periods within an hour while leaving other periods unused when their prices or planning conditions differ.
+
+For backwards compatibility, the previous hourly Zonneplan format using `start_date` and `electricity_price` remains supported. The default price entity is now `sensor.zonneplan_current_quarter_hourly_electricity_tariff`, but the electricity-price entity remains configurable in the integration setup.
+
+When quarter-hour prices are combined with Solcast forecasts, the planner distributes each Solcast forecast interval over the overlapping price intervals. This preserves the original forecast energy instead of counting the same PV forecast multiple times.
+
 ## Data sources
 
 EV Charge Planner currently uses data supplied by other Home Assistant integrations. The recommended setup uses:
 
-- **Solcast** for hourly PV forecasts;
-- an electricity-price integration such as **Zonneplan** for price data.
+- **Solcast** for PV forecasts, supporting both half-hourly `detailedForecast` data and hourly `detailedHourly` data;
+- an electricity-price integration such as **Zonneplan**, supporting both legacy hourly prices and the current quarter-hour price format.
 
 The integration does not hard-code those provider entities. You select the relevant Home Assistant sensors during configuration, so entity names can differ between installations.
 

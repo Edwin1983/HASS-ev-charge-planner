@@ -97,11 +97,13 @@ class SolcastReader:
         tomorrow = self._read_tomorrow()
 
         today_hours = self._parse_forecast(
-            today
+            today,
+            getattr(self, "_forecast_interval_minutes", 60),
         )
 
         tomorrow_hours = self._parse_forecast(
-            tomorrow
+            tomorrow,
+            getattr(self, "_tomorrow_forecast_interval_minutes", 60),
         )
 
         hours = self._merge(
@@ -150,8 +152,16 @@ class SolcastReader:
         )
 
         forecast = attributes.get(
-            "detailedHourly"
+            "detailedForecast"
         )
+
+        if forecast is not None:
+            self._forecast_interval_minutes = 30
+        else:
+            forecast = attributes.get(
+                "detailedHourly"
+            )
+            self._forecast_interval_minutes = 60
 
         if forecast is None:
 
@@ -169,7 +179,8 @@ class SolcastReader:
             )
 
         self.logger.debug(
-            f"{len(forecast)} uurrecords vandaag."
+            f"{len(forecast)} Solcast records vandaag "
+            f"({self._forecast_interval_minutes} minuten)."
         )
 
         return forecast
@@ -189,8 +200,16 @@ class SolcastReader:
         )
 
         forecast = attributes.get(
-            "detailedHourly"
+            "detailedForecast"
         )
+
+        if forecast is not None:
+            self._tomorrow_forecast_interval_minutes = 30
+        else:
+            forecast = attributes.get(
+                "detailedHourly"
+            )
+            self._tomorrow_forecast_interval_minutes = 60
 
         if forecast is None:
 
@@ -212,7 +231,8 @@ class SolcastReader:
             return []
 
         self.logger.debug(
-            f"{len(forecast)} uurrecords morgen."
+            f"{len(forecast)} Solcast records morgen "
+            f"({self._tomorrow_forecast_interval_minutes} minuten)."
         )
 
         return forecast
@@ -224,6 +244,7 @@ class SolcastReader:
     def _parse_forecast(
         self,
         forecast: list[dict[str, Any]],
+        interval_minutes: int,
     ) -> list[Hour]:
 
         hours = []
@@ -235,7 +256,8 @@ class SolcastReader:
             try:
 
                 hour = self._create_hour(
-                    item
+                    item,
+                    interval_minutes,
                 )
 
                 hours.append(
@@ -265,6 +287,7 @@ class SolcastReader:
     def _create_hour(
         self,
         item: dict[str, Any],
+        interval_minutes: int = 60,
     ) -> Hour:
         """
         Maakt één Hour-object uit een Solcast-record.
@@ -370,15 +393,26 @@ class SolcastReader:
 
         ######################################################################
         # Eindtijd
+        #
+        # detailedForecast is half-hourly; detailedHourly is hourly.
+        # Solcast exposes these detailed values as average power (kW).
         ######################################################################
+
+        if interval_minutes <= 0:
+
+            raise ValueError(
+                "Ongeldige Solcast intervalduur."
+            )
 
         end = (
             start
-            + timedelta(hours=1)
+            + timedelta(minutes=interval_minutes)
         )
 
         ######################################################################
         # PV waarden
+        #
+        # Convert average power (kW) to energy (kWh) for the interval.
         ######################################################################
 
         try:
@@ -428,6 +462,12 @@ class SolcastReader:
         if pv_estimate90 < 0:
 
             pv_estimate90 = 0.0
+
+        interval_hours = interval_minutes / 60.0
+
+        pv_estimate *= interval_hours
+        pv_estimate10 *= interval_hours
+        pv_estimate90 *= interval_hours
 
         ######################################################################
         # Hour-object

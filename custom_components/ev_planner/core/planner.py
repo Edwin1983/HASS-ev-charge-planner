@@ -5,7 +5,7 @@ Slimme EV-laadplanner.
 
 Combineert:
 
-- uurprijzen
+- uur- en kwartierprijzen
 - Solcast PV-voorspelling
 - benodigde hoeveelheid energie
 - maximale prijs
@@ -611,11 +611,62 @@ class EVPlanner:
         )
 
         if solar_hour is not None:
-            hour.pv_estimate = float(solar_hour.pv_estimate)
+            ##################################################################
+            # Een Solcast-record kan een uur beslaan terwijl PriceReader
+            # inmiddels kwartierslots levert. Verdeel de PV-prognose
+            # daarom evenredig over de overlap, zodat dezelfde
+            # zonnestroom niet vier keer wordt meegenomen.
+            ##################################################################
 
-            hour.pv_estimate10 = float(solar_hour.pv_estimate10)
+            price_start = price_hour.start
+            price_end = price_hour.end
 
-            hour.pv_estimate90 = float(solar_hour.pv_estimate90)
+            solar_start = solar_hour.start
+            solar_end = solar_hour.end
+
+            overlap_start = max(
+                price_start,
+                solar_start,
+            )
+
+            overlap_end = min(
+                price_end,
+                solar_end,
+            )
+
+            overlap_seconds = (
+                overlap_end - overlap_start
+            ).total_seconds()
+
+            solar_seconds = (
+                solar_end - solar_start
+            ).total_seconds()
+
+            fraction = 0.0
+
+            if (
+                overlap_seconds > 0
+                and solar_seconds > 0
+            ):
+                fraction = (
+                    overlap_seconds
+                    / solar_seconds
+                )
+
+            hour.pv_estimate = (
+                float(solar_hour.pv_estimate)
+                * fraction
+            )
+
+            hour.pv_estimate10 = (
+                float(solar_hour.pv_estimate10)
+                * fraction
+            )
+
+            hour.pv_estimate90 = (
+                float(solar_hour.pv_estimate90)
+                * fraction
+            )
 
         else:
             hour.pv_estimate = 0.0
@@ -724,14 +775,46 @@ class EVPlanner:
             )
 
             ##################################################################
-            # Solcastgegevens behouden
+            # Solcastgegevens proportioneel afschalen
+            #
+            # PV-waarden zijn energie voor het volledige broninterval.
+            # Als het interval door NU of vertrek wordt afgekapt,
+            # mag niet de volledige oorspronkelijke PV-energie aan het
+            # kortere laadvenster worden toegekend.
             ##################################################################
 
-            partial_hour.pv_estimate = float(source_hour.pv_estimate)
+            source_duration_seconds = (
+                source_hour.end - source_hour.start
+            ).total_seconds()
 
-            partial_hour.pv_estimate10 = float(source_hour.pv_estimate10)
+            partial_duration_seconds = (
+                new_end - new_start
+            ).total_seconds()
 
-            partial_hour.pv_estimate90 = float(source_hour.pv_estimate90)
+            fraction = 0.0
+
+            if source_duration_seconds > 0:
+                fraction = (
+                    partial_duration_seconds
+                    / source_duration_seconds
+                )
+
+            if fraction < 0.0:
+                fraction = 0.0
+            elif fraction > 1.0:
+                fraction = 1.0
+
+            partial_hour.pv_estimate = (
+                float(source_hour.pv_estimate) * fraction
+            )
+
+            partial_hour.pv_estimate10 = (
+                float(source_hour.pv_estimate10) * fraction
+            )
+
+            partial_hour.pv_estimate90 = (
+                float(source_hour.pv_estimate90) * fraction
+            )
 
             filtered_hours.append(partial_hour)
 
@@ -1302,6 +1385,28 @@ class EVPlanner:
                 full_options[(index, phase)] = options
 
         ######################################################################
+        # Veilige bovengrens voor resterende energie.
+        #
+        # Deze suffixsom negeert prijs- en fasewisselbeperkingen en
+        # veronderstelt overal maximaal 3-fasenvermogen. Daardoor is het
+        # uitsluitend een noodzakelijke haalbaarheidsgrens: een state die
+        # hiermee het doel niet meer kan halen, kan nooit deel uitmaken
+        # van een complete planning. Het verwijderen van zulke states
+        # verandert dus de optimale oplossing niet.
+        ######################################################################
+
+        suffix_max_energy = [0.0] * (count + 1)
+
+        for index in range(count - 1, -1, -1):
+            suffix_max_energy[index] = (
+                suffix_max_energy[index + 1]
+                + self._hour_max_energy(
+                    ordered_hours[index],
+                    3,
+                )
+            )
+
+        ######################################################################
         # Dynamic programming.
         #
         # state key: (fase, wisselingen) -- fase 0 = "nog geen
@@ -1369,6 +1474,23 @@ class EVPlanner:
                     _action,
                 ) in energies.items():
                     remaining = target - energy_k
+
+                    ##############################################################
+                    # Veilige haalbaarheidspruning.
+                    #
+                    # Als zelfs maximaal 3-fasenladen in alle resterende
+                    # slots het ontbrekende vermogen niet kan leveren,
+                    # heeft deze state geen complete oplossing meer.
+                    # Prijs en fasewisselingen worden bewust genegeerd:
+                    # daardoor is dit alleen een noodzakelijke bovengrens
+                    # en dus exact-safe.
+                    ##############################################################
+
+                    if (
+                        energy_k + suffix_max_energy[index]
+                        < target - 0.000001
+                    ):
+                        continue
 
                     ##############################################################
                     # Overslaan: altijd toegestaan, ook als het doel
@@ -1486,7 +1608,12 @@ class EVPlanner:
                                 # actieve uur mogen onvolledig zijn.
                                 ####################################################
 
-                                if free < amount - 0.000001:
+                                free_energy = min(
+                                    pv_rate,
+                                    power,
+                                ) * duration
+
+                                if free_energy < power * duration - 0.000001:
                                     continue
 
                             if power * duration >= remaining - 0.000001:
