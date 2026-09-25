@@ -1321,10 +1321,34 @@ class EVPlanner:
         # laag naar hoog vermogen.
         full_options = {}
 
+        # Precompute the electrical power once per phase/current pair.
+        # _optimize_hours() can visit the same pair many thousands of
+        # times while expanding DP states, so calling the helper inside
+        # the innermost loops is unnecessarily expensive.
+        power_by_phase_current = {
+            1: {},
+            3: {},
+        }
+
         valid_currents_by_phase = {
             1: self._valid_currents(1),
             3: self._valid_currents(3),
         }
+
+        for phase in (1, 3):
+            for current_a in valid_currents_by_phase[phase]:
+                power_by_phase_current[phase][current_a] = (
+                    self._actual_power_for_current(
+                        current_a,
+                        phase,
+                    )
+                )
+
+        # For a finish transition we only need the lowest current that can
+        # deliver the remaining energy within this slot. Precompute that
+        # candidate once per slot/phase instead of scanning all currents for
+        # every DP state.
+        finish_options = {}
 
         for index in range(count):
             hour = ordered_hours[index]
@@ -1342,10 +1366,7 @@ class EVPlanner:
 
                 if duration > 0:
                     for current_a in valid_currents_by_phase[phase]:
-                        power = self._actual_power_for_current(
-                            current_a,
-                            phase,
-                        )
+                        power = power_by_phase_current[phase][current_a]
 
                         amount = float(power * duration)
 
@@ -1383,6 +1404,29 @@ class EVPlanner:
                         )
 
                 full_options[(index, phase)] = options
+
+                best_finish = None
+
+                if duration > 0:
+                    for current_a in valid_currents_by_phase[phase]:
+                        power = power_by_phase_current[phase][current_a]
+
+                        if prices[index] > max_price:
+                            free_energy = min(
+                                pv_rates[index],
+                                power,
+                            ) * duration
+
+                            if free_energy < power * duration - 0.000001:
+                                continue
+
+                        best_finish = (
+                            current_a,
+                            power,
+                        )
+                        break
+
+                finish_options[(index, phase)] = best_finish
 
         ######################################################################
         # Veilige bovengrens voor resterende energie.
@@ -1588,46 +1632,15 @@ class EVPlanner:
 
                         pv_rate = pv_rates[index]
 
-                        price_ok_currents = valid_currents_by_phase[phase]
+                        finish_option = finish_options[(index, phase)]
 
-                        best_current = None
-
-                        for current_a in price_ok_currents:
-                            power = self._actual_power_for_current(
-                                current_a,
-                                phase,
-                            )
-
-                            if prices[index] > max_price:
-                                ####################################################
-                                # Boven de maximumprijs mag dit volledige
-                                # uur alleen worden gebruikt wanneer de
-                                # volledige laadenergie door PV wordt
-                                # gedekt. Het uur blijft daarbij volledig
-                                # actief; alleen het eerste en laatste
-                                # actieve uur mogen onvolledig zijn.
-                                ####################################################
-
-                                free_energy = min(
-                                    pv_rate,
-                                    power,
-                                ) * duration
-
-                                if free_energy < power * duration - 0.000001:
-                                    continue
-
-                            if power * duration >= remaining - 0.000001:
-                                best_current = current_a
-
-                                break
-
-                        if best_current is None:
+                        if finish_option is None:
                             continue
 
-                        power = self._actual_power_for_current(
-                            best_current,
-                            phase,
-                        )
+                        best_current, power = finish_option
+
+                        if power * duration < remaining - 0.000001:
+                            continue
 
                         finish_duration = remaining / power
 
