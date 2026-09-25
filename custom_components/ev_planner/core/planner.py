@@ -194,6 +194,9 @@ MAX_PHASE_SWITCHES_HARD_CAP = 8
 # gevallen waarin de kosten al exact identiek zijn.
 CURRENT_TIEBREAK_EPSILON = 0.000000001
 
+# Exact energy delivered by 1 A during a full 15-minute slot.
+QUARTER_HOUR_ENERGY_PER_AMP_KWH = VOLTAGE_V * 0.25 / 1000.0
+
 
 ##############################################################################
 # PlannerSettings
@@ -1373,6 +1376,17 @@ class EVPlanner:
 
             prices.append(float(hour.price))
 
+        # Use integer energy states only for a completely regular
+        # quarter-hour horizon. Partial/arbitrary intervals retain the
+        # existing exact-float path.
+        use_quarter_energy = True
+        for duration in durations:
+            if abs(duration - 0.25) > 0.000000001:
+                use_quarter_energy = False
+                break
+
+        quarter_energy_kwh = float(QUARTER_HOUR_ENERGY_PER_AMP_KWH)
+
             for phase in (1, 3):
                 options = []
 
@@ -1406,12 +1420,21 @@ class EVPlanner:
                         if prices[index] > max_price and paid > 0.000001:
                             continue
 
+                        amount_quantum = 0
+                        if use_quarter_energy:
+                            amount_quantum = int(
+                                round(
+                                    amount / quarter_energy_kwh,
+                                )
+                            )
+
                         options.append(
                             (
                                 current_a,
                                 amount,
                                 free,
                                 paid,
+                                amount_quantum,
                             )
                         )
 
@@ -1482,11 +1505,27 @@ class EVPlanner:
         ENERGY_DECIMALS = 9
 
         def energy_key(value):
+            if use_quarter_energy:
+                return int(
+                    round(
+                        value / quarter_energy_kwh,
+                    )
+                )
 
             return round(
                 value,
                 ENERGY_DECIMALS,
             )
+
+        def energy_value(key):
+            if use_quarter_energy and isinstance(key, int):
+                return float(key * quarter_energy_kwh)
+
+            if use_quarter_energy and isinstance(key, float) and key < 0:
+                # Negative keys represent exact terminal/finish energies.
+                return float(-key)
+
+            return float(key)
 
         start_state = (
             NONE_PHASE,
@@ -1535,7 +1574,8 @@ class EVPlanner:
                     _parent_energy,
                     _action,
                 ) in energies.items():
-                    remaining = target - energy_k
+                    current_energy = energy_value(energy_k)
+                    remaining = target - current_energy
 
                     ##############################################################
                     # Veilige haalbaarheidspruning.
@@ -1602,20 +1642,23 @@ class EVPlanner:
                             amount,
                             free,
                             paid,
+                            amount_quantum,
                         ) in full_options[(index, phase)]:
                             layer_full_transitions += 1
                             if amount > remaining + 0.000001:
                                 continue
 
-                            new_energy = energy_k + amount
+                            if use_quarter_energy:
+                                new_key = energy_k + amount_quantum
+                            else:
+                                new_energy = current_energy + amount
+                                new_key = energy_key(new_energy)
 
                             new_cost = (
                                 cost
                                 + paid * prices[index]
                                 - CURRENT_TIEBREAK_EPSILON * current_a
                             )
-
-                            new_key = energy_key(new_energy)
 
                             out_bucket = ensure(out_state)
 
@@ -1682,11 +1725,16 @@ class EVPlanner:
                         if finish_paid < 0:
                             finish_paid = 0.0
 
-                        new_energy = energy_k + finish_amount
+                        new_energy = current_energy + finish_amount
 
                         new_cost = cost + finish_paid * prices[index]
 
-                        new_key = energy_key(new_energy)
+                        if use_quarter_energy:
+                            # Negative keys are reserved for exact finish
+                            # energies; all full-slot keys are non-negative.
+                            new_key = -float(new_energy)
+                        else:
+                            new_key = energy_key(new_energy)
 
                         out_bucket = ensure(out_state)
 
@@ -1781,14 +1829,22 @@ class EVPlanner:
                 _pe,
                 _a,
             ) in energies.items():
+                energy_value_current = energy_value(energy_k)
+                best_energy_value = (
+                    energy_value(best_energy_key)
+                    if best_energy_key is not None
+                    else None
+                )
+
                 if (
                     best_state is None
-                    or energy_k > best_energy_key + 0.000001
+                    or energy_value_current > best_energy_value + 0.000001
                     or (
-                        abs(energy_k - best_energy_key) <= 0.000001 and cost < best_cost
+                        abs(energy_value_current - best_energy_value) <= 0.000001
+                        and cost < best_cost
                     )
                     or (
-                        abs(energy_k - best_energy_key) <= 0.000001
+                        abs(energy_value_current - best_energy_value) <= 0.000001
                         and abs(cost - best_cost) <= 0.000001
                         and switches < best_switches
                     )
@@ -1814,11 +1870,13 @@ class EVPlanner:
 
             return
 
-        if best_energy_key < target - 0.001:
+        best_energy_value = energy_value(best_energy_key)
+
+        if best_energy_value < target - 0.001:
             self.logger.warning(
                 "Laadopdracht kan niet volledig worden ingepland. "
                 f"Benodigd: {target:.2f} kWh, maximaal haalbaar: "
-                f"{best_energy_key:.2f} kWh binnen het "
+                f"{best_energy_value:.2f} kWh binnen het "
                 f"fasewisselbudget ({max_switches}) en de "
                 f"maximumprijs (EUR{max_price:.3f})."
             )
@@ -1967,7 +2025,7 @@ class EVPlanner:
 
         self.logger.debug(
             "GEZAMENLIJKE OPTIMALISATIE: "
-            f"{best_energy_key:.3f}/{target:.3f} kWh, "
+            f"{best_energy_value:.3f}/{target:.3f} kWh, "
             f"kosten EUR{best_cost:.4f}, "
             f"eindfase={best_state[0]}, "
             f"wisselingen={best_state[1]}"
