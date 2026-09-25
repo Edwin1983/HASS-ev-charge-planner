@@ -38,7 +38,7 @@ type EVPlannerConfigEntry = ConfigEntry[EVPlannerController]
 
 SERVICE_SCHEMA = vol.Schema(
     {
-        vol.Required(ATTR_CONFIG_ENTRY_ID): cv.string,
+        vol.Optional(ATTR_CONFIG_ENTRY_ID): cv.string,
     }
 )
 
@@ -58,16 +58,35 @@ def _get_controller(
     call: ServiceCall,
 ) -> EVPlannerController:
     """Return the controller for the targeted config entry."""
-    entry_id = call.data[ATTR_CONFIG_ENTRY_ID]
-    entry = hass.config_entries.async_get_entry(entry_id)
+    entry_id = call.data.get(ATTR_CONFIG_ENTRY_ID)
 
-    if entry is None or entry.domain != DOMAIN:
+    if entry_id:
+        entry = hass.config_entries.async_get_entry(entry_id)
+
+        if entry is None or entry.domain != DOMAIN:
+            raise ServiceValidationError("EV Charge Planner config entry not found")
+
+        if entry.state is not ConfigEntryState.LOADED:
+            raise ServiceValidationError("EV Charge Planner config entry is not loaded")
+
+        return cast(EVPlannerConfigEntry, entry).runtime_data
+
+    loaded_entries = [
+        entry
+        for entry in hass.config_entries.async_entries(DOMAIN)
+        if entry.state is ConfigEntryState.LOADED
+    ]
+
+    if not loaded_entries:
         raise ServiceValidationError("EV Charge Planner config entry not found")
 
-    if entry.state is not ConfigEntryState.LOADED:
-        raise ServiceValidationError("EV Charge Planner config entry is not loaded")
+    if len(loaded_entries) > 1:
+        raise ServiceValidationError(
+            "config_entry_id is required when multiple EV Charge Planner "
+            "config entries are loaded"
+        )
 
-    return cast(EVPlannerConfigEntry, entry).runtime_data
+    return cast(EVPlannerConfigEntry, loaded_entries[0]).runtime_data
 
 
 async def _run(
