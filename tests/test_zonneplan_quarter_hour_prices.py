@@ -214,7 +214,9 @@ def test_half_hour_solcast_is_split_correctly_over_zonneplan_quarters():
         SolcastData(),
         PlannerSettings(
             energy_needed_kwh=1.0,
-            departure_time=datetime.fromisoformat("2026-09-25T17:00:00+02:00"),
+            departure_time=datetime.fromisoformat(
+                "2026-09-25T17:00:00+02:00"
+            ),
             max_price=1.0,
         ),
         Logger(),
