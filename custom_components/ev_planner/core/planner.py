@@ -116,6 +116,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+import os
+import time
 
 from .logger import Logger
 from .solar import apply_solar_only
@@ -1304,6 +1306,16 @@ class EVPlanner:
 
         max_price = float(self.settings.max_price)
 
+        # Opt-in diagnostics for the quarter-hour performance benchmark.
+        # Normal planner runs remain completely silent.
+        performance_debug = os.environ.get("EV_PLANNER_RUN_PERFORMANCE") == "1"
+        optimize_started = time.perf_counter() if performance_debug else 0.0
+        layer_stats = []
+        total_energy_states = 0
+        total_state_expansions = 0
+        total_full_transitions = 0
+        total_finish_transitions = 0
+
         ######################################################################
         # Per uur, per fase: beschikbare duur, zonvermogen, geldige
         # stroomsterktes en de daarbij horende volledige-uur
@@ -1498,6 +1510,10 @@ class EVPlanner:
             prev_layer = layers[index]
 
             next_layer = {}
+            layer_energy_states = 0
+            layer_state_expansions = 0
+            layer_full_transitions = 0
+            layer_finish_transitions = 0
 
             def ensure(
                 state,
@@ -1510,6 +1526,8 @@ class EVPlanner:
 
             for state, energies in prev_layer.items():
                 phase_prev, switches_prev = state
+                layer_energy_states += len(energies)
+                layer_state_expansions += 1
 
                 for energy_k, (
                     cost,
@@ -1585,6 +1603,7 @@ class EVPlanner:
                             free,
                             paid,
                         ) in full_options[(index, phase)]:
+                            layer_full_transitions += 1
                             if amount > remaining + 0.000001:
                                 continue
 
@@ -1633,6 +1652,7 @@ class EVPlanner:
                         pv_rate = pv_rates[index]
 
                         finish_option = finish_options[(index, phase)]
+                        layer_finish_transitions += 1
 
                         if finish_option is None:
                             continue
@@ -1686,6 +1706,56 @@ class EVPlanner:
                             )
 
             layers.append(next_layer)
+
+            next_energy_states = sum(len(energies) for energies in next_layer.values())
+            total_energy_states += layer_energy_states
+            total_state_expansions += layer_state_expansions
+            total_full_transitions += layer_full_transitions
+            total_finish_transitions += layer_finish_transitions
+            layer_stats.append(
+                (
+                    index + 1,
+                    len(prev_layer),
+                    layer_energy_states,
+                    len(next_layer),
+                    next_energy_states,
+                    layer_full_transitions,
+                    layer_finish_transitions,
+                )
+            )
+
+        if performance_debug:
+            optimize_elapsed = time.perf_counter() - optimize_started
+            peak = max(
+                layer_stats,
+                key=lambda item: item[4],
+            )
+            print(
+                "DP profile: "
+                f"{optimize_elapsed:.3f}s, "
+                f"energy_states={total_energy_states}, "
+                f"state_expansions={total_state_expansions}, "
+                f"full_transitions={total_full_transitions}, "
+                f"finish_transitions={total_finish_transitions}, "
+                f"peak_next_energy_states={peak[4]} at slot={peak[0]}"
+            )
+            print(
+                "DP profile per slot: "
+                + "; ".join(
+                    f"{slot}:prev={prev_states},energy={prev_energy},"
+                    f"next={next_states},next_energy={next_energy},"
+                    f"full={full},finish={finish}"
+                    for (
+                        slot,
+                        prev_states,
+                        prev_energy,
+                        next_states,
+                        next_energy,
+                        full,
+                        finish,
+                    ) in layer_stats
+                )
+            )
 
         ######################################################################
         # Beste eindstate: maximale energie, dan minimale kosten,
