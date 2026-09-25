@@ -1,7 +1,7 @@
 """
 prices.py
 
-Leest de Zonneplan uurprijzen uit Home Assistant.
+Leest Zonneplan energieprijzen uit Home Assistant. Ondersteunt zowel\nuurprijzen als kwartierprijzen.
 
 Extra DEBUG/WARNING logging toegevoegd om Pyscript-problemen
 gericht te lokaliseren.
@@ -33,7 +33,7 @@ class PriceReader:
         entity_id: str | None = None,
     ) -> None:
         """
-        entity_id: de sensor met de Zonneplan-uurprijzen.
+        entity_id: de sensor met de Zonneplan-uur- of kwartierprijzen.
 
         Als er geen entity_id wordt meegegeven, valt dit terug op de
         standaardwaarde uit core/config.py (achterwaartse compatibiliteit).
@@ -574,53 +574,110 @@ class PriceReader:
                 "start_date is niet timezone-aware."
             )
 
-        end = (
-            start
-            + timedelta(hours=1)
+        ######################################################################
+        # Zonneplan ondersteunt inmiddels kwartierprijzen.
+        #
+        # Nieuw formaat:
+        #   start_date
+        #   end_date
+        #   price_tax_included.amount
+        #
+        # Oud formaat blijft ondersteund:
+        #   start_date
+        #   electricity_price
+        #
+        # De bedragen in beide Zonneplan-formaten zijn uitgedrukt in
+        # 1/10.000.000 euro per kWh.
+        ######################################################################
+
+        raw_end_date = item.get(
+            "end_date"
         )
+
+        if raw_end_date is None:
+            end = start + timedelta(hours=1)
+
+        elif isinstance(
+            raw_end_date,
+            datetime,
+        ):
+            end = raw_end_date
+
+        elif isinstance(
+            raw_end_date,
+            str,
+        ):
+            try:
+                end = datetime.fromisoformat(
+                    raw_end_date
+                )
+            except (
+                TypeError,
+                ValueError,
+            ):
+                raise ValueError(
+                    "Ongeldige end_date."
+                )
+
+        else:
+            raise TypeError(
+                "end_date heeft geen geldig type."
+            )
+
+        if end.tzinfo is None:
+            raise ValueError(
+                "end_date is niet timezone-aware."
+            )
+
+        if end <= start:
+            raise ValueError(
+                "end_date moet na start_date liggen."
+            )
 
         raw_price = item.get(
             "electricity_price"
         )
 
-        # self.logger.warning(
-        #     f"PRICE DEBUG 83 - electricity_price type: "
-        #     f"{type(raw_price).__name__}"
-        # )
+        if raw_price is None:
+            price_block = item.get(
+                "price_tax_included"
+            )
 
+            if isinstance(
+                price_block,
+                dict,
+            ):
+                raw_price = price_block.get(
+                    "amount"
+                )
 
         if raw_price is None:
-
             raise ValueError(
-                "Ontbrekende electricity_price."
+                "Ontbrekende electricity_price of "
+                "price_tax_included.amount."
             )
 
         if isinstance(
             raw_price,
             bool,
         ):
-
             raise TypeError(
                 "electricity_price is boolean."
             )
 
         try:
-
             price_raw = float(
                 raw_price
             )
-
         except (
             TypeError,
             ValueError,
         ):
-
             raise ValueError(
                 "Ongeldige electricity_price."
             )
 
         if price_raw < 0:
-
             raise ValueError(
                 "electricity_price mag niet negatief zijn."
             )
@@ -643,9 +700,25 @@ class PriceReader:
             tariff_group = ""
 
         sustainability_score = item.get(
-            "sustainability_score",
-            0,
+            "sustainability_score"
         )
+
+        if sustainability_score is None:
+            score_block = item.get(
+                "sustainability_score"
+            )
+
+            if isinstance(
+                score_block,
+                dict,
+            ):
+                sustainability_score = score_block.get(
+                    "permille",
+                    0,
+                )
+
+        if sustainability_score is None:
+            sustainability_score = 0
 
         try:
 
