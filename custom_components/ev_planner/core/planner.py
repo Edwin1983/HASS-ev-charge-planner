@@ -775,14 +775,46 @@ class EVPlanner:
             )
 
             ##################################################################
-            # Solcastgegevens behouden
+            # Solcastgegevens proportioneel afschalen
+            #
+            # PV-waarden zijn energie voor het volledige broninterval.
+            # Als het interval door NU of vertrek wordt afgekapt,
+            # mag niet de volledige oorspronkelijke PV-energie aan het
+            # kortere laadvenster worden toegekend.
             ##################################################################
 
-            partial_hour.pv_estimate = float(source_hour.pv_estimate)
+            source_duration_seconds = (
+                source_hour.end - source_hour.start
+            ).total_seconds()
 
-            partial_hour.pv_estimate10 = float(source_hour.pv_estimate10)
+            partial_duration_seconds = (
+                new_end - new_start
+            ).total_seconds()
 
-            partial_hour.pv_estimate90 = float(source_hour.pv_estimate90)
+            fraction = 0.0
+
+            if source_duration_seconds > 0:
+                fraction = (
+                    partial_duration_seconds
+                    / source_duration_seconds
+                )
+
+            if fraction < 0.0:
+                fraction = 0.0
+            elif fraction > 1.0:
+                fraction = 1.0
+
+            partial_hour.pv_estimate = (
+                float(source_hour.pv_estimate) * fraction
+            )
+
+            partial_hour.pv_estimate10 = (
+                float(source_hour.pv_estimate10) * fraction
+            )
+
+            partial_hour.pv_estimate90 = (
+                float(source_hour.pv_estimate90) * fraction
+            )
 
             filtered_hours.append(partial_hour)
 
