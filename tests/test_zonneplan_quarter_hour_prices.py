@@ -1,6 +1,6 @@
 """Tests for Zonneplan quarter-hour price support."""
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from custom_components.ev_planner.core.models import Hour
 from custom_components.ev_planner.core.planner import EVPlanner
@@ -125,13 +125,12 @@ def test_four_quarters_preserve_total_hourly_solcast_energy():
     total = 0.0
 
     for minute in (0, 15, 30, 45):
+        start = datetime.fromisoformat(
+            f"2026-09-25T16:{minute:02d}:00+02:00"
+        )
         price_hour = Hour(
-            start=datetime.fromisoformat(
-                f"2026-09-25T16:{minute:02d}:00+02:00"
-            ),
-            end=datetime.fromisoformat(
-                f"2026-09-25T16:{minute + 15:02d}:00+02:00"
-            ),
+            start=start,
+            end=start + timedelta(minutes=15),
             price=0.20,
             price_raw=2000000,
         )
