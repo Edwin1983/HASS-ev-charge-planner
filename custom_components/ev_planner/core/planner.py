@@ -1464,6 +1464,12 @@ class EVPlanner:
                 ENERGY_DECIMALS,
             )
 
+        def energy_value_for_key(value):
+            if quarter_hour_mode and value < target:
+                return float(value) * QUARTER_HOUR_KWH
+
+            return float(value)
+
         start_state = (
             NONE_PHASE,
             0,
@@ -1741,14 +1747,22 @@ class EVPlanner:
                 _pe,
                 _a,
             ) in energies.items():
+                energy_value = energy_value_for_key(energy_k)
+                best_energy_value = (
+                    energy_value_for_key(best_energy_key)
+                    if best_energy_key is not None
+                    else None
+                )
+
                 if (
                     best_state is None
-                    or energy_k > best_energy_key + 0.000001
+                    or energy_value > best_energy_value + 0.000001
                     or (
-                        abs(energy_k - best_energy_key) <= 0.000001 and cost < best_cost
+                        abs(energy_value - best_energy_value) <= 0.000001
+                        and cost < best_cost
                     )
                     or (
-                        abs(energy_k - best_energy_key) <= 0.000001
+                        abs(energy_value - best_energy_value) <= 0.000001
                         and abs(cost - best_cost) <= 0.000001
                         and switches < best_switches
                     )
@@ -1774,11 +1788,13 @@ class EVPlanner:
 
             return
 
-        if best_energy_key < target - 0.001:
+        best_energy_value = energy_value_for_key(best_energy_key)
+
+        if best_energy_value < target - 0.001:
             self.logger.warning(
                 "Laadopdracht kan niet volledig worden ingepland. "
                 f"Benodigd: {target:.2f} kWh, maximaal haalbaar: "
-                f"{best_energy_key:.2f} kWh binnen het "
+                f"{best_energy_value:.2f} kWh binnen het "
                 f"fasewisselbudget ({max_switches}) en de "
                 f"maximumprijs (EUR{max_price:.3f})."
             )
