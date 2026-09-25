@@ -288,7 +288,12 @@ def test_planner_selects_individual_zonneplan_quarters_by_price():
     from custom_components.ev_planner.core.models import PriceData, SolcastData
     from custom_components.ev_planner.core.planner import PlannerSettings
 
-    start = datetime.now().astimezone().replace(second=0, microsecond=0) + timedelta(hours=2)
+    start = (
+        datetime.now()
+        .astimezone()
+        .replace(second=0, microsecond=0)
+        + timedelta(hours=2)
+    )
     prices = [0.20, 0.40, 0.05, 0.30]
     price_hours = []
     solar_hours = []
@@ -357,7 +362,10 @@ def test_scheduler_treats_selected_quarters_as_separate_runtime_windows():
     from custom_components.ev_planner.core.logger import Logger
     from custom_components.ev_planner.core.models import PriceData, SolcastData
     from custom_components.ev_planner.core.planner import PlannerSettings
-    from custom_components.ev_planner.core.scheduler import EVScheduler, SchedulerSettings
+    from custom_components.ev_planner.core.scheduler import (
+        EVScheduler,
+        SchedulerSettings,
+    )
 
     start = datetime.now().astimezone().replace(second=0, microsecond=0) + timedelta(hours=2)
     price_hours = []
