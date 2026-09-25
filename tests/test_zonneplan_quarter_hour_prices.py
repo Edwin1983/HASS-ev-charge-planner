@@ -239,3 +239,45 @@ def test_solcast_falls_back_to_hourly_detailed_forecast():
         "2026-09-25T17:00:00+02:00"
     )
     assert abs(hours[0].pv_estimate - 4.0) < 0.000000001
+
+
+def test_half_hour_solcast_is_split_correctly_over_zonneplan_quarters():
+    planner = EVPlanner.__new__(EVPlanner)
+
+    first_half_hour = Hour(
+        start=datetime.fromisoformat("2026-09-25T16:00:00+02:00"),
+        end=datetime.fromisoformat("2026-09-25T16:30:00+02:00"),
+        pv_estimate=2.0,
+    )
+    second_half_hour = Hour(
+        start=datetime.fromisoformat("2026-09-25T16:30:00+02:00"),
+        end=datetime.fromisoformat("2026-09-25T17:00:00+02:00"),
+        pv_estimate=1.0,
+    )
+
+    quarter_pv = []
+
+    for minute in (0, 15, 30, 45):
+        start = datetime.fromisoformat(
+            f"2026-09-25T16:{minute:02d}:00+02:00"
+        )
+        price_hour = Hour(
+            start=start,
+            end=start + timedelta(minutes=15),
+            price=0.20,
+            price_raw=2000000,
+        )
+
+        if minute < 30:
+            solar_hour = first_half_hour
+        else:
+            solar_hour = second_half_hour
+
+        combined = planner._combine_hour_data(
+            price_hour,
+            solar_hour,
+        )
+        quarter_pv.append(combined.pv_estimate)
+
+    assert quarter_pv == [1.0, 1.0, 0.5, 0.5]
+    assert abs(sum(quarter_pv) - 3.0) < 0.000000001
