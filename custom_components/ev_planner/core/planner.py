@@ -1425,7 +1425,39 @@ class EVPlanner:
 
         ENERGY_DECIMALS = 9
 
+        # Voor volledig uit kwartieren opgebouwde prijsdata zijn de
+        # energiehoeveelheden van volledige laadblokken exact discrete
+        # veelvouden van 0.0575 kWh:
+        #
+        #   1 fase: 230 V * 1 A * 0.25 h = 0.0575 kWh
+        #   3 fasen: 690 V * 1 A * 0.25 h = 0.1725 kWh
+        #
+        # We kunnen zulke volledige blokken daarom als gehele quantum-
+        # aantallen in de DP-sleutel opslaan. De "finish"-actie blijft
+        # exact op de resterende hoeveelheid werken en wordt als
+        # target-state samengevoegd. Hierdoor verandert de uitkomst niet,
+        # maar worden duizenden bijna-identieke float-sleutels voorkomen.
+        QUARTER_HOUR_KWH = 0.0575
+        QUARTER_EPSILON = 0.000001
+
+        quarter_hour_mode = True
+
+        for duration in durations:
+            if abs(duration - 0.25) > QUARTER_EPSILON:
+                quarter_hour_mode = False
+                break
+
         def energy_key(value):
+
+            if quarter_hour_mode:
+                if value >= target - QUARTER_EPSILON:
+                    return target
+
+                return int(
+                    round(
+                        value / QUARTER_HOUR_KWH,
+                    )
+                )
 
             return round(
                 value,
@@ -1473,7 +1505,14 @@ class EVPlanner:
                     _parent_energy,
                     _action,
                 ) in energies.items():
-                    remaining = target - energy_k
+                    if quarter_hour_mode and energy_k < target:
+                        energy_value = (
+                            float(energy_k) * QUARTER_HOUR_KWH
+                        )
+                    else:
+                        energy_value = float(energy_k)
+
+                    remaining = target - energy_value
 
                     ##############################################################
                     # Veilige haalbaarheidspruning.
@@ -1487,7 +1526,7 @@ class EVPlanner:
                     ##############################################################
 
                     if (
-                        energy_k + suffix_max_energy[index]
+                        energy_value + suffix_max_energy[index]
                         < target - 0.000001
                     ):
                         continue
@@ -1544,7 +1583,9 @@ class EVPlanner:
                             if amount > remaining + 0.000001:
                                 continue
 
-                            new_energy = energy_k + amount
+                                    new_energy = (
+                                energy_value + amount
+                            )
 
                             new_cost = (
                                 cost
@@ -1649,7 +1690,9 @@ class EVPlanner:
                         if finish_paid < 0:
                             finish_paid = 0.0
 
-                        new_energy = energy_k + finish_amount
+                        new_energy = (
+                            energy_value + finish_amount
+                        )
 
                         new_cost = cost + finish_paid * prices[index]
 
