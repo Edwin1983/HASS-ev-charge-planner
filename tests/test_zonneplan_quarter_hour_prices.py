@@ -2,7 +2,8 @@
 
 from datetime import datetime, timedelta
 
-from custom_components.ev_planner.core.models import Hour
+from custom_components.ev_planner.core.logger import Logger
+from custom_components.ev_planner.core.models import Hour, PriceData, SolcastData
 from custom_components.ev_planner.core.prices import PriceReader
 from custom_components.ev_planner.core.solcast import SolcastReader
 
@@ -17,8 +18,8 @@ def test_zonneplan_quarter_hour_format_is_parsed():
             }
         ]
     }
-    reader = PriceReader(None, "sensor.zonneplan", attributes=attributes)
-    hours = reader.read()
+    reader = PriceReader(DummyApp(attributes), Logger(), "sensor.zonneplan")
+    hours = reader._parse_forecast(attributes["forecast"])
     assert len(hours) == 1
     assert hours[0].start.hour == 16
     assert hours[0].start.minute == 0
@@ -72,8 +73,8 @@ def test_solcast_half_hour_record_has_correct_duration_and_energy():
             ]
         }
     )
-    reader = SolcastReader(app, "sensor.solcast", "sensor.solcast_tomorrow")
-    hours = reader.read()
+    reader = SolcastReader(app, Logger(), "sensor.solcast", "sensor.solcast_tomorrow")
+    hours = reader._parse_forecast(attributes, 30)
     assert len(hours) == 1
     assert hours[0].end.hour == 16
     assert hours[0].end.minute == 30
@@ -99,8 +100,8 @@ def test_solcast_prefers_half_hourly_detailed_forecast():
             ],
         }
     )
-    reader = SolcastReader(app, "sensor.solcast", "sensor.solcast_tomorrow")
-    hours = reader.read()
+    reader = SolcastReader(app, Logger(), "sensor.solcast", "sensor.solcast_tomorrow")
+    hours = reader._parse_forecast(attributes, 60)
     assert len(hours) == 1
     assert hours[0].end.minute == 30
     assert hours[0].pv_estimate == 2.0
@@ -191,7 +192,16 @@ def test_half_hour_solcast_is_split_correctly_over_zonneplan_quarters():
         ),
     ]
 
-    planner = EVPlanner()
+    planner = EVPlanner(
+        PriceData(),
+        SolcastData(),
+        PlannerSettings(
+            energy_needed_kwh=1.0,
+            departure_time=datetime.fromisoformat("2026-09-25T17:00:00+02:00"),
+            max_price=1.0,
+        ),
+        Logger(),
+    )
     combined = planner._combine_hour_data(price_hours, solar_hours)
 
     assert [round(hour.pv_estimate, 6) for hour in combined] == [
@@ -239,23 +249,25 @@ def test_planner_selects_individual_zonneplan_quarters_by_price():
             )
         )
 
-    planner = EVPlanner()
     settings = PlannerSettings(
         energy_needed_kwh=1.38,
+        departure_time=start + timedelta(hours=1),
         max_price=1.0,
         solar_is_free=False,
         max_charge_power_kw=3.68,
         max_phase_switches=8,
     )
-    plan = planner.create_plan(
-        price_hours,
-        solar_hours,
+    planner = EVPlanner(
+        PriceData(hours=price_hours),
+        SolcastData(hours=solar_hours),
         settings,
+        Logger(),
     )
+    plan = planner.create_plan()
 
-    selected = [decision for decision in plan.decisions if decision.charge]
+    selected = [decision for decision in plan.decisions if decision.selected]
     assert len(selected) == 2
-    assert [decision.start for decision in selected] == [
+    assert [decision.hour.start for decision in selected] == [
         start,
         start + timedelta(minutes=30),
     ]
@@ -263,8 +275,6 @@ def test_planner_selects_individual_zonneplan_quarters_by_price():
 
 
 def test_scheduler_treats_selected_quarters_as_separate_runtime_windows():
-    from custom_components.ev_planner.core.logger import Logger
-    from custom_components.ev_planner.core.models import PriceData, SolcastData
     from custom_components.ev_planner.core.planner import PlannerSettings
     from custom_components.ev_planner.core.scheduler import (
         EVScheduler,
@@ -301,28 +311,25 @@ def test_scheduler_treats_selected_quarters_as_separate_runtime_windows():
             )
         )
 
-    planner = EVPlanner()
     settings = PlannerSettings(
         energy_needed_kwh=1.38,
+        departure_time=start + timedelta(hours=1),
         max_price=1.0,
         solar_is_free=False,
         max_charge_power_kw=3.68,
         max_phase_switches=8,
     )
-    plan = planner.create_plan(
-        price_hours,
-        solar_hours,
+    planner = EVPlanner(
+        PriceData(hours=price_hours),
+        SolcastData(hours=solar_hours),
         settings,
+        Logger(),
     )
+    plan = planner.create_plan()
 
     scheduler = EVScheduler(
+        SchedulerSettings(),
         Logger(),
-        PriceData(prices=price_hours),
-        SolcastData(forecast=solar_hours),
-        SchedulerSettings(
-            max_price=1.0,
-            energy_needed_kwh=1.38,
-        ),
     )
     scheduler.set_plan(plan)
 
