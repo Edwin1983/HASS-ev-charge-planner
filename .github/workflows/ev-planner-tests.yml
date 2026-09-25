@@ -8,6 +8,12 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      performance:
+        description: "Run the 57 kWh quarter-hour performance benchmark"
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   test:
@@ -16,6 +22,7 @@ jobs:
 
     env:
       PYTHONPATH: .
+      EV_PLANNER_RUN_PERFORMANCE: ${{ inputs.performance == true && '1' || '0' }}
 
     steps:
       - name: Checkout repository
