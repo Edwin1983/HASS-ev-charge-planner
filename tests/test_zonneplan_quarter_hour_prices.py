@@ -380,6 +380,61 @@ def test_scheduler_treats_selected_quarters_as_separate_runtime_windows():
     assert scheduler.get_current_hour(start + timedelta(hours=1)) is None
 
 
+def test_partial_intervals_scale_solcast_pv_proportionally():
+    from custom_components.ev_planner.core.planner import (
+        EVPlanner,
+        PlannerSettings,
+    )
+
+    base = datetime.now().astimezone().replace(microsecond=0)
+    departure = base + timedelta(minutes=60)
+
+    source_hours = [
+        Hour(
+            start=base - timedelta(minutes=30),
+            end=base + timedelta(minutes=30),
+            price=0.20,
+            pv_estimate=4.0,
+            pv_estimate10=2.0,
+            pv_estimate90=6.0,
+        ),
+        Hour(
+            start=base + timedelta(minutes=30),
+            end=base + timedelta(minutes=90),
+            price=0.20,
+            pv_estimate=3.0,
+            pv_estimate10=1.5,
+            pv_estimate90=4.5,
+        ),
+    ]
+
+    planner = EVPlanner(
+        PriceData(hours=source_hours),
+        SolcastData(),
+        PlannerSettings(
+            energy_needed_kwh=1.0,
+            departure_time=departure,
+            max_price=1.0,
+        ),
+        Logger(),
+    )
+
+    filtered = planner._filter_available_time(source_hours)
+
+    assert len(filtered) == 2
+    assert filtered[0].start >= base
+    assert filtered[0].end == base + timedelta(minutes=30)
+    assert abs(filtered[0].pv_estimate - 2.0) < 0.001
+    assert abs(filtered[0].pv_estimate10 - 1.0) < 0.001
+    assert abs(filtered[0].pv_estimate90 - 3.0) < 0.001
+
+    assert filtered[1].start == base + timedelta(minutes=30)
+    assert filtered[1].end == departure
+    assert abs(filtered[1].pv_estimate - 1.5) < 0.001
+    assert abs(filtered[1].pv_estimate10 - 0.75) < 0.001
+    assert abs(filtered[1].pv_estimate90 - 2.25) < 0.001
+
+
 class DummyApp:
     def __init__(self, attributes):
         self.attributes = attributes
