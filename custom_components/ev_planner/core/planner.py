@@ -5,7 +5,7 @@ Slimme EV-laadplanner.
 
 Combineert:
 
-- uurprijzen
+- uur- en kwartierprijzen
 - Solcast PV-voorspelling
 - benodigde hoeveelheid energie
 - maximale prijs
@@ -611,11 +611,62 @@ class EVPlanner:
         )
 
         if solar_hour is not None:
-            hour.pv_estimate = float(solar_hour.pv_estimate)
+            ##################################################################
+            # Een Solcast-record kan een uur beslaan terwijl PriceReader
+            # inmiddels kwartierslots levert. Verdeel de PV-prognose
+            # daarom evenredig over de overlap, zodat dezelfde
+            # zonnestroom niet vier keer wordt meegenomen.
+            ##################################################################
 
-            hour.pv_estimate10 = float(solar_hour.pv_estimate10)
+            price_start = price_hour.start
+            price_end = price_hour.end
 
-            hour.pv_estimate90 = float(solar_hour.pv_estimate90)
+            solar_start = solar_hour.start
+            solar_end = solar_hour.end
+
+            overlap_start = max(
+                price_start,
+                solar_start,
+            )
+
+            overlap_end = min(
+                price_end,
+                solar_end,
+            )
+
+            overlap_seconds = (
+                overlap_end - overlap_start
+            ).total_seconds()
+
+            solar_seconds = (
+                solar_end - solar_start
+            ).total_seconds()
+
+            fraction = 0.0
+
+            if (
+                overlap_seconds > 0
+                and solar_seconds > 0
+            ):
+                fraction = (
+                    overlap_seconds
+                    / solar_seconds
+                )
+
+            hour.pv_estimate = (
+                float(solar_hour.pv_estimate)
+                * fraction
+            )
+
+            hour.pv_estimate10 = (
+                float(solar_hour.pv_estimate10)
+                * fraction
+            )
+
+            hour.pv_estimate90 = (
+                float(solar_hour.pv_estimate90)
+                * fraction
+            )
 
         else:
             hour.pv_estimate = 0.0
