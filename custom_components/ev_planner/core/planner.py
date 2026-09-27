@@ -1447,14 +1447,16 @@ class EVPlanner:
             0,
         )
 
+        nodes = [
+            (None, None),
+        ]
+
         layers = [
             {
                 start_state: {
                     energy_key(0.0): (
                         0.0,
-                        None,
-                        None,
-                        None,
+                        0,
                     )
                 }
             }
@@ -1479,9 +1481,7 @@ class EVPlanner:
 
                 for energy_k, (
                     cost,
-                    _parent_state,
-                    _parent_energy,
-                    _action,
+                    node_id,
                 ) in energies.items():
                     remaining = target - energy_k
 
@@ -1512,11 +1512,16 @@ class EVPlanner:
                     existing = bucket.get(energy_k)
 
                     if existing is None or cost < existing[0]:
+                        nodes.append(
+                            (
+                                node_id,
+                                ("skip",),
+                            )
+                        )
+
                         bucket[energy_k] = (
                             cost,
-                            state,
-                            energy_k,
-                            ("skip",),
+                            len(nodes) - 1,
                         )
 
                     if remaining <= 0.000001:
@@ -1569,15 +1574,20 @@ class EVPlanner:
                             existing = out_bucket.get(new_key)
 
                             if existing is None or new_cost < existing[0]:
+                                nodes.append(
+                                    (
+                                        node_id,
+                                        (
+                                            "full",
+                                            phase,
+                                            current_a,
+                                        ),
+                                    )
+                                )
+
                                 out_bucket[new_key] = (
                                     new_cost,
-                                    state,
-                                    energy_k,
-                                    (
-                                        "full",
-                                        phase,
-                                        current_a,
-                                    ),
+                                    len(nodes) - 1,
                                 )
 
                         ##########################################################
@@ -1692,16 +1702,21 @@ class EVPlanner:
                         existing = out_bucket.get(new_key)
 
                         if existing is None or new_cost < existing[0]:
+                            nodes.append(
+                                (
+                                    node_id,
+                                    (
+                                        "finish",
+                                        phase,
+                                        best_current,
+                                        finish_amount,
+                                    ),
+                                )
+                            )
+
                             out_bucket[new_key] = (
                                 new_cost,
-                                state,
-                                energy_k,
-                                (
-                                    "finish",
-                                    phase,
-                                    best_current,
-                                    finish_amount,
-                                ),
+                                len(nodes) - 1,
                             )
 
             layers.append(next_layer)
@@ -1720,15 +1735,14 @@ class EVPlanner:
         best_cost = None
 
         best_switches = None
+        best_node_id = None
 
         for state, energies in last_layer.items():
             _phase, switches = state
 
             for energy_k, (
                 cost,
-                _p,
-                _pe,
-                _a,
+                node_id,
             ) in energies.items():
                 if (
                     best_state is None
@@ -1749,6 +1763,7 @@ class EVPlanner:
                     best_cost = cost
 
                     best_switches = switches
+                    best_node_id = node_id
 
         if best_state is None:
             for hour in ordered_hours:
@@ -1778,25 +1793,16 @@ class EVPlanner:
 
         actions = [None] * count
 
-        state = best_state
-
-        energy_k = best_energy_key
+        node_id = best_node_id
 
         index = count
 
         while index > 0:
-            (
-                _cost,
-                parent_state,
-                parent_energy,
-                action,
-            ) = layers[index][state][energy_k]
+            parent_node_id, action = nodes[node_id]
 
             actions[index - 1] = action
 
-            state = parent_state
-
-            energy_k = parent_energy
+            node_id = parent_node_id
 
             index -= 1
 
