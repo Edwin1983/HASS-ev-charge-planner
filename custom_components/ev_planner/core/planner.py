@@ -1719,7 +1719,50 @@ class EVPlanner:
                                 len(nodes) - 1,
                             )
 
-            layers.append(next_layer)
+            ##################################################################
+            # Pareto-pruning binnen iedere (fase, wisselingen)-state.
+            #
+            # Voor dezelfde state is een entry met meer/evenveel energie
+            # en lagere/evenveel kosten altijd minstens zo goed als een
+            # entry met minder energie en hogere kosten: vanaf dit punt
+            # zijn de toegestane vervolgovergangen identiek, terwijl de
+            # resterende energievraag alleen maar kleiner is.
+            #
+            # De reconstructie blijft geldig omdat entries naar immutable
+            # nodes verwijzen en dus niet naar verwijderde layer-entries.
+            ##################################################################
+
+            pruned_layer = {}
+
+            for state, energies in next_layer.items():
+                ordered_energy_keys = sorted(
+                    energies,
+                    reverse=True,
+                )
+
+                best_cost_so_far = None
+                kept = {}
+
+                for energy_k in ordered_energy_keys:
+                    entry = energies[energy_k]
+                    cost = entry[0]
+
+                    if (
+                        best_cost_so_far is None
+                        or cost < best_cost_so_far - 0.000001
+                    ):
+                        kept[energy_k] = entry
+
+                        if (
+                            best_cost_so_far is None
+                            or cost < best_cost_so_far
+                        ):
+                            best_cost_so_far = cost
+
+                if kept:
+                    pruned_layer[state] = kept
+
+            layers.append(pruned_layer)
 
         ######################################################################
         # Beste eindstate: maximale energie, dan minimale kosten,
