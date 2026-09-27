@@ -1321,6 +1321,12 @@ class EVPlanner:
         # laag naar hoog vermogen.
         full_options = {}
 
+        # finish_options bevat per slot/fase alleen de stroomsterktes die
+        # voor een gecomprimeerd laatste laadvenster geldig zijn. De lijst
+        # staat oplopend op geleverde energie, zodat de eerste stroom die
+        # het resterende doel haalt via bisect_left kan worden gevonden.
+        finish_options = {}
+
         valid_currents_by_phase = {
             1: self._valid_currents(1),
             3: self._valid_currents(3),
@@ -1339,6 +1345,7 @@ class EVPlanner:
 
             for phase in (1, 3):
                 options = []
+                finish_candidates = []
 
                 if duration > 0:
                     for current_a in valid_currents_by_phase[phase]:
@@ -1362,6 +1369,13 @@ class EVPlanner:
                         if paid < 0:
                             paid = 0.0
 
+                        if prices[index] <= max_price:
+                            finish_candidates.append((current_a, power * duration))
+                        else:
+                            free_full = min(pv_rates[index], power) * duration
+                            if free_full >= amount - 0.000001:
+                                finish_candidates.append((current_a, amount))
+
                         ##########################################################
                         # max_price: een uur boven de maximumprijs
                         # mag als VOL uur alleen worden gebruikt als
@@ -1383,6 +1397,7 @@ class EVPlanner:
                         )
 
                 full_options[(index, phase)] = options
+                finish_options[(index, phase)] = finish_candidates
 
         ######################################################################
         # Veilige bovengrens voor resterende energie.
@@ -1586,48 +1601,22 @@ class EVPlanner:
                         if duration <= 0:
                             continue
 
-                        pv_rate = pv_rates[index]
+                        finish_candidates = finish_options[(index, phase)]
 
-                        price_ok_currents = valid_currents_by_phase[phase]
-
-                        best_current = None
-
-                        for current_a in price_ok_currents:
-                            power = self._actual_power_for_current(
-                                current_a,
-                                phase,
-                            )
-
-                            if prices[index] > max_price:
-                                ####################################################
-                                # Boven de maximumprijs mag dit volledige
-                                # uur alleen worden gebruikt wanneer de
-                                # volledige laadenergie door PV wordt
-                                # gedekt. Het uur blijft daarbij volledig
-                                # actief; alleen het eerste en laatste
-                                # actieve uur mogen onvolledig zijn.
-                                ####################################################
-
-                                free_energy = min(
-                                    pv_rate,
-                                    power,
-                                ) * duration
-
-                                if free_energy < power * duration - 0.000001:
-                                    continue
-
-                            if power * duration >= remaining - 0.000001:
-                                best_current = current_a
-
-                                break
-
-                        if best_current is None:
+                        if not finish_candidates:
                             continue
 
-                        power = self._actual_power_for_current(
-                            best_current,
-                            phase,
+                        candidate_energies = [item[1] for item in finish_candidates]
+                        candidate_index = bisect_left(
+                            candidate_energies,
+                            remaining - 0.000001,
                         )
+
+                        if candidate_index >= len(finish_candidates):
+                            continue
+
+                        best_current, full_amount = finish_candidates[candidate_index]
+                        power = full_amount / duration
 
                         finish_duration = remaining / power
 
