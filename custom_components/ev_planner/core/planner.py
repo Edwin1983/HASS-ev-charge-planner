@@ -1318,7 +1318,7 @@ class EVPlanner:
         prices = []
 
         # full_options[(index, phase)] = list van
-        # (current_a, amount_kwh, free_kwh, paid_kwh), oplopend van
+        # (current_a, amount_kwh, amount_key, free_kwh, paid_kwh), oplopend van
         # laag naar hoog vermogen.
         full_options = {}
 
@@ -1382,10 +1382,15 @@ class EVPlanner:
                         if prices[index] > max_price and paid > 0.000001:
                             continue
 
+                        amount_key = int(
+                            amount * 1000000000.0 + 0.5
+                        )
+
                         options.append(
                             (
                                 current_a,
                                 amount,
+                                amount_key,
                                 free,
                                 paid,
                             )
@@ -1431,16 +1436,10 @@ class EVPlanner:
 
         NONE_PHASE = 0
 
-
-        ENERGY_DECIMALS = 9
+        # DP energy keys are integer nano-kWh. Convert back to kWh only
+        # when a real amount is needed.
         ENERGY_SCALE = 1000000000.0
-
-        def energy_key(value):
-            # All energies are non-negative.  This is numerically equivalent
-            # to round(value, 9) for the DP key at the precision we use, but
-            # avoids Python's relatively expensive multi-digit round() on
-            # this hot path.
-            return int(value * ENERGY_SCALE + 0.5) / ENERGY_SCALE
+        target_key = int(target * ENERGY_SCALE + 0.5)
 
         start_state = (
             NONE_PHASE,
@@ -1454,7 +1453,7 @@ class EVPlanner:
         layers = [
             {
                 start_state: {
-                    energy_key(0.0): (
+                    0: (
                         0.0,
                         0,
                     )
@@ -1483,7 +1482,7 @@ class EVPlanner:
                     cost,
                     node_id,
                 ) in energies.items():
-                    remaining = target - energy_k
+                    remaining = target - (float(energy_k) / ENERGY_SCALE)
 
                     ##############################################################
                     # Veilige haalbaarheidspruning.
@@ -1497,7 +1496,7 @@ class EVPlanner:
                     ##############################################################
 
                     if (
-                        energy_k + suffix_max_energy[index]
+                        (float(energy_k) / ENERGY_SCALE) + suffix_max_energy[index]
                         < target - 0.000001
                     ):
                         continue
@@ -1553,13 +1552,14 @@ class EVPlanner:
                         for (
                             current_a,
                             amount,
+                            amount_key,
                             free,
                             paid,
                         ) in full_options[(index, phase)]:
                             if amount > remaining + 0.000001:
                                 continue
 
-                            new_energy = energy_k + amount
+                            new_energy_key = energy_k + amount_key
 
                             new_cost = (
                                 cost
@@ -1567,7 +1567,7 @@ class EVPlanner:
                                 - CURRENT_TIEBREAK_EPSILON * current_a
                             )
 
-                            new_key = energy_key(new_energy)
+                            new_key = new_energy_key
 
                             out_bucket = ensure(out_state)
 
@@ -1691,11 +1691,15 @@ class EVPlanner:
                         if finish_paid < 0:
                             finish_paid = 0.0
 
-                        new_energy = energy_k + finish_amount
+                        new_energy = (
+                            float(energy_k) / ENERGY_SCALE
+                        ) + finish_amount
 
                         new_cost = cost + finish_paid * prices[index]
 
-                        new_key = energy_key(new_energy)
+                        new_key = int(
+                            new_energy * ENERGY_SCALE + 0.5
+                        )
 
                         out_bucket = ensure(out_state)
 
@@ -1746,12 +1750,12 @@ class EVPlanner:
             ) in energies.items():
                 if (
                     best_state is None
-                    or energy_k > best_energy_key + 0.000001
+                    or energy_k > best_energy_key
                     or (
-                        abs(energy_k - best_energy_key) <= 0.000001 and cost < best_cost
+                        energy_k == best_energy_key and cost < best_cost
                     )
                     or (
-                        abs(energy_k - best_energy_key) <= 0.000001
+                        energy_k == best_energy_key
                         and abs(cost - best_cost) <= 0.000001
                         and switches < best_switches
                     )
@@ -1778,7 +1782,7 @@ class EVPlanner:
 
             return
 
-        if best_energy_key < target - 0.001:
+        if float(best_energy_key) / ENERGY_SCALE < target - 0.001:
             self.logger.warning(
                 "Laadopdracht kan niet volledig worden ingepland. "
                 f"Benodigd: {target:.2f} kWh, maximaal haalbaar: "
@@ -1922,7 +1926,7 @@ class EVPlanner:
 
         self.logger.debug(
             "GEZAMENLIJKE OPTIMALISATIE: "
-            f"{best_energy_key:.3f}/{target:.3f} kWh, "
+            f"{float(best_energy_key) / ENERGY_SCALE:.3f}/{target:.3f} kWh, "
             f"kosten EUR{best_cost:.4f}, "
             f"eindfase={best_state[0]}, "
             f"wisselingen={best_state[1]}"
