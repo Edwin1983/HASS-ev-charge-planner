@@ -1326,6 +1326,17 @@ class EVPlanner:
             3: self._valid_currents(3),
         }
 
+        power_by_phase_current = {
+            1: {},
+            3: {},
+        }
+
+        for phase in (1, 3):
+            for current_a in valid_currents_by_phase[phase]:
+                power_by_phase_current[phase][current_a] = (
+                    self._actual_power_for_current(current_a, phase)
+                )
+
         for index in range(count):
             hour = ordered_hours[index]
 
@@ -1342,10 +1353,7 @@ class EVPlanner:
 
                 if duration > 0:
                     for current_a in valid_currents_by_phase[phase]:
-                        power = self._actual_power_for_current(
-                            current_a,
-                            phase,
-                        )
+                        power = power_by_phase_current[phase][current_a]
 
                         amount = float(power * duration)
 
@@ -1593,10 +1601,7 @@ class EVPlanner:
                         best_current = None
 
                         for current_a in price_ok_currents:
-                            power = self._actual_power_for_current(
-                                current_a,
-                                phase,
-                            )
+                            power = power_by_phase_current[phase][current_a]
 
                             if prices[index] > max_price:
                                 ####################################################
@@ -1624,10 +1629,7 @@ class EVPlanner:
                         if best_current is None:
                             continue
 
-                        power = self._actual_power_for_current(
-                            best_current,
-                            phase,
-                        )
+                        power = power_by_phase_current[phase][best_current]
 
                         finish_duration = remaining / power
 
