@@ -58,6 +58,16 @@ jobs:
           cd -
           git worktree remove --force /tmp/ev-planner-baseline
 
+      - name: Run previous best performance benchmark
+        if: env.EV_PLANNER_RUN_PERFORMANCE == '1'
+        run: |
+          git worktree add --detach /tmp/ev-planner-best  cb054bfe633724aaa8cb7a6862412753728e00c4
+          cp tests/test_zonneplan_quarter_hour_prices.py /tmp/ev-planner-best/tests/test_zonneplan_quarter_hour_prices.py
+          cd /tmp/ev-planner-best
+          python -m pytest -q tests/test_zonneplan_quarter_hour_prices.py::test_57kwh_quarter_hour_planning_regression -s
+          cd -
+          git worktree remove --force /tmp/ev-planner-best
+
       - name: Profile planner performance
         if: env.EV_PLANNER_RUN_PERFORMANCE == '1'
         run: |
