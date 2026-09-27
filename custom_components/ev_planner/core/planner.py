@@ -1433,13 +1433,14 @@ class EVPlanner:
 
 
         ENERGY_DECIMALS = 9
+        ENERGY_SCALE = 1000000000.0
 
         def energy_key(value):
-
-            return round(
-                value,
-                ENERGY_DECIMALS,
-            )
+            # All energies are non-negative.  This is numerically equivalent
+            # to round(value, 9) for the DP key at the precision we use, but
+            # avoids Python's relatively expensive multi-digit round() on
+            # this hot path.
+            return int(value * ENERGY_SCALE + 0.5) / ENERGY_SCALE
 
         start_state = (
             NONE_PHASE,
