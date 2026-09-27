@@ -29,6 +29,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -44,6 +46,16 @@ jobs:
         run: |
           echo "workflow_dispatch performance input: ${{ inputs.performance }}"
           echo "EV_PLANNER_RUN_PERFORMANCE: $EV_PLANNER_RUN_PERFORMANCE"
+
+      - name: Run baseline performance benchmark
+        if: env.EV_PLANNER_RUN_PERFORMANCE == '1'
+        run: |
+          git worktree add --detach /tmp/ev-planner-baseline 9431846a36e4e445089b41baeb9a7a3ebd43abbf
+          cp tests/test_zonneplan_quarter_hour_prices.py /tmp/ev-planner-baseline/tests/test_zonneplan_quarter_hour_prices.py
+          cd /tmp/ev-planner-baseline
+          python -m pytest -q tests/test_zonneplan_quarter_hour_prices.py::test_57kwh_quarter_hour_planning_regression -s
+          cd -
+          git worktree remove --force /tmp/ev-planner-baseline
 
       - name: Run pytest
         run: python -m pytest -q ${{ inputs.performance == true && '-s' || '' }}
