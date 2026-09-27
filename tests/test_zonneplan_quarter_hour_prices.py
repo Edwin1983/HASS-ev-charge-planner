@@ -452,14 +452,14 @@ class DummyApp:
 
 
 def test_57kwh_quarter_hour_planning_regression():
-    """Benchmark a realistic 57 kWh quarter-hour planning problem.
+    """Benchmark the same realistic 57 kWh quarter-hour workload repeatedly.
 
-    This is intentionally opt-in because the current exact optimizer is
-    known to be computationally expensive for long quarter-hour horizons.
-    Run with EV_PLANNER_RUN_PERFORMANCE=1 and pytest -s to capture the
-    wall-clock baseline before changing the optimizer.
+    The benchmark is opt-in. One warm-up run is followed by ten timed runs.
+    The median is the primary number because individual CI runner samples
+    can vary substantially.
     """
     import os
+    import statistics
     import time
 
     if os.getenv("EV_PLANNER_RUN_PERFORMANCE") != "1":
@@ -486,8 +486,6 @@ def test_57kwh_quarter_hour_planning_regression():
         quarter_start = start + timedelta(minutes=15 * index)
         quarter_end = quarter_start + timedelta(minutes=15)
 
-        # Mix cheap and expensive quarters so the optimizer must actually
-        # compare alternatives rather than simply filling every slot.
         price = [0.18, 0.42, 0.27, 0.11][index % 4]
 
         price_hours.append(
@@ -508,44 +506,59 @@ def test_57kwh_quarter_hour_planning_regression():
             )
         )
 
-    planner = EVPlanner(
-        PriceData(hours=price_hours),
-        SolcastData(hours=solar_hours),
-        PlannerSettings(
-            energy_needed_kwh=57.0,
-            departure_time=start + timedelta(minutes=15 * 60),
-            max_price=1.0,
-            solar_is_free=False,
-            max_charge_power_kw=11.04,
-            max_phase_switches=8,
-        ),
-        Logger(),
+    def create_planner():
+        return EVPlanner(
+            PriceData(hours=price_hours),
+            SolcastData(hours=solar_hours),
+            PlannerSettings(
+                energy_needed_kwh=57.0,
+                departure_time=start + timedelta(minutes=15 * 60),
+                max_price=1.0,
+                solar_is_free=False,
+                max_charge_power_kw=11.04,
+                max_phase_switches=8,
+            ),
+            Logger(),
+        )
+
+    # Warm up Python/import/cache effects before collecting measurements.
+    warmup_plan = create_planner().create_plan()
+    assert warmup_plan.complete
+
+    samples = []
+
+    for _ in range(10):
+        planner = create_planner()
+        started = time.perf_counter()
+        plan = planner.create_plan()
+        samples.append(time.perf_counter() - started)
+
+        assert plan.complete
+        assert abs(plan.energy_planned_kwh - 57.0) < 0.000001
+        assert plan.missing_energy_kwh < 0.000001
+
+        selected = [decision for decision in plan.decisions if decision.selected]
+        assert selected
+
+        switches = 0
+        previous_phase = None
+
+        for decision in selected:
+            if previous_phase is not None and decision.phases != previous_phase:
+                switches += 1
+            previous_phase = decision.phases
+
+        assert switches <= 8
+
+        for decision in selected:
+            assert decision.hour.end <= planner.settings.departure_time
+            assert decision.charge_current_a >= 6
+            assert decision.charge_current_a <= 16
+
+    print(
+        "57 kWh / 60 quarter-hours planner runtime: "
+        f"min={min(samples):.3f}s "
+        f"median={statistics.median(samples):.3f}s "
+        f"mean={statistics.mean(samples):.3f}s "
+        f"max={max(samples):.3f}s"
     )
-
-    started = time.perf_counter()
-    plan = planner.create_plan()
-    elapsed = time.perf_counter() - started
-
-    print(f"57 kWh / 60 quarter-hours planner runtime: {elapsed:.3f}s")
-
-    assert plan.complete
-    assert abs(plan.energy_planned_kwh - 57.0) < 0.000001
-    assert plan.missing_energy_kwh < 0.000001
-
-    selected = [decision for decision in plan.decisions if decision.selected]
-    assert selected
-
-    switches = 0
-    previous_phase = None
-
-    for decision in selected:
-        if previous_phase is not None and decision.phases != previous_phase:
-            switches += 1
-        previous_phase = decision.phases
-
-    assert switches <= 8
-
-    for decision in selected:
-        assert decision.hour.end <= planner.settings.departure_time
-        assert decision.charge_current_a >= 6
-        assert decision.charge_current_a <= 16
