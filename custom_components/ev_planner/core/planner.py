@@ -1465,16 +1465,6 @@ class EVPlanner:
             prev_layer = layers[index]
 
             next_layer = {}
-
-            def ensure(
-                state,
-            ):
-
-                if state not in next_layer:
-                    next_layer[state] = {}
-
-                return next_layer[state]
-
             for state, energies in prev_layer.items():
                 phase_prev, switches_prev = state
 
@@ -1506,7 +1496,19 @@ class EVPlanner:
                     # al bereikt is.
                     ##############################################################
 
-                    bucket = ensure(state)
+                    bucket = next_layer.get(state)
+
+
+
+                    if bucket is None:
+
+
+                        bucket = {}
+
+
+                        next_layer[state] = bucket
+
+
 
                     existing = bucket.get(energy_k)
 
@@ -1569,7 +1571,19 @@ class EVPlanner:
 
                             new_key = new_energy_key
 
-                            out_bucket = ensure(out_state)
+                            out_bucket = next_layer.get(out_state)
+
+
+
+                            if out_bucket is None:
+
+
+                                out_bucket = {}
+
+
+                                next_layer[out_state] = out_bucket
+
+
 
                             existing = out_bucket.get(new_key)
 
@@ -1701,7 +1715,19 @@ class EVPlanner:
                             new_energy * ENERGY_SCALE + 0.5
                         )
 
-                        out_bucket = ensure(out_state)
+                        out_bucket = next_layer.get(out_state)
+
+
+
+                        if out_bucket is None:
+
+
+                            out_bucket = {}
+
+
+                            next_layer[out_state] = out_bucket
+
+
 
                         existing = out_bucket.get(new_key)
 
