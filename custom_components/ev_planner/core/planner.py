@@ -116,6 +116,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from math import ceil
 
 from .logger import Logger
 from .solar import apply_solar_only
@@ -1598,38 +1599,66 @@ class EVPlanner:
 
                         price_ok_currents = valid_currents_by_phase[phase]
 
-                        best_current = None
+                        ##################################################################
+                        # De oude implementatie liep hier voor iedere DP-state
+                        # alle laadstromen af. Dat is een hot path: bij een
+                        # 60-kwartier benchmark worden miljoenen van deze
+                        # controles uitgevoerd.
+                        #
+                        # Omdat geldige laadstromen opeenvolgend 6..N A zijn
+                        # en het laadvermogen lineair met de stroom meeloopt,
+                        # kan de minimaal benodigde stroom rechtstreeks
+                        # worden berekend. Dit is exact equivalent aan het
+                        # zoeken naar de eerste stroom waarbij
+                        # power * duration >= remaining - 1e-6.
+                        ##################################################################
 
-                        for current_a in price_ok_currents:
-                            power = power_by_phase_current[phase][current_a]
-
-                            if prices[index] > max_price:
-                                ####################################################
-                                # Boven de maximumprijs mag dit volledige
-                                # uur alleen worden gebruikt wanneer de
-                                # volledige laadenergie door PV wordt
-                                # gedekt. Het uur blijft daarbij volledig
-                                # actief; alleen het eerste en laatste
-                                # actieve uur mogen onvolledig zijn.
-                                ####################################################
-
-                                free_energy = min(
-                                    pv_rate,
-                                    power,
-                                ) * duration
-
-                                if free_energy < power * duration - 0.000001:
-                                    continue
-
-                            if power * duration >= remaining - 0.000001:
-                                best_current = current_a
-
-                                break
-
-                        if best_current is None:
+                        if duration <= 0 or not price_ok_currents:
                             continue
 
+                        minimum_current = int(price_ok_currents[0])
+                        maximum_current = int(price_ok_currents[-1])
+
+                        required_current = int(
+                            ceil(
+                                (
+                                    (remaining - 0.000001)
+                                    * 1000.0
+                                )
+                                / (
+                                    VOLTAGE_V
+                                    * float(phase)
+                                    * duration
+                                )
+                            )
+                        )
+
+                        if required_current < minimum_current:
+                            required_current = minimum_current
+
+                        if required_current > maximum_current:
+                            continue
+
+                        best_current = required_current
                         power = power_by_phase_current[phase][best_current]
+
+                        if prices[index] > max_price:
+                            ####################################################
+                            # Boven de maximumprijs mag dit volledige
+                            # uur alleen worden gebruikt wanneer de
+                            # volledige laadenergie door PV wordt
+                            # gedekt. Het uur blijft daarbij volledig
+                            # actief; alleen het eerste en laatste
+                            # actieve uur mogen onvolledig zijn.
+                            ####################################################
+
+                            free_energy = min(
+                                pv_rate,
+                                power,
+                            ) * duration
+
+                            if free_energy < power * duration - 0.000001:
+                                continue
 
                         finish_duration = remaining / power
 
