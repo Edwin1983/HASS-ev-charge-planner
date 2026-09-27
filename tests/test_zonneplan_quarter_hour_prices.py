@@ -525,6 +525,21 @@ def test_57kwh_quarter_hour_planning_regression():
     warmup_plan = create_planner().create_plan()
     assert warmup_plan.complete
 
+    if os.getenv("EV_PLANNER_RUN_PROFILE") == "1":
+        import cProfile
+        import pstats
+
+        profiler = cProfile.Profile()
+        profiler.enable()
+        profile_plan = create_planner().create_plan()
+        profiler.disable()
+        assert profile_plan.complete
+
+        print("\n--- planner cProfile (cumulative) ---")
+        stats = pstats.Stats(profiler).sort_stats("cumulative")
+        stats.print_stats(30)
+        print("--- end planner cProfile ---\n")
+
     samples = []
 
     for _ in range(10):
