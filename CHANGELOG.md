@@ -2,6 +2,26 @@
 
 All notable changes to EV Charge Planner are documented here.
 
+## [1.1.5-beta.2] - 2026-09-27
+
+### Changed
+
+- Optimized the planner finish-current lookup to avoid repeated linear current searches during scheduling.
+- Added a repeatable performance benchmark for the 57 kWh / 60 quarter-hour planning workload.
+- Added a same-run baseline comparison for the performance benchmark.
+
+### Performance
+
+- Baseline median planner runtime: 12.792s.
+- Optimized median planner runtime: 11.692s.
+- Median runtime reduction: 8.6%.
+
+### Validation
+
+- Pytest: passed.
+- Ruff: passed.
+- Performance benchmark: passed.
+
 ## [1.1.1] - 2026-09-19
 
 ### Changed
