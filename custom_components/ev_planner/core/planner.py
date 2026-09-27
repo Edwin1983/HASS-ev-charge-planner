@@ -1496,7 +1496,17 @@ class EVPlanner:
                     # al bereikt is.
                     ##############################################################
 
-                    bucket = next_layer.setdefault(state, {})
+                    bucket = next_layer.get(state)
+
+
+
+                    if bucket is None:
+
+
+                        bucket = {}
+
+
+                        next_layer[state] = bucket
 
 
 
@@ -1561,7 +1571,17 @@ class EVPlanner:
 
                             new_key = new_energy_key
 
-                            out_bucket = next_layer.setdefault(out_state, {})
+                            out_bucket = next_layer.get(out_state)
+
+
+
+                            if out_bucket is None:
+
+
+                                out_bucket = {}
+
+
+                                next_layer[out_state] = out_bucket
 
 
 
@@ -1695,7 +1715,17 @@ class EVPlanner:
                             new_energy * ENERGY_SCALE + 0.5
                         )
 
-                        out_bucket = next_layer.setdefault(out_state, {})
+                        out_bucket = next_layer.get(out_state)
+
+
+
+                        if out_bucket is None:
+
+
+                            out_bucket = {}
+
+
+                            next_layer[out_state] = out_bucket
 
 
 
