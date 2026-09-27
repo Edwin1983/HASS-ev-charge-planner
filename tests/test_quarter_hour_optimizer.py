@@ -38,7 +38,7 @@ def test_cheap_quarter_is_selected_before_expensive_quarter():
     assert plan.energy_kwh == 0.345
     assert len(plan.actions) == 1
     assert plan.actions[0].index == 1
-    assert plan.actions[0].cost == 0.0
+    assert abs(plan.actions[0].cost - 0.0345) < 0.000001
 
 
 def test_max_price_is_a_hard_per_kwh_limit():
