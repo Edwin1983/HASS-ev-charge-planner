@@ -136,6 +136,20 @@ class QuarterHourOptimizer:
                     ):
                         continue
 
+                    # Charging is optional in every quarter-hour. Carry the
+                    # current node forward unchanged so the optimizer can
+                    # leave expensive/ineligible slots unused. A skipped slot
+                    # does not create or count a phase switch.
+                    if (
+                        node.energy_ticks + suffix_capacity[index + 1]
+                        >= target_ticks
+                    ):
+                        skip_bucket = next_frontiers.setdefault(
+                            (phase_before, switches_before),
+                            {},
+                        )
+                        self._keep_frontier(skip_bucket, node)
+
                     for phase in (1, 3):
                         switches = self._switch_count(
                             phase_before,
