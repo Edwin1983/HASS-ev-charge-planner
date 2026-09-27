@@ -2,6 +2,25 @@
 
 All notable changes to EV Charge Planner are documented here.
 
+## [1.1.5-beta.3] - 2026-09-27
+
+### Changed
+
+- Continued performance optimization of the planner's dynamic-programming scheduler.
+- Kept the current stable performance implementation after evaluating additional pruning and dictionary-lookup experiments.
+- Preserved the existing planner behavior and electrical constraints while improving scheduling runtime.
+
+### Performance
+
+- Current validated benchmark: approximately 5.3s median for the 57 kWh / 60 quarter-hour planning workload.
+- The current version is approximately 29% faster than the historical pre-optimization baseline in the same benchmark workflow.
+
+### Validation
+
+- Pytest: passed.
+- Ruff: passed.
+- Performance benchmark: passed.
+
 ## [1.1.5-beta.2] - 2026-09-27
 
 ### Changed
