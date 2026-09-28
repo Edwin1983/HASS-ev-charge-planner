@@ -164,22 +164,14 @@ class QuarterHourOptimizer:
                         if switches > self.max_phase_switches:
                             continue
 
-                        # For a grid-eligible slot, maximum current dominates
-                        # lower currents. Above max_price, however, a lower
-                        # current can be fully PV-covered while maximum current
-                        # would mix PV and grid. Keep the highest PV-safe current
-                        # as the second non-terminal candidate.
-                        currents = [self._max_current(phase)]
-                        if float(slot.price) > self.max_price:
-                            pv_rate = self._pv_rate(slot)
-                            pv_current = int(
-                                pv_rate * 1000.0 / (VOLTAGE * phase)
-                            )
-                            pv_current = min(self._max_current(phase), pv_current)
-                            if pv_current >= MIN_CURRENT and pv_current not in currents:
-                                currents.append(pv_current)
-
-                        for current in currents:
+                        # Every integer current is a real decision.
+                        # Maximum-current-only pruning is not safe when the
+                        # target energy must be hit exactly: a lower current
+                        # can leave a feasible remainder for later slots while
+                        # the maximum current overshoots it.  Above max_price,
+                        # the hard price constraint below naturally removes
+                        # currents that would require grid energy.
+                        for current in range(MIN_CURRENT, self._max_current(phase) + 1):
                             action_power = self._power_kw(phase, current)
                             amount = action_power * duration_hours
                             amount_ticks = self._to_ticks(amount)
