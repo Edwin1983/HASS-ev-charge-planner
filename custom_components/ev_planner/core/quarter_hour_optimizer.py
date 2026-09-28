@@ -217,66 +217,62 @@ class QuarterHourOptimizer:
                             )
                             self._keep_frontier(bucket, candidate)
 
-                        # Terminal partial action. This is the only action
-                        # that may be shorter than the quarter-hour.
-                        duration = duration_hours
-                        max_power = self._power_kw(
-                            phase,
-                            self._max_current(phase),
-                        )
+                        # Terminal partial action. Every integer current is
+                        # a real terminal decision because current changes the
+                        # finish duration, which changes how much PV can be
+                        # consumed. This is especially important for negative
+                        # prices and PV-covered slots.
                         required_kwh = (
                             float(remaining_ticks) / ENERGY_TICKS_PER_KWH
                         )
-                        required_power = required_kwh / duration
 
-                        if required_power <= max_power + 0.000001:
-                            current = self._current_for_power(
-                                phase,
-                                required_power,
-                            )
-                            if current <= self._max_current(phase):
-                                actual_power = self._power_kw(phase, current)
-                                finish_duration = required_kwh / actual_power
+                        for current in range(
+                            MIN_CURRENT,
+                            self._max_current(phase) + 1,
+                        ):
+                            actual_power = self._power_kw(phase, current)
+                            finish_duration = required_kwh / actual_power
 
-                                if finish_duration <= duration + 0.000001:
-                                    free = min(
-                                        self._pv_rate(slot),
-                                        actual_power,
-                                    ) * finish_duration
-                                    paid = max(0.0, required_kwh - free)
+                            if finish_duration > duration + 0.000001:
+                                continue
 
-                                    if (
-                                        float(slot.price) <= self.max_price
-                                        or paid <= 0.000001
-                                    ):
-                                        action = QuarterHourAction(
-                                            index=index,
-                                            start=slot.start,
-                                            end=slot.start
-                                            + self._seconds_to_timedelta(
-                                                finish_duration * 3600.0
-                                            ),
-                                            phases=phase,
-                                            current_a=current,
-                                            energy_kwh=required_kwh,
-                                            free_energy_kwh=free,
-                                            paid_energy_kwh=paid,
-                                            cost=paid * float(slot.price),
-                                        )
-                                        candidate = _Node(
-                                            cost=node.cost
-                                            + action.cost,
-                                            energy_ticks=target_ticks,
-                                            phase=phase,
-                                            switches=switches,
-                                            parent=node,
-                                            action=action,
-                                        )
-                                        if self._better_terminal(
-                                            candidate,
-                                            best_terminal,
-                                        ):
-                                            best_terminal = candidate
+                            free = min(
+                                self._pv_rate(slot),
+                                actual_power,
+                            ) * finish_duration
+                            paid = max(0.0, required_kwh - free)
+
+                            if (
+                                float(slot.price) <= self.max_price
+                                or paid <= 0.000001
+                            ):
+                                action = QuarterHourAction(
+                                    index=index,
+                                    start=slot.start,
+                                    end=slot.start
+                                    + self._seconds_to_timedelta(
+                                        finish_duration * 3600.0
+                                    ),
+                                    phases=phase,
+                                    current_a=current,
+                                    energy_kwh=required_kwh,
+                                    free_energy_kwh=free,
+                                    paid_energy_kwh=paid,
+                                    cost=paid * float(slot.price),
+                                )
+                                candidate = _Node(
+                                    cost=node.cost + action.cost,
+                                    energy_ticks=target_ticks,
+                                    phase=phase,
+                                    switches=switches,
+                                    parent=node,
+                                    action=action,
+                                )
+                                if self._better_terminal(
+                                    candidate,
+                                    best_terminal,
+                                ):
+                                    best_terminal = candidate
 
             frontiers = self._prune_frontiers(next_frontiers)
 
