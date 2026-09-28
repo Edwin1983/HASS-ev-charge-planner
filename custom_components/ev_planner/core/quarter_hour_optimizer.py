@@ -20,7 +20,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from math import inf
 
 from .config import (
     MAX_CURRENT_1PH,
