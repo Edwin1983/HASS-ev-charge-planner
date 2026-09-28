@@ -451,6 +451,56 @@ class DummyApp:
         return self.attributes
 
 
+
+def test_57kwh_quarter_hour_dp_regression():
+    """Benchmark the quarter-hour dynamic-programming core directly."""
+    import os
+    import time
+
+    if os.getenv("EV_PLANNER_RUN_PERFORMANCE") != "1":
+        import pytest
+        pytest.skip("Performance benchmark disabled")
+
+    from custom_components.ev_planner.core.planner import EVPlanner, PlannerSettings
+
+    start = (
+        datetime.now().astimezone().replace(second=0, microsecond=0)
+        + timedelta(minutes=15)
+    )
+
+    def create_planner_and_hours():
+        price_hours = []
+        solar_hours = []
+        for index in range(60):
+            quarter_start = start + timedelta(minutes=15 * index)
+            quarter_end = quarter_start + timedelta(minutes=15)
+            price = [0.18, 0.42, 0.27, 0.11][index % 4]
+            price_hours.append(Hour(start=quarter_start, end=quarter_end, price=price))
+            solar_hours.append(Hour(start=quarter_start, end=quarter_end, pv_estimate=0.0, pv_estimate10=0.0, pv_estimate90=0.0))
+        planner = EVPlanner(
+            PriceData(hours=price_hours), SolcastData(hours=solar_hours),
+            PlannerSettings(
+                energy_needed_kwh=57.0,
+                departure_time=start + timedelta(minutes=15 * 60),
+                max_price=1.0, solar_is_free=False,
+                max_charge_power_kw=11.04, max_phase_switches=8,
+            ), Logger(),
+        )
+        return planner, price_hours
+
+    planner, warmup_hours = create_planner_and_hours()
+    planner._optimize_hours(warmup_hours)
+
+    started = time.perf_counter()
+    for _ in range(10):
+        planner, hours = create_planner_and_hours()
+        planner._optimize_hours(hours)
+        planned = sum(hour.charge_energy for hour in hours)
+        assert abs(planned - 57.0) < 0.000001
+    elapsed = time.perf_counter() - started
+
+    print(f"57 kWh / 60 quarter-hours DP runtime: total_10_runs={elapsed:.3f}s")
+
 def test_57kwh_quarter_hour_planning_regression():
     """Benchmark the same realistic 57 kWh quarter-hour workload repeatedly.
 
