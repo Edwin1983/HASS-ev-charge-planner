@@ -1461,10 +1461,21 @@ class EVPlanner:
             }
         ]
 
+        nodes_append = nodes.append
+
         for index in range(count):
             prev_layer = layers[index]
 
             next_layer = {}
+
+            price = prices[index]
+            options_by_phase = (
+                None,
+                full_options[(index, 1)],
+                None,
+                full_options[(index, 3)],
+            )
+
             for state, energies in prev_layer.items():
                 phase_prev, switches_prev = state
 
@@ -1494,24 +1505,11 @@ class EVPlanner:
                     # al bereikt is.
                     ##############################################################
 
-                    bucket = next_layer.get(state)
-
-
-
-                    if bucket is None:
-
-
-                        bucket = {}
-
-
-                        next_layer[state] = bucket
-
-
-
+                    bucket = next_layer.setdefault(state, {})
                     existing = bucket.get(energy_k)
 
                     if existing is None or cost < existing[0]:
-                        nodes.append(
+                        nodes_append(
                             (
                                 node_id,
                                 ("skip",),
@@ -1555,13 +1553,16 @@ class EVPlanner:
                             out_bucket = {}
                             next_layer[out_state] = out_bucket
 
+                        out_bucket_get = out_bucket.get
+                        options = options_by_phase[phase]
+
                         for (
                             current_a,
                             amount,
                             amount_key,
                             free,
                             paid,
-                        ) in full_options[(index, phase)]:
+                        ) in options:
                             if amount > remaining + 0.000001:
                                 break
 
@@ -1569,16 +1570,16 @@ class EVPlanner:
 
                             new_cost = (
                                 cost
-                                + paid * prices[index]
+                                + paid * price
                                 - CURRENT_TIEBREAK_EPSILON * current_a
                             )
 
                             new_key = new_energy_key
 
-                            existing = out_bucket.get(new_key)
+                            existing = out_bucket_get(new_key)
 
                             if existing is None or new_cost < existing[0]:
-                                nodes.append(
+                                nodes_append(
                                     (
                                         node_id,
                                         (
@@ -1657,7 +1658,7 @@ class EVPlanner:
                         best_current = required_current
                         power = power_by_phase_current[phase][best_current]
 
-                        if prices[index] > max_price:
+                        if price > max_price:
                             ####################################################
                             # Boven de maximumprijs mag dit volledige
                             # uur alleen worden gebruikt wanneer de
@@ -1722,7 +1723,7 @@ class EVPlanner:
                         existing = out_bucket.get(new_key)
 
                         if existing is None or new_cost < existing[0]:
-                            nodes.append(
+                            nodes_append(
                                 (
                                     node_id,
                                     (
