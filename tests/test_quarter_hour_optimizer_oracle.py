@@ -81,7 +81,6 @@ def _oracle(slots, target_kwh, max_price, max_power_kw, max_phase_switches):
                 if new_switches > max_phase_switches:
                     continue
 
-                # Full-quarter action.
                 energy = power * QUARTER_HOURS
                 energy_ticks_added = _ticks(energy)
                 if energy_ticks_added > 0:
@@ -106,8 +105,6 @@ def _oracle(slots, target_kwh, max_price, max_power_kw, max_phase_switches):
                                 if best is None or candidate[0] < best[0] - 0.000000001:
                                     best = candidate
 
-                # Partial terminal action: use this current for exactly the
-                # remaining energy, provided it fits in the quarter-hour.
                 remaining_kwh = (target_ticks - energy_ticks) / TICKS_PER_KWH
                 if remaining_kwh > 0.0:
                     finish_duration = remaining_kwh / power
@@ -202,8 +199,20 @@ def test_oracle_matches_negative_price():
     )
 
 
+def test_oracle_matches_one_phase_when_three_phase_is_below_minimum_current():
+    _assert_dp_matches_oracle(
+        prices=[-0.10, 0.05, 0.25, 0.80],
+        pv=[0.40, 0.10, 0.10, 0.0],
+        target=0.69,
+        max_price=0.15,
+        max_power=3.68,
+        switches=0,
+    )
+
+
 def test_oracle_random_small_matrix():
     rng = Random(20260928)
+    feasible_cases = 0
 
     for _ in range(100):
         prices = [
@@ -219,6 +228,11 @@ def test_oracle_random_small_matrix():
         max_power = rng.choice([3.68, 11.04])
         switches = rng.choice([0, 1, 2])
 
+        slots = _slots(prices, pv)
+        if _oracle(slots, target, max_price, max_power, switches) is None:
+            continue
+
+        feasible_cases += 1
         _assert_dp_matches_oracle(
             prices=prices,
             pv=pv,
@@ -227,3 +241,5 @@ def test_oracle_random_small_matrix():
             max_power=max_power,
             switches=switches,
         )
+
+    assert feasible_cases > 0
