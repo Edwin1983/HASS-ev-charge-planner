@@ -476,7 +476,15 @@ def test_57kwh_quarter_hour_dp_regression():
             quarter_end = quarter_start + timedelta(minutes=15)
             price = [0.18, 0.42, 0.27, 0.11][index % 4]
             price_hours.append(Hour(start=quarter_start, end=quarter_end, price=price))
-            solar_hours.append(Hour(start=quarter_start, end=quarter_end, pv_estimate=0.0, pv_estimate10=0.0, pv_estimate90=0.0))
+            solar_hours.append(
+                Hour(
+                    start=quarter_start,
+                    end=quarter_end,
+                    pv_estimate=0.0,
+                    pv_estimate10=0.0,
+                    pv_estimate90=0.0,
+                )
+            )
         planner = EVPlanner(
             PriceData(hours=price_hours), SolcastData(hours=solar_hours),
             PlannerSettings(
