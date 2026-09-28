@@ -1792,7 +1792,7 @@ class EVPlanner:
                         and switches < best_switches
                     )
                 ):
-                    best_state = state
+                    best_state = state_id
 
                     best_energy_key = energy_k
 
