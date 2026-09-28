@@ -424,7 +424,9 @@ class QuarterHourOptimizer:
         if phases == 1:
             max_power = min(MAX_POWER_1PH, self.max_power_kw)
         current = int(max_power * 1000.0 / (VOLTAGE * phases))
-        return min(MAX_CURRENT_1PH, max(current, MIN_CURRENT))
+        if current < MIN_CURRENT:
+            return 0
+        return min(MAX_CURRENT_1PH, current)
 
     @staticmethod
     def _current_for_power(phases: int, required_power: float) -> int:
