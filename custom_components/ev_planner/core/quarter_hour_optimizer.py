@@ -120,6 +120,11 @@ class QuarterHourOptimizer:
         for index, slot in enumerate(ordered):
             next_frontiers = {}
 
+            duration_hours = self._duration_hours(slot)
+            if duration_hours <= 0:
+                frontiers = self._prune_frontiers(next_frontiers)
+                continue
+
             for state, nodes in frontiers.items():
                 phase_before, switches_before = state
 
@@ -159,7 +164,68 @@ class QuarterHourOptimizer:
                         if switches > self.max_phase_switches:
                             continue
 
-                        # Only maximum current is needed for a non-terminal action.\n                        # For a fixed slot, phase and price, lower current has\n                        # the same cost per kWh and cannot reduce switch count.\n                        # Exact target energy is handled by the terminal action.\n                        current = self._max_current(phase)\n                        action_power = self._power_kw(phase, current)\n                        amount = action_power * duration_hours\n                        amount_ticks = self._to_ticks(amount)\n\n                        if amount_ticks > 0 and amount_ticks <= remaining_ticks:\n                            free = min(\n                                self._pv_rate(slot),\n                                action_power,\n                            ) * duration_hours\n                            paid = max(0.0, amount - free)\n\n                            if not (\n                                float(slot.price) > self.max_price\n                                and paid > 0.000001\n                            ):\n                                action = QuarterHourAction(\n                                    index=index,\n                                    start=slot.start,\n                                    end=slot.end,\n                                    phases=phase,\n                                    current_a=current,\n                                    energy_kwh=amount,\n                                    free_energy_kwh=free,\n                                    paid_energy_kwh=paid,\n                                    cost=paid * float(slot.price),\n                                )\n                                candidate = _Node(\n                                    cost=node.cost + paid * float(slot.price),\n                                    energy_ticks=node.energy_ticks + amount_ticks,\n                                    phase=phase,\n                                    switches=switches,\n                                    parent=node,\n                                    action=action,\n                                )\n\n                                bucket = next_frontiers.setdefault(\n                                    (phase, switches),\n                                    {},\n                                )\n                                self._keep_frontier(bucket, candidate)\n\n                        # Terminal partial action. This is the only action
+                        # For a grid-eligible slot, maximum current dominates
+                        # lower currents. Above max_price, however, a lower
+                        # current can be fully PV-covered while maximum current
+                        # would mix PV and grid. Keep the highest PV-safe current
+                        # as the second non-terminal candidate.
+                        currents = [self._max_current(phase)]
+                        if float(slot.price) > self.max_price:
+                            pv_rate = self._pv_rate(slot)
+                            pv_current = int(
+                                pv_rate * 1000.0 / (VOLTAGE * phase)
+                            )
+                            pv_current = min(self._max_current(phase), pv_current)
+                            if pv_current >= MIN_CURRENT and pv_current not in currents:
+                                currents.append(pv_current)
+
+                        for current in currents:
+                            action_power = self._power_kw(phase, current)
+                            amount = action_power * duration_hours
+                            amount_ticks = self._to_ticks(amount)
+
+                            if amount_ticks <= 0 or amount_ticks > remaining_ticks:
+                                continue
+
+                            free = min(
+                                self._pv_rate(slot),
+                                action_power,
+                            ) * duration_hours
+                            paid = max(0.0, amount - free)
+
+                            if (
+                                float(slot.price) > self.max_price
+                                and paid > 0.000001
+                            ):
+                                continue
+
+                            action = QuarterHourAction(
+                                index=index,
+                                start=slot.start,
+                                end=slot.end,
+                                phases=phase,
+                                current_a=current,
+                                energy_kwh=amount,
+                                free_energy_kwh=free,
+                                paid_energy_kwh=paid,
+                                cost=paid * float(slot.price),
+                            )
+                            candidate = _Node(
+                                cost=node.cost + paid * float(slot.price),
+                                energy_ticks=node.energy_ticks + amount_ticks,
+                                phase=phase,
+                                switches=switches,
+                                parent=node,
+                                action=action,
+                            )
+
+                            bucket = next_frontiers.setdefault(
+                                (phase, switches),
+                                {},
+                            )
+                            self._keep_frontier(bucket, candidate)
+
+                        # Terminal partial action. This is the only action
                         # that may be shorter than the quarter-hour.
                         duration = duration_hours
                         max_power = self._power_kw(
