@@ -35,7 +35,7 @@ jobs:
     env:
       PYTHONPATH: .
       EV_PLANNER_RUN_PERFORMANCE: "1"
-      EV_PLANNER_RUN_PROFILE: "1"
+      EV_PLANNER_RUN_PROFILE: "0"
 
     steps:
       - name: Checkout benchmark revision
@@ -62,7 +62,7 @@ jobs:
 
       - name: Run benchmark
         run: |
-          python -m pytest -q tests/test_zonneplan_quarter_hour_prices.py::test_57kwh_quarter_hour_planning_regression -s
+          python -m pytest -q tests/test_zonneplan_quarter_hour_prices.py::test_57kwh_quarter_hour_dp_regression -s
 
   test:
     name: Tests and linting
