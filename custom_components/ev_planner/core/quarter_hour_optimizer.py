@@ -233,7 +233,7 @@ class QuarterHourOptimizer:
                             actual_power = self._power_kw(phase, current)
                             finish_duration = required_kwh / actual_power
 
-                            if finish_duration > duration + 0.000001:
+                            if finish_duration > duration_hours + 0.000001:
                                 continue
 
                             free = min(
