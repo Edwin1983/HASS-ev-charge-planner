@@ -21,7 +21,7 @@ on:
 jobs:
   performance-ab:
     name: Performance A/B - ${{ matrix.label }}
-    if: inputs.performance == true || github.ref == 'refs/heads/experiment/quarter-hour-dp'
+    if: inputs.performance == true
     strategy:
       fail-fast: false
       matrix:
