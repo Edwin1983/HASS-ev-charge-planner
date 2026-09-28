@@ -1,4 +1,4 @@
-"""
+""" 
 Experimental quarter-hour EV optimizer.
 
 This module is intentionally separate from the production planner.
@@ -111,8 +111,6 @@ class QuarterHourOptimizer:
         target_ticks = self._to_ticks(self.target_kwh)
         suffix_capacity = self._build_suffix_capacity(ordered)
 
-        # State is (phase, switches). Each state contains only its
-        # non-dominated energy/cost frontier.
         frontiers = {(0, 0): {0: _Node(0.0, 0, 0, 0, None, None)}}
 
         best_terminal: _Node | None = None
@@ -141,10 +139,6 @@ class QuarterHourOptimizer:
                     ):
                         continue
 
-                    # Charging is optional in every quarter-hour. Carry the
-                    # current node forward unchanged so the optimizer can
-                    # leave expensive/ineligible slots unused. A skipped slot
-                    # does not create or count a phase switch.
                     if (
                         node.energy_ticks + suffix_capacity[index + 1]
                         >= target_ticks
@@ -164,14 +158,10 @@ class QuarterHourOptimizer:
                         if switches > self.max_phase_switches:
                             continue
 
-                        # Every integer current is a real decision.
-                        # Maximum-current-only pruning is not safe when the
-                        # target energy must be hit exactly: a lower current
-                        # can leave a feasible remainder for later slots while
-                        # the maximum current overshoots it.  Above max_price,
-                        # the hard price constraint below naturally removes
-                        # currents that would require grid energy.
-                        for current in range(MIN_CURRENT, self._max_current(phase) + 1):
+                        for current in range(
+                            MIN_CURRENT,
+                            self._max_current(phase) + 1,
+                        ):
                             action_power = self._power_kw(phase, current)
                             amount = action_power * duration_hours
                             amount_ticks = self._to_ticks(amount)
@@ -217,11 +207,6 @@ class QuarterHourOptimizer:
                             )
                             self._keep_frontier(bucket, candidate)
 
-                        # Terminal partial action. Every integer current is
-                        # a real terminal decision because current changes the
-                        # finish duration, which changes how much PV can be
-                        # consumed. This is especially important for negative
-                        # prices and PV-covered slots.
                         required_kwh = (
                             float(remaining_ticks) / ENERGY_TICKS_PER_KWH
                         )
@@ -277,8 +262,6 @@ class QuarterHourOptimizer:
             frontiers = self._prune_frontiers(next_frontiers)
 
             if best_terminal is not None:
-                # We can still find a cheaper terminal later, so do not stop
-                # merely because a complete plan exists.
                 pass
 
             if not frontiers and best_terminal is not None:
@@ -293,7 +276,10 @@ class QuarterHourOptimizer:
         suffix = [0] * (len(slots) + 1)
         for index in range(len(slots) - 1, -1, -1):
             slot = slots[index]
-            max_power = self._power_kw(3, self._max_current(3))
+            max_power = max(
+                self._power_kw(1, self._max_current(1)),
+                self._power_kw(3, self._max_current(3)),
+            )
             duration = self._duration_hours(slot)
             raw = max_power * duration
 
