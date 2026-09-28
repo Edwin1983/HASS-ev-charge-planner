@@ -1740,22 +1740,6 @@ class EVPlanner:
                                 len(nodes) - 1,
                             )
 
-            # Dominance pruning: within the same (phase, switches) state,
-            # a state with at least as much energy and no higher cost can never
-            # beat the lower-energy state in any future continuation.  Future
-            # transitions depend only on state, remaining energy and cost, so
-            # dominated energy buckets can be discarded safely.
-            for prune_state, prune_energies in list(next_layer.items()):
-                best_cost_seen = None
-                kept = {}
-                for prune_energy in sorted(prune_energies, reverse=True):
-                    prune_value = prune_energies[prune_energy]
-                    prune_cost = prune_value[0]
-                    if best_cost_seen is None or prune_cost < best_cost_seen:
-                        kept[prune_energy] = prune_value
-                        best_cost_seen = prune_cost
-                next_layer[prune_state] = kept
-
             layers.append(next_layer)
 
         ######################################################################
