@@ -1509,8 +1509,6 @@ class EVPlanner:
                     existing = bucket.get(energy_k)
 
                     if existing is None or cost < existing[0]:
-                        new_node_id = len(nodes)
-
                         nodes_append(
                             (
                                 node_id,
@@ -1520,7 +1518,7 @@ class EVPlanner:
 
                         bucket[energy_k] = (
                             cost,
-                            new_node_id,
+                            len(nodes) - 1,
                         )
 
                     if remaining <= 0.000001:
@@ -1581,8 +1579,6 @@ class EVPlanner:
                             existing = out_bucket_get(new_key)
 
                             if existing is None or new_cost < existing[0]:
-                                new_node_id = len(nodes)
-
                                 nodes_append(
                                     (
                                         node_id,
@@ -1596,7 +1592,7 @@ class EVPlanner:
 
                                 out_bucket[new_key] = (
                                     new_cost,
-                                    new_node_id,
+                                    len(nodes) - 1,
                                 )
 
                         ##########################################################
@@ -1727,8 +1723,6 @@ class EVPlanner:
                         existing = out_bucket.get(new_key)
 
                         if existing is None or new_cost < existing[0]:
-                            new_node_id = len(nodes)
-
                             nodes_append(
                                 (
                                     node_id,
@@ -1743,7 +1737,7 @@ class EVPlanner:
 
                             out_bucket[new_key] = (
                                 new_cost,
-                                new_node_id,
+                                len(nodes) - 1,
                             )
 
             layers.append(next_layer)
