@@ -1712,6 +1712,12 @@ class EVPlanner:
                             new_energy * ENERGY_SCALE + 0.5
                         )
 
+                        out_bucket = next_layer.get(out_state)
+
+                        if out_bucket is None:
+                            out_bucket = {}
+                            next_layer[out_state] = out_bucket
+
                         try:
                             existing = out_bucket[new_key]
                         except KeyError:
