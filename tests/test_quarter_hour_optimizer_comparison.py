@@ -113,7 +113,7 @@ def test_dp_matches_production_with_hard_price_limit():
     )
 
 
-def test_dp_matches_production_with_pv_and_price_limit():
+def test_dp_finds_cheaper_pv_safe_plan_than_production():
     slots = _slots(
         [0.80, 0.10, 0.70, 0.20],
         pv=[0.40, 0.0, 0.40, 0.0],
@@ -121,7 +121,18 @@ def test_dp_matches_production_with_pv_and_price_limit():
     production = _run_production(slots, 1.38, 0.25, switches=0)
     experimental = _run_experimental(slots, 1.38, 0.25, switches=0)
 
-    _assert_same_objective(production, experimental, 1.38)
+    assert production["complete"]
+    assert experimental.complete
+    assert abs(production["energy"] - 1.38) < 0.0026
+    assert abs(experimental.energy_kwh - 1.38) < 0.0026
+    assert experimental.cost < production["cost"]
+    assert abs(experimental.cost - 0.092) < 0.00001
+    assert abs(experimental.paid_energy_kwh - 0.92) < 0.0026
+    assert all(
+        action.paid_energy_kwh == 0.0
+        or slots[action.index].price <= 0.25
+        for action in experimental.actions
+    )
 
 
 def test_dp_matches_production_with_phase_switch_budget():
