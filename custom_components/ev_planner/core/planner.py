@@ -1960,12 +1960,19 @@ class EVPlanner:
 
             hour.paid_energy = float(paid)
 
+        if best_state == 0:
+            best_phase = NONE_PHASE
+            best_switches = 0
+        else:
+            best_phase = 1 if best_state & 1 else 3
+            best_switches = (best_state - 1) // 2
+
         self.logger.debug(
             "GEZAMENLIJKE OPTIMALISATIE: "
             f"{float(best_energy_key) / ENERGY_SCALE:.3f}/{target:.3f} kWh, "
             f"kosten EUR{best_cost:.4f}, "
-            f"eindfase={best_state[0]}, "
-            f"wisselingen={best_state[1]}"
+            f"eindfase={best_phase}, "
+            f"wisselingen={best_switches}"
         )
 
     ##########################################################################
