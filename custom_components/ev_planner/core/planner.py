@@ -1477,8 +1477,16 @@ class EVPlanner:
                 full_options[(index, 3)],
             )
 
-            for state, energies in prev_layer.items():
-                phase_prev, switches_prev = state
+            for state_id, energies in prev_layer.items():
+                if state_id == 0:
+                    phase_prev = NONE_PHASE
+                    switches_prev = 0
+                else:
+                    switches_prev = (state_id - 1) // 2
+                    if state_id & 1:
+                        phase_prev = 1
+                    else:
+                        phase_prev = 3
 
                 for energy_k, (
                     cost,
@@ -1506,7 +1514,7 @@ class EVPlanner:
                     # al bereikt is.
                     ##############################################################
 
-                    bucket = next_layer.setdefault(state, {})
+                    bucket = next_layer.setdefault(state_id, {})
                     try:
                         existing = bucket[energy_k]
                     except KeyError:
@@ -1541,10 +1549,10 @@ class EVPlanner:
                         if switches_new > max_switches:
                             continue
 
-                        out_state = (
-                            phase,
-                            switches_new,
-                        )
+                        if phase == 1:
+                            out_state = 1 + (switches_new * 2)
+                        else:
+                            out_state = 2 + (switches_new * 2)
 
                         ##########################################################
                         # Optie: vol uur op een van de geldige
@@ -1725,8 +1733,6 @@ class EVPlanner:
 
                             next_layer[out_state] = out_bucket
 
-
-
                         try:
                             existing = out_bucket[new_key]
                         except KeyError:
@@ -1768,8 +1774,11 @@ class EVPlanner:
         best_switches = None
         best_node_id = None
 
-        for state, energies in last_layer.items():
-            _phase, switches = state
+        for state_id, energies in last_layer.items():
+            if state_id == 0:
+                switches = 0
+            else:
+                switches = (state_id - 1) // 2
 
             for energy_k, (
                 cost,
