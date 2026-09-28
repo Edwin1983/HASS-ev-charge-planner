@@ -1472,7 +1472,8 @@ class EVPlanner:
                     cost,
                     node_id,
                 ) in energies.items():
-                    remaining = target - (float(energy_k) / ENERGY_SCALE)
+                    energy = float(energy_k) / ENERGY_SCALE
+                    remaining = target - energy
 
                     ##############################################################
                     # Veilige haalbaarheidspruning.
@@ -1485,10 +1486,7 @@ class EVPlanner:
                     # en dus exact-safe.
                     ##############################################################
 
-                    if (
-                        (float(energy_k) / ENERGY_SCALE) + suffix_max_energy[index]
-                        < target - 0.000001
-                    ):
+                    if energy + suffix_max_energy[index] < target - 0.000001:
                         continue
 
                     ##############################################################
@@ -1551,6 +1549,12 @@ class EVPlanner:
                         # stroomsterktes.
                         ##########################################################
 
+                        out_bucket = next_layer.get(out_state)
+
+                        if out_bucket is None:
+                            out_bucket = {}
+                            next_layer[out_state] = out_bucket
+
                         for (
                             current_a,
                             amount,
@@ -1559,7 +1563,7 @@ class EVPlanner:
                             paid,
                         ) in full_options[(index, phase)]:
                             if amount > remaining + 0.000001:
-                                continue
+                                break
 
                             new_energy_key = energy_k + amount_key
 
@@ -1570,20 +1574,6 @@ class EVPlanner:
                             )
 
                             new_key = new_energy_key
-
-                            out_bucket = next_layer.get(out_state)
-
-
-
-                            if out_bucket is None:
-
-
-                                out_bucket = {}
-
-
-                                next_layer[out_state] = out_bucket
-
-
 
                             existing = out_bucket.get(new_key)
 
