@@ -19,6 +19,49 @@ on:
         type: boolean
 
 jobs:
+  performance-ab:
+    name: Performance A/B - ${{ matrix.label }}
+    if: inputs.performance == true
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: baseline
+            ref: 3880c75126abaf49ffe900efe76999cd7c497225
+          - label: candidate
+            ref: experiment/quarter-hour-dp
+    runs-on: ubuntu-latest
+
+    env:
+      PYTHONPATH: .
+      EV_PLANNER_RUN_PERFORMANCE: "1"
+      EV_PLANNER_RUN_PROFILE: "1"
+
+    steps:
+      - name: Checkout benchmark revision
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ matrix.ref }}
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements_test.txt
+
+      - name: Install test dependencies
+        run: python -m pip install -r requirements_test.txt
+
+      - name: Use current benchmark test
+        run: |
+          git show experiment/quarter-hour-dp:tests/test_zonneplan_quarter_hour_prices.py > tests/test_zonneplan_quarter_hour_prices.py
+
+      - name: Run benchmark
+        run: |
+          python -m pytest -q tests/test_zonneplan_quarter_hour_prices.py::test_57kwh_quarter_hour_planning_regression -s
+
   test:
     name: Tests and linting
     runs-on: ubuntu-latest
@@ -49,26 +92,6 @@ jobs:
         run: |
           echo "workflow_dispatch performance input: ${{ inputs.performance }}"
           echo "EV_PLANNER_RUN_PERFORMANCE: $EV_PLANNER_RUN_PERFORMANCE"
-
-      - name: Run baseline performance benchmark
-        if: env.EV_PLANNER_RUN_PERFORMANCE == '1'
-        run: |
-          git worktree add --detach /tmp/ev-planner-baseline 9431846a36e4e445089b41baeb9a7a3ebd43abbf
-          cp tests/test_zonneplan_quarter_hour_prices.py /tmp/ev-planner-baseline/tests/test_zonneplan_quarter_hour_prices.py
-          cd /tmp/ev-planner-baseline
-          python -m pytest -q tests/test_zonneplan_quarter_hour_prices.py::test_57kwh_quarter_hour_planning_regression -s
-          cd -
-          git worktree remove --force /tmp/ev-planner-baseline
-
-      - name: Run previous best performance benchmark
-        if: env.EV_PLANNER_RUN_PERFORMANCE == '1'
-        run: |
-          git worktree add --detach /tmp/ev-planner-best  cb054bfe633724aaa8cb7a6862412753728e00c4
-          cp tests/test_zonneplan_quarter_hour_prices.py /tmp/ev-planner-best/tests/test_zonneplan_quarter_hour_prices.py
-          cd /tmp/ev-planner-best
-          python -m pytest -q tests/test_zonneplan_quarter_hour_prices.py::test_57kwh_quarter_hour_planning_regression -s
-          cd -
-          git worktree remove --force /tmp/ev-planner-best
 
       - name: Profile planner performance
         if: env.EV_PLANNER_RUN_PERFORMANCE == '1'
