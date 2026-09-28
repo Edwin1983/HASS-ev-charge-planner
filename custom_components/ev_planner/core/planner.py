@@ -1488,6 +1488,35 @@ class EVPlanner:
                     else:
                         phase_prev = 3
 
+                # The output state depends only on the current state and
+                # target phase, not on energy. Cache the buckets once per
+                # state so the hot inner energy loop does not repeatedly
+                # call dict.get().
+                out_buckets_by_phase = [None, None, None, None]
+
+                for phase in (1, 3):
+                    if phase_prev == NONE_PHASE:
+                        switches_new = 0
+                    elif phase_prev == phase:
+                        switches_new = switches_prev
+                    else:
+                        switches_new = switches_prev + 1
+
+                    if switches_new > max_switches:
+                        continue
+
+                    if phase == 1:
+                        out_state = 1 + (switches_new * 2)
+                    else:
+                        out_state = 2 + (switches_new * 2)
+
+                    out_bucket = next_layer.get(out_state)
+                    if out_bucket is None:
+                        out_bucket = {}
+                        next_layer[out_state] = out_bucket
+
+                    out_buckets_by_phase[phase] = out_bucket
+
                 for energy_k, (
                     cost,
                     node_id,
@@ -1537,22 +1566,10 @@ class EVPlanner:
                         continue
 
                     for phase in (1, 3):
-                        if phase_prev == NONE_PHASE:
-                            switches_new = 0
+                        out_bucket = out_buckets_by_phase[phase]
 
-                        elif phase_prev == phase:
-                            switches_new = switches_prev
-
-                        else:
-                            switches_new = switches_prev + 1
-
-                        if switches_new > max_switches:
+                        if out_bucket is None:
                             continue
-
-                        if phase == 1:
-                            out_state = 1 + (switches_new * 2)
-                        else:
-                            out_state = 2 + (switches_new * 2)
 
                         ##########################################################
                         # Optie: vol uur op een van de geldige
@@ -1721,7 +1738,7 @@ class EVPlanner:
                             new_energy * ENERGY_SCALE + 0.5
                         )
 
-                        out_bucket = next_layer.get(out_state)
+
 
 
 
