@@ -1,10 +1,9 @@
 """Independent exhaustive oracle tests for the experimental quarter-hour optimizer.
 
 The oracle deliberately does not call optimizer helpers. It enumerates every
-full-quarter charging action (skip, 1F/3F, 6..16 A), applies the constraints
-directly, and returns the cheapest feasible result. The scenarios use targets
-that can be reached with full quarters, so the oracle does not need to model
-partial terminal actions.
+charging action (skip, 1F/3F, 6..16 A), applies the constraints directly, and
+also models the optimizer's partial terminal action so the target can be met
+exactly inside the final selected quarter-hour.
 """
 
 from datetime import datetime, timedelta, timezone
@@ -76,43 +75,54 @@ def _oracle(slots, target_kwh, max_price, max_power_kw, max_phase_switches):
                 if power > power_limit + 0.000001:
                     continue
 
-                energy = power * QUARTER_HOURS
-                energy_ticks_added = _ticks(energy)
-                if energy_ticks_added <= 0:
-                    continue
-
-                new_energy_ticks = energy_ticks + energy_ticks_added
-                if new_energy_ticks > target_ticks:
-                    continue
-
                 new_switches = switches
                 if last_phase and last_phase != phases:
                     new_switches += 1
                 if new_switches > max_phase_switches:
                     continue
 
-                free = min(energy, max(0.0, slot.usable_pv))
-                paid = max(0.0, energy - free)
+                # Full-quarter action.
+                energy = power * QUARTER_HOURS
+                energy_ticks_added = _ticks(energy)
+                if energy_ticks_added > 0:
+                    new_energy_ticks = energy_ticks + energy_ticks_added
+                    if new_energy_ticks <= target_ticks:
+                        free = min(energy, max(0.0, slot.usable_pv))
+                        paid = max(0.0, energy - free)
 
-                if slot.price > max_price and paid > 0.000001:
-                    continue
+                        if not (slot.price > max_price and paid > 0.000001):
+                            tail = search(
+                                index + 1,
+                                new_energy_ticks,
+                                phases,
+                                new_switches,
+                            )
+                            if tail is not None:
+                                candidate = (
+                                    paid * slot.price + tail[0],
+                                    tail[1],
+                                    tail[2],
+                                )
+                                if best is None or candidate[0] < best[0] - 0.000000001:
+                                    best = candidate
 
-                tail = search(
-                    index + 1,
-                    new_energy_ticks,
-                    phases,
-                    new_switches,
-                )
-                if tail is None:
-                    continue
-
-                candidate = (
-                    paid * slot.price + tail[0],
-                    tail[1],
-                    tail[2],
-                )
-                if best is None or candidate[0] < best[0] - 0.000000001:
-                    best = candidate
+                # Partial terminal action: use this current for exactly the
+                # remaining energy, provided it fits in the quarter-hour.
+                remaining_kwh = (target_ticks - energy_ticks) / TICKS_PER_KWH
+                if remaining_kwh > 0.0:
+                    finish_duration = remaining_kwh / power
+                    if finish_duration <= QUARTER_HOURS + 0.000001:
+                        pv_rate = max(0.0, slot.usable_pv) / QUARTER_HOURS
+                        free = min(remaining_kwh, pv_rate * finish_duration)
+                        paid = max(0.0, remaining_kwh - free)
+                        if not (slot.price > max_price and paid > 0.000001):
+                            candidate = (
+                                paid * slot.price,
+                                target_ticks,
+                                new_switches,
+                            )
+                            if best is None or candidate[0] < best[0] - 0.000000001:
+                                best = candidate
 
         return best
 
