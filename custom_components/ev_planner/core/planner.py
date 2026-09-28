@@ -1441,10 +1441,13 @@ class EVPlanner:
         ENERGY_SCALE = 1000000000.0
         target_key = int(target * ENERGY_SCALE + 0.5)
 
-        start_state = (
-            NONE_PHASE,
-            0,
-        )
+        # Compact integer state id:
+        # 0 = no active phase yet
+        # odd ids = 1-phase with switch count encoded
+        # even ids = 3-phase with switch count encoded.
+        # This avoids allocating/unpacking a (phase, switches) tuple
+        # on every DP transition.
+        start_state = 0
 
         nodes = [
             (None, None),
@@ -1476,8 +1479,16 @@ class EVPlanner:
                 full_options[(index, 3)],
             )
 
-            for state, energies in prev_layer.items():
-                phase_prev, switches_prev = state
+            for state_id, energies in prev_layer.items():
+                if state_id == 0:
+                    phase_prev = NONE_PHASE
+                    switches_prev = 0
+                else:
+                    switches_prev = (state_id - 1) // 2
+                    if state_id & 1:
+                        phase_prev = 1
+                    else:
+                        phase_prev = 3
 
                 for energy_k, (
                     cost,
@@ -1540,10 +1551,10 @@ class EVPlanner:
                         if switches_new > max_switches:
                             continue
 
-                        out_state = (
-                            phase,
-                            switches_new,
-                        )
+                        if phase == 1:
+                            out_state = 1 + (switches_new * 2)
+                        else:
+                            out_state = 2 + (switches_new * 2)
 
                         ##########################################################
                         # Optie: vol uur op een van de geldige
@@ -1759,8 +1770,11 @@ class EVPlanner:
         best_switches = None
         best_node_id = None
 
-        for state, energies in last_layer.items():
-            _phase, switches = state
+        for state_id, energies in last_layer.items():
+            if state_id == 0:
+                switches = 0
+            else:
+                switches = (state_id - 1) // 2
 
             for energy_k, (
                 cost,
@@ -1942,12 +1956,22 @@ class EVPlanner:
 
             hour.paid_energy = float(paid)
 
+        if best_state == 0:
+            best_phase = NONE_PHASE
+            best_switches_log = 0
+        else:
+            best_switches_log = (best_state - 1) // 2
+            if best_state & 1:
+                best_phase = 1
+            else:
+                best_phase = 3
+
         self.logger.debug(
             "GEZAMENLIJKE OPTIMALISATIE: "
             f"{float(best_energy_key) / ENERGY_SCALE:.3f}/{target:.3f} kWh, "
             f"kosten EUR{best_cost:.4f}, "
-            f"eindfase={best_state[0]}, "
-            f"wisselingen={best_state[1]}"
+            f"eindfase={best_phase}, "
+            f"wisselingen={best_switches_log}"
         )
 
     ##########################################################################
