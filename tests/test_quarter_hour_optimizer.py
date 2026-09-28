@@ -72,6 +72,21 @@ def test_expensive_slot_is_allowed_when_pv_covers_all_energy():
     assert plan.actions[0].free_energy_kwh == 0.345
 
 
+def test_expensive_slot_uses_pv_safe_lower_current():
+    slots = _slots([0.80], pv=[0.40])
+    optimizer = QuarterHourOptimizer(
+        energy_needed_kwh=0.345,
+        max_price=0.10,
+        max_phase_switches=0,
+    )
+
+    plan = optimizer.optimize(slots)
+
+    assert plan.complete
+    assert plan.paid_energy_kwh == 0.0
+    assert plan.actions[0].current_a == 6
+
+
 def test_expensive_slot_cannot_mix_pv_and_grid_above_price_limit():
     slots = _slots([0.80], pv=[0.10])
     optimizer = QuarterHourOptimizer(
