@@ -1506,7 +1506,10 @@ class EVPlanner:
                     ##############################################################
 
                     bucket = next_layer.setdefault(state, {})
-                    existing = bucket.get(energy_k)
+                    try:
+                        existing = bucket[energy_k]
+                    except KeyError:
+                        existing = None
 
                     if existing is None or cost < existing[0]:
                         nodes_append(
@@ -1576,7 +1579,10 @@ class EVPlanner:
 
                             new_key = new_energy_key
 
-                            existing = out_bucket_get(new_key)
+                            try:
+                                existing = out_bucket_get(new_key)
+                            except KeyError:
+                                existing = None
 
                             if existing is None or new_cost < existing[0]:
                                 nodes_append(
@@ -1720,7 +1726,10 @@ class EVPlanner:
 
 
 
-                        existing = out_bucket.get(new_key)
+                        try:
+                            existing = out_bucket[new_key]
+                        except KeyError:
+                            existing = None
 
                         if existing is None or new_cost < existing[0]:
                             nodes_append(
