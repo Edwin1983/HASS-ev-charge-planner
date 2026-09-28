@@ -295,22 +295,19 @@ class QuarterHourOptimizer:
             bucket[candidate.energy_ticks] = candidate
 
     def _prune_frontiers(self, frontiers):
-        result = {}
-        for state, bucket in frontiers.items():
-            items = sorted(
-                bucket.values(),
-                key=lambda node: (node.energy_ticks, node.cost),
-                reverse=True,
-            )
-            kept = {}
-            best_cost = inf
-            for node in items:
-                if node.cost < best_cost - 0.000000001:
-                    kept[node.energy_ticks] = node
-                    best_cost = node.cost
-            if kept:
-                result[state] = kept
-        return result
+        # Energy cannot be used as a dominance dimension here. A state with
+        # more energy is not necessarily better: charging actions are discrete
+        # and may not overshoot the target, while the terminal action is only
+        # allowed in the current slot. Therefore a lower-energy state can be
+        # the only state from which an exact target remains reachable.
+        #
+        # _keep_frontier() already removes the only safe duplicate: for the
+        # exact same energy/state, retain the cheapest node.
+        return {
+            state: bucket
+            for state, bucket in frontiers.items()
+            if bucket
+        }
 
     def _better_terminal(self, candidate, current) -> bool:
         if current is None:
