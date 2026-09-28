@@ -1447,19 +1447,6 @@ class EVPlanner:
         # even ids = 3-phase with switch count encoded.
         start_state = 0
 
-        # State ids are tiny (0..18 with the hard cap of 8 switches).
-        # Decode phase/switch count once instead of doing integer
-        # arithmetic for every DP state in every layer.
-        max_state_id = 2 + (max_switches * 2)
-        phase_by_state = [NONE_PHASE] * (max_state_id + 1)
-        switches_by_state = [0] * (max_state_id + 1)
-
-        for switches in range(max_switches + 1):
-            phase_by_state[1 + (switches * 2)] = 1
-            phase_by_state[2 + (switches * 2)] = 3
-            switches_by_state[1 + (switches * 2)] = switches
-            switches_by_state[2 + (switches * 2)] = switches
-
         nodes = [
             (None, None),
         ]
@@ -1476,6 +1463,7 @@ class EVPlanner:
         ]
 
         nodes_append = nodes.append
+        next_node_id = len(nodes)
 
         for index in range(count):
             prev_layer = layers[index]
@@ -1491,8 +1479,15 @@ class EVPlanner:
             )
 
             for state_id, energies in prev_layer.items():
-                phase_prev = phase_by_state[state_id]
-                switches_prev = switches_by_state[state_id]
+                if state_id == 0:
+                    phase_prev = NONE_PHASE
+                    switches_prev = 0
+                else:
+                    switches_prev = (state_id - 1) // 2
+                    if state_id & 1:
+                        phase_prev = 1
+                    else:
+                        phase_prev = 3
 
                 # The output state depends only on the current state and
                 # target phase, not on energy. Cache the buckets once per
@@ -1562,10 +1557,11 @@ class EVPlanner:
                                 ("skip",),
                             )
                         )
+                        next_node_id += 1
 
                         bucket[energy_k] = (
                             cost,
-                            len(nodes) - 1,
+                            next_node_id - 1,
                         )
 
                     if remaining <= 0.000001:
@@ -1622,10 +1618,11 @@ class EVPlanner:
                                         ),
                                     )
                                 )
+                                next_node_id += 1
 
                                 out_bucket[new_key] = (
                                     new_cost,
-                                    len(nodes) - 1,
+                                    next_node_id - 1,
                                 )
 
                         ##########################################################
@@ -1768,10 +1765,11 @@ class EVPlanner:
                                     ),
                                 )
                             )
+                            next_node_id += 1
 
                             out_bucket[new_key] = (
                                 new_cost,
-                                len(nodes) - 1,
+                                next_node_id - 1,
                             )
 
             layers.append(next_layer)
