@@ -1662,7 +1662,7 @@ class EVPlanner:
                         # power * duration >= remaining - 1e-6.
                         ##################################################################
 
-                        if duration <= 0 or not price_ok_currents:
+                        if not price_ok_currents:
                             continue
 
                         minimum_current = int(price_ok_currents[0])
@@ -1742,14 +1742,6 @@ class EVPlanner:
 
 
 
-
-                        if out_bucket is None:
-
-
-                            out_bucket = {}
-
-
-                            next_layer[out_state] = out_bucket
 
                         try:
                             existing = out_bucket[new_key]
