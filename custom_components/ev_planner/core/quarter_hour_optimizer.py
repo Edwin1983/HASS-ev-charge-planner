@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+import gc
 import os
 import resource
 import tracemalloc
@@ -87,7 +88,9 @@ class QuarterHourOptimizer:
         self.max_power_kw = float(max_charge_power_kw)
         self.max_phase_switches = max(0, min(int(max_phase_switches), 8))
         self.memory_profile = []
-        self._memory_profile_enabled = os.environ.get("EV_PLANNER_MEMORY_PROFILE") == "1"
+        self._memory_profile_enabled = (
+            os.environ.get("EV_PLANNER_MEMORY_PROFILE") == "1"
+        )
         self._profile_nodes_created = 0
 
         if self.target_kwh <= 0:
@@ -120,7 +123,6 @@ class QuarterHourOptimizer:
         suffix_capacity = self._build_suffix_capacity(ordered)
 
         frontiers = {(0, 0): {0: _Node(0.0, 0, 0, 0, None, None)}}
-
         best_terminal: _Node | None = None
 
         for index, slot in enumerate(ordered):
@@ -273,25 +275,59 @@ class QuarterHourOptimizer:
                                     best_terminal = candidate
 
             frontiers = self._prune_frontiers(next_frontiers)
-            traced_current, traced_peak = tracemalloc.get_traced_memory() if self._memory_profile_enabled else (0, 0)
-            self._record_memory_profile(index, frontiers, best_terminal, traced_current=traced_current, traced_peak=traced_peak)
+            if self._memory_profile_enabled:
+                traced_current, traced_peak = tracemalloc.get_traced_memory()
+                live_nodes = sum(
+                    1 for item in gc.get_objects() if isinstance(item, _Node)
+                )
+                live_actions = sum(
+                    1
+                    for item in gc.get_objects()
+                    if isinstance(item, QuarterHourAction)
+                )
+            else:
+                traced_current, traced_peak = 0, 0
+                live_nodes, live_actions = 0, 0
 
-            if best_terminal is not None:
-                pass
+            self._record_memory_profile(
+                index,
+                frontiers,
+                best_terminal,
+                traced_current=traced_current,
+                traced_peak=traced_peak,
+                live_nodes=live_nodes,
+                live_actions=live_actions,
+            )
 
             if not frontiers and best_terminal is not None:
                 break
 
         if self._memory_profile_enabled:
             current, peak = tracemalloc.get_traced_memory()
-            self._record_memory_profile(len(ordered), frontiers, best_terminal, True, current, peak)
+            live_nodes = sum(
+                1 for item in gc.get_objects() if isinstance(item, _Node)
+            )
+            live_actions = sum(
+                1
+                for item in gc.get_objects()
+                if isinstance(item, QuarterHourAction)
+            )
+            self._record_memory_profile(
+                len(ordered),
+                frontiers,
+                best_terminal,
+                final=True,
+                traced_current=current,
+                traced_peak=peak,
+                live_nodes=live_nodes,
+                live_actions=live_actions,
+            )
             tracemalloc.stop()
 
         if best_terminal is None:
             return self._best_partial_plan(frontiers)
 
         return self._build_plan(best_terminal)
-
 
     def _record_memory_profile(
         self,
@@ -301,6 +337,8 @@ class QuarterHourOptimizer:
         final=False,
         traced_current=0,
         traced_peak=0,
+        live_nodes=0,
+        live_actions=0,
     ):
         if not self._memory_profile_enabled:
             return
@@ -316,8 +354,12 @@ class QuarterHourOptimizer:
                 "nodes_created": self._profile_nodes_created,
                 "best_terminal": int(best_terminal is not None),
                 "rss_mb": rss_kb / 1024.0,
-                "tracemalloc_current_mb": traced_current / (1024.0 * 1024.0),
+                "tracemalloc_current_mb": (
+                    traced_current / (1024.0 * 1024.0)
+                ),
                 "tracemalloc_peak_mb": traced_peak / (1024.0 * 1024.0),
+                "live_nodes": live_nodes,
+                "live_actions": live_actions,
             }
         )
 
