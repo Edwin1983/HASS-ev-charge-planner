@@ -433,11 +433,6 @@ class EVStatusManager:
     ) -> EVStatus:
         """
         Geeft de laatst berekende status terug.
-
-        Bewust een normale methode en geen @property.
-
-        Dit voorkomt dat Pyscript een property uit een externe module
-        als EvalFunc behandelt.
         """
 
         return self._status
