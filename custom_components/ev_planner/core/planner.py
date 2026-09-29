@@ -409,7 +409,7 @@ class EVPlanner:
         # Haalbaarheid controleren
         ######################################################################
 
-        feasible = self._check_feasibility(hours)
+        self._check_feasibility(hours)
 
         ######################################################################
         # Uren, fase, stroom en venster gezamenlijk optimaliseren
@@ -429,7 +429,7 @@ class EVPlanner:
 
         if self.settings.planner_mode == PLANNER_MODE_SOLAR_ONLY:
             apply_solar_only(self, hours)
-        elif feasible:
+        else:
             self._optimize_hours(hours)
 
         selected = []
@@ -995,7 +995,7 @@ class EVPlanner:
     def _check_feasibility(
         self,
         hours: list[Hour],
-    ) -> bool:
+    ) -> None:
 
         available = self._total_available_energy(hours)
 
@@ -1009,9 +1009,6 @@ class EVPlanner:
                 f"maximaal beschikbaar: "
                 f"{available:.2f} kWh."
             )
-            return False
-
-        return True
 
     ##########################################################################
     # Maximum vermogen per faseconfiguratie
