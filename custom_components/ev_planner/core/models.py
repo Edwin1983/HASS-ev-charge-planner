@@ -3,16 +3,6 @@ models.py
 
 Datamodellen voor EV Smart Charging Planner.
 
-Pyscript-compatibele versie.
-
-Belangrijk:
-- Geen @property
-- Geen methodes in dataclasses
-- Geen __str__
-- Geen generator-expressions
-- Geen list/set/dict comprehensions
-- Alleen eenvoudige dataclasses en standaard Python-typen
-
 Deze module bevat uitsluitend data-objecten.
 Logica hoort thuis in planner.py, prices.py, solcast.py
 of andere functionele modules.
