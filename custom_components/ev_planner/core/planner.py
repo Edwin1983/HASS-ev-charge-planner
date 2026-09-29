@@ -1582,7 +1582,6 @@ class EVPlanner:
                         # stroomsterktes.
                         ##########################################################
 
-
                         out_bucket_get = out_bucket.get
                         options = options_by_phase[phase]
 
