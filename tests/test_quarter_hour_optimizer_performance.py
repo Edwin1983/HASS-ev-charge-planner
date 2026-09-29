@@ -106,10 +106,15 @@ def test_dp_memory_profile_scaling():
     if os.getenv("EV_PLANNER_RUN_MEMORY_PROFILE") != "1":
         pytest.skip("Memory profile disabled")
 
-    # 50 kWh / 112 slots is the production-relevant stress case.
-    # Keep 100 kWh out of CI for now: the current DP can spend excessive
-    # time and memory before we have established the scaling profile.
-    cases = ((10.0, 48),)
+    # Scale progressively through the production-relevant range.
+    # 80 kWh replaces the previous 100 kWh stress case to keep the profile
+    # bounded while still testing a substantially larger request.
+    cases = (
+        (10.0, 48),
+        (25.0, 96),
+        (50.0, 112),
+        (80.0, 112),
+    )
     for energy_kwh, slot_count in cases:
         start = datetime(2026, 9, 27, 0, 0)
         slots = []
@@ -140,6 +145,9 @@ def test_dp_memory_profile_scaling():
         peak_rss = max(
             item["rss_mb"] for item in optimizer.memory_profile
         )
+        peak_current_rss = max(
+            item["current_rss_mb"] for item in optimizer.memory_profile
+        )
         peak_trace = max(
             item["tracemalloc_peak_mb"]
             for item in optimizer.memory_profile
@@ -161,6 +169,7 @@ def test_dp_memory_profile_scaling():
             f"DP memory profile {energy_kwh:g} kWh / "
             f"{slot_count} quarter-hours: "
             f"peak_rss={peak_rss:.1f} MB, "
+            f"peak_current_rss={peak_current_rss:.1f} MB, "
             f"peak_tracemalloc={peak_trace:.1f} MB, "
             f"max_frontier_entries={max_frontier_entries}, "
             f"peak_live_nodes={peak_live_nodes}, "
