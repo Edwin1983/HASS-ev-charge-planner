@@ -289,9 +289,10 @@ class QuarterHourOptimizer:
         return suffix
 
     def _keep_frontier(self, bucket, candidate: _Node) -> None:
-        old = bucket.get(candidate.energy_ticks)
-        if old is None or candidate.cost < old.cost - 0.000000001:
-            bucket[candidate.energy_ticks] = candidate
+        energy_ticks = candidate.energy_ticks
+        old = bucket.setdefault(energy_ticks, candidate)
+        if old is not candidate and candidate.cost < old.cost - 0.000000001:
+            bucket[energy_ticks] = candidate
 
     def _prune_frontiers(self, frontiers):
         # Energy cannot be used as a dominance dimension here. A state with
