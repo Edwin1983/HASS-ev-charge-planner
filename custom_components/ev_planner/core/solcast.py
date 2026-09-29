@@ -325,9 +325,7 @@ class SolcastReader:
             )
 
         ######################################################################
-        # Pyscript / Home Assistant kan hier al een datetime-object leveren.
-        #
-        # DAT WAS DE OORZAAK VAN DE FOUT.
+        # Home Assistant kan hier al een datetime-object leveren.
         ######################################################################
 
         if isinstance(
