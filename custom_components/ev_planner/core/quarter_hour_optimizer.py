@@ -20,6 +20,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+import os
+import resource
+import tracemalloc
 
 from .config import (
     MAX_CURRENT_1PH,
@@ -83,6 +86,9 @@ class QuarterHourOptimizer:
         self.max_price = float(max_price)
         self.max_power_kw = float(max_charge_power_kw)
         self.max_phase_switches = max(0, min(int(max_phase_switches), 8))
+        self.memory_profile = []
+        self._memory_profile_enabled = os.environ.get("EV_PLANNER_MEMORY_PROFILE") == "1"
+        self._profile_nodes_created = 0
 
         if self.target_kwh <= 0:
             raise ValueError("energy_needed_kwh moet groter dan 0 zijn.")
@@ -103,6 +109,9 @@ class QuarterHourOptimizer:
         """Optimize the supplied chronological quarter-hour slots."""
         ordered = list(slots)
         ordered.sort(key=lambda slot: slot.start)
+
+        if self._memory_profile_enabled:
+            tracemalloc.start()
 
         if not ordered:
             return self._empty_plan()
@@ -200,6 +209,9 @@ class QuarterHourOptimizer:
                                 action=action,
                             )
 
+                            if self._memory_profile_enabled:
+                                self._profile_nodes_created += 1
+
                             bucket = next_frontiers.setdefault(
                                 (phase, switches),
                                 {},
@@ -252,6 +264,8 @@ class QuarterHourOptimizer:
                                     parent=node,
                                     action=action,
                                 )
+                                if self._memory_profile_enabled:
+                                    self._profile_nodes_created += 1
                                 if self._better_terminal(
                                     candidate,
                                     best_terminal,
@@ -259,6 +273,7 @@ class QuarterHourOptimizer:
                                     best_terminal = candidate
 
             frontiers = self._prune_frontiers(next_frontiers)
+            self._record_memory_profile(index, frontiers, best_terminal)
 
             if best_terminal is not None:
                 pass
@@ -266,10 +281,44 @@ class QuarterHourOptimizer:
             if not frontiers and best_terminal is not None:
                 break
 
+        if self._memory_profile_enabled:
+            current, peak = tracemalloc.get_traced_memory()
+            self._record_memory_profile(len(ordered), frontiers, best_terminal, True, current, peak)
+            tracemalloc.stop()
+
         if best_terminal is None:
             return self._best_partial_plan(frontiers)
 
         return self._build_plan(best_terminal)
+
+
+    def _record_memory_profile(
+        self,
+        index,
+        frontiers,
+        best_terminal,
+        final=False,
+        traced_current=0,
+        traced_peak=0,
+    ):
+        if not self._memory_profile_enabled:
+            return
+
+        frontier_nodes = sum(len(bucket) for bucket in frontiers.values())
+        rss_kb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        self.memory_profile.append(
+            {
+                "slot": index,
+                "final": int(final),
+                "frontier_states": len(frontiers),
+                "frontier_entries": frontier_nodes,
+                "nodes_created": self._profile_nodes_created,
+                "best_terminal": int(best_terminal is not None),
+                "rss_mb": rss_kb / 1024.0,
+                "tracemalloc_current_mb": traced_current / (1024.0 * 1024.0),
+                "tracemalloc_peak_mb": traced_peak / (1024.0 * 1024.0),
+            }
+        )
 
     def _build_suffix_capacity(self, slots) -> list[int]:
         suffix = [0] * (len(slots) + 1)
