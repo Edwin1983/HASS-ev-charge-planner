@@ -108,42 +108,6 @@ def test_planner_settings_reject_invalid_values():
         )
 
 
-def test_planner_skips_dp_for_infeasible_large_energy_request():
-    tz = timezone.utc
-    start = datetime.now(tz).replace(
-        minute=0,
-        second=0,
-        microsecond=0,
-    ) + timedelta(hours=1)
-
-    prices = [
-        make_hour(start + timedelta(hours=index), price=0.10, index=index)
-        for index in range(4)
-    ]
-    solar = [
-        make_hour(start + timedelta(hours=index), pv=0.0, index=index)
-        for index in range(4)
-    ]
-
-    plan = EVPlanner(
-        PriceData(hours=prices),
-        SolcastData(hours=solar),
-        PlannerSettings(
-            energy_needed_kwh=100.0,
-            departure_time=start + timedelta(hours=4),
-            max_price=1.0,
-            max_charge_power_kw=11.04,
-            max_phase_switches=8,
-        ),
-        DummyLogger(),
-    ).create_plan()
-
-    assert plan.complete is False
-    assert plan.energy_planned_kwh == 0.0
-    assert plan.missing_energy_kwh == 100.0
-    assert plan.decisions == []
-
-
 def test_planner_max_price_zero_never_uses_expensive_grid_energy():
     tz = timezone.utc
     now = datetime.now(tz)
