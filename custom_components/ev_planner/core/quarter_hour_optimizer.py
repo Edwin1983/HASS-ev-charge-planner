@@ -374,6 +374,7 @@ class QuarterHourOptimizer:
 
         frontier_nodes = sum(len(bucket) for bucket in frontiers.values())
         rss_kb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        current_rss_mb = self._current_rss_mb()
         self.memory_profile.append(
             {
                 "slot": index,
@@ -383,6 +384,7 @@ class QuarterHourOptimizer:
                 "nodes_created": self._profile_nodes_created,
                 "best_terminal": int(best_terminal is not None),
                 "rss_mb": rss_kb / 1024.0,
+                "current_rss_mb": current_rss_mb,
                 "tracemalloc_current_mb": (
                     traced_current / (1024.0 * 1024.0)
                 ),
@@ -391,6 +393,21 @@ class QuarterHourOptimizer:
                 "live_actions": live_actions,
             }
         )
+
+    @staticmethod
+    def _current_rss_mb() -> float:
+        """Return the current resident set size on Linux."""
+        try:
+            with open("/proc/self/status", encoding="utf-8") as status_file:
+                for line in status_file:
+                    if line.startswith("VmRSS:"):
+                        parts = line.split()
+                        return float(parts[1]) / 1024.0
+        except (OSError, ValueError):
+            pass
+
+        rss_kb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        return rss_kb / 1024.0
 
     def _build_suffix_capacity(self, slots) -> list[int]:
         suffix = [0] * (len(slots) + 1)
