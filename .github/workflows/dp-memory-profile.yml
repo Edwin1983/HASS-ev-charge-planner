@@ -1,0 +1,36 @@
+name: EV Planner DP Memory Profile
+
+run-name: DP memory profile
+
+on:
+  workflow_dispatch:
+
+jobs:
+  memory-profile:
+    name: DP memory scaling profile
+    runs-on: ubuntu-latest
+
+    env:
+      PYTHONPATH: .
+      EV_PLANNER_RUN_MEMORY_PROFILE: "1"
+      EV_PLANNER_MEMORY_PROFILE: "1"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements_test.txt
+
+      - name: Install test dependencies
+        run: python -m pip install -r requirements_test.txt
+
+      - name: Run memory scaling profile
+        run: |
+          python -m pytest -q tests/test_quarter_hour_optimizer_performance.py::test_dp_memory_profile_scaling -s
