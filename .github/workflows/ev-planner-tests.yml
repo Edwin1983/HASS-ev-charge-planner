@@ -27,7 +27,7 @@ jobs:
       matrix:
         include:
           - label: baseline
-            ref: 3880c75126abaf49ffe900efe76999cd7c497225
+            ref: 150cc128c5a59f0b6315495424d270a329542d6f
           - label: candidate
             ref: experiment/quarter-hour-dp
     runs-on: ubuntu-latest
