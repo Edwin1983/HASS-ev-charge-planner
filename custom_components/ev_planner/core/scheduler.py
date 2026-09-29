@@ -299,7 +299,6 @@ class EVScheduler:
         """
         Geeft True terug wanneer een ChargingPlan aanwezig is.
 
-        Gewone methode in plaats van @property.
         """
 
         return self.plan is not None
@@ -626,7 +625,6 @@ class EVScheduler:
         """
         Geeft het momenteel actieve Hour terug.
 
-        Gewone methode in plaats van @property vanwege Pyscript.
         """
 
         return self.active_hour
@@ -641,8 +639,6 @@ class EVScheduler:
         """
         Geeft alle geselecteerde laaduren terug.
 
-        Gebruikt bewust een gewone for-lus in plaats van
-        een list comprehension.
         """
 
         result = []
