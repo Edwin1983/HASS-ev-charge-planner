@@ -8,6 +8,7 @@ on:
       - main
       - experiment/quarter-hour-dp
       - experiment/dp-memory-profile
+      - 'release/**'
   pull_request:
     branches:
       - main
