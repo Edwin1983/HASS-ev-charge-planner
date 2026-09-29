@@ -299,7 +299,7 @@ class EVScheduler:
         """
         Geeft True terug wanneer een ChargingPlan aanwezig is.
 
-        Gewone methode in plaats van @property vanwege Pyscript.
+        Gewone methode in plaats van @property.
         """
 
         return self.plan is not None
