@@ -37,15 +37,6 @@ Niet verantwoordelijk voor:
 - daadwerkelijke laadstroom
 - fasekeuze
 
-
-Pyscript-compatibele versie.
-
-Belangrijk:
-- geen @property
-- geen list comprehensions
-- geen generator expressions
-- alleen gewone methodes
-- expliciete numerieke conversies
 """
 
 
