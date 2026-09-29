@@ -27,20 +27,6 @@ Home Assistant entities en dictionaries horen hier niet thuis.
 De daadwerkelijke bediening van de laadpaal gebeurt
 door Home Assistant / de runtime-laag.
 
-Pyscript-compatibele versie.
-
-Belangrijk:
-
-- geen generator expressions
-- geen properties
-- geen property-aanroepen
-- geen list comprehensions
-- geen Hour.duration()
-- geen SolcastData.get_hour()
-- geen class-level dataclass defaults voor PlannerSettings
-- expliciete numerieke conversies
-- uitsluitend gewone Python-methodes
-
 
 LAADLOGICA
 
@@ -1092,40 +1078,6 @@ class EVPlanner:
         power = self._maximum_power_for_phases(phases)
 
         return float(power * duration)
-
-    def _hour_free_energy(
-        self,
-        hour: Hour,
-        phases: int,
-    ) -> float:
-        """
-        Maximaal bruikbare GRATIS (zon-)energie in dit uur bij deze
-        faseconfiguratie. Nooit meer dan de Solcast-voorspelling en
-        nooit meer dan de capaciteit van de gekozen fase.
-        """
-
-        cap = self._hour_max_energy(
-            hour,
-            phases,
-        )
-
-        if cap <= 0:
-            return 0.0
-
-        pv = float(hour.pv_estimate)
-
-        if pv < 0:
-            pv = 0.0
-
-        if self.settings.planner_mode == PLANNER_MODE_SOLAR_ONLY and pv < float(
-            self.settings.min_pv_kwh
-        ):
-            pv = 0.0
-
-        if pv > cap:
-            pv = cap
-
-        return float(pv)
 
     ##########################################################################
     # Gezamenlijke optimalisatie: uren, fase, stroom en venster
