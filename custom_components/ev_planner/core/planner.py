@@ -188,11 +188,6 @@ CURRENT_TIEBREAK_EPSILON = 0.000000001
 class PlannerSettings:
     """
     Instellingen voor één laadopdracht.
-
-    Bewust geen dataclass.
-
-    Alle waarden worden expliciet geconverteerd naar gewone
-    Python-objecten zodat Pyscript hiermee kan werken.
     """
 
     def __init__(
