@@ -4,8 +4,6 @@ prices.py
 Leest Zonneplan energieprijzen uit Home Assistant. Ondersteunt zowel
 uurprijzen als kwartierprijzen.
 
-Extra DEBUG/WARNING logging toegevoegd om Pyscript-problemen
-gericht te lokaliseren.
 """
 
 from __future__ import annotations
