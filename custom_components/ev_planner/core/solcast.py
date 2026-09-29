@@ -16,15 +16,6 @@ Er wordt hier GEEN rekening gehouden met:
 Output:
     SolcastData
 
-Pyscript-compatibele versie.
-
-Belangrijk:
-- geen generator expressions
-- geen @property
-- geen property-aanroepen
-- geen list/dict comprehensions waar mogelijk
-- expliciete numerieke conversies
-- uitsluitend gewone Python-objecten
 """
 
 from __future__ import annotations
