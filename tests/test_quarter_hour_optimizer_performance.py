@@ -97,3 +97,48 @@ def test_57kwh_quarter_hour_dp_performance():
         f"mean={statistics.mean(samples):.3f}s "
         f"max={max(samples):.3f}s"
     )
+
+
+def test_dp_memory_profile_scaling():
+    import os
+    import pytest
+
+    if os.getenv("EV_PLANNER_RUN_MEMORY_PROFILE") != "1":
+        pytest.skip("Memory profile disabled")
+
+    cases = ((10.0, 48), (25.0, 96), (50.0, 112), (100.0, 192))
+    for energy_kwh, slot_count in cases:
+        start = datetime(2026, 9, 27, 0, 0)
+        slots = []
+        for index in range(slot_count):
+            begin = start + timedelta(minutes=15 * index)
+            slots.append(
+                type(
+                    "Slot",
+                    (),
+                    {
+                        "start": begin,
+                        "end": begin + timedelta(minutes=15),
+                        "price": 0.20,
+                        "usable_pv": 0.0,
+                    },
+                )()
+            )
+
+        optimizer = QuarterHourOptimizer(
+            energy_needed_kwh=energy_kwh,
+            max_price=1.0,
+            max_charge_power_kw=11.04,
+            max_phase_switches=8,
+        )
+        plan = optimizer.optimize(slots)
+        assert plan.complete
+        peak = max(optimizer.memory_profile, key=lambda item: item["rss_mb"])
+        print(
+            f"DP memory profile {energy_kwh:g} kWh / "
+            f"{slot_count} quarter-hours: "
+            f"peak_rss={peak['rss_mb']:.1f} MB, "
+            f"peak_tracemalloc={peak['tracemalloc_peak_mb']:.1f} MB, "
+            f"max_frontier_entries={max(item['frontier_entries'] for item in optimizer.memory_profile)}, "
+            f"nodes_created={peak['nodes_created']}"
+        )
