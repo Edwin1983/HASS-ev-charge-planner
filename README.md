@@ -6,7 +6,7 @@ Native Home Assistant custom integration for EV charging planning using electric
 
 ## What's new in 1.1.5
 
-Version 1.1.3 improves backwards compatibility for existing Home Assistant automations while retaining the native Home Assistant entity model introduced in 1.1.0.
+Version 1.1.5 improves backwards compatibility for existing Home Assistant automations while retaining the native Home Assistant entity model introduced in 1.1.0.
 
 Highlights:
 
