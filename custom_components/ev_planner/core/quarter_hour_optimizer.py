@@ -191,6 +191,22 @@ class QuarterHourOptimizer:
                             ):
                                 continue
 
+                            candidate_energy_ticks = (
+                                node.energy_ticks + amount_ticks
+                            )
+                            candidate_cost = (
+                                node.cost + paid * float(slot.price)
+                            )
+                            bucket = next_frontiers.setdefault(
+                                (phase, switches),
+                                {},
+                            )
+                            old = bucket.get(candidate_energy_ticks)
+                            if old is not None and (
+                                candidate_cost >= old.cost - 0.000000001
+                            ):
+                                continue
+
                             action = QuarterHourAction(
                                 index=index,
                                 start=slot.start,
@@ -203,8 +219,8 @@ class QuarterHourOptimizer:
                                 cost=paid * float(slot.price),
                             )
                             candidate = _Node(
-                                cost=node.cost + paid * float(slot.price),
-                                energy_ticks=node.energy_ticks + amount_ticks,
+                                cost=candidate_cost,
+                                energy_ticks=candidate_energy_ticks,
                                 phase=phase,
                                 switches=switches,
                                 parent=node,
@@ -214,11 +230,7 @@ class QuarterHourOptimizer:
                             if self._memory_profile_enabled:
                                 self._profile_nodes_created += 1
 
-                            bucket = next_frontiers.setdefault(
-                                (phase, switches),
-                                {},
-                            )
-                            self._keep_frontier(bucket, candidate)
+                            bucket[candidate_energy_ticks] = candidate
 
                         required_kwh = (
                             float(remaining_ticks) / ENERGY_TICKS_PER_KWH
@@ -244,6 +256,24 @@ class QuarterHourOptimizer:
                                 float(slot.price) <= self.max_price
                                 or paid <= 0.000001
                             ):
+                                candidate_cost = (
+                                    node.cost + paid * float(slot.price)
+                                )
+                                if best_terminal is not None and (
+                                    not self._better_terminal(
+                                        _Node(
+                                            cost=candidate_cost,
+                                            energy_ticks=target_ticks,
+                                            phase=phase,
+                                            switches=switches,
+                                            parent=None,
+                                            action=None,
+                                        ),
+                                        best_terminal,
+                                    )
+                                ):
+                                    continue
+
                                 action = QuarterHourAction(
                                     index=index,
                                     start=slot.start,
@@ -259,7 +289,7 @@ class QuarterHourOptimizer:
                                     cost=paid * float(slot.price),
                                 )
                                 candidate = _Node(
-                                    cost=node.cost + action.cost,
+                                    cost=candidate_cost,
                                     energy_ticks=target_ticks,
                                     phase=phase,
                                     switches=switches,
