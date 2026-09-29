@@ -136,12 +136,34 @@ def test_dp_memory_profile_scaling():
         )
         plan = optimizer.optimize(slots)
         assert plan.complete
-        peak = max(optimizer.memory_profile, key=lambda item: item["rss_mb"])
+
+        peak_rss = max(
+            item["rss_mb"] for item in optimizer.memory_profile
+        )
+        peak_trace = max(
+            item["tracemalloc_peak_mb"]
+            for item in optimizer.memory_profile
+        )
+        peak_live_nodes = max(
+            item["live_nodes"] for item in optimizer.memory_profile
+        )
+        peak_live_actions = max(
+            item["live_actions"] for item in optimizer.memory_profile
+        )
+        max_frontier_entries = max(
+            item["frontier_entries"] for item in optimizer.memory_profile
+        )
+        peak_nodes_created = max(
+            item["nodes_created"] for item in optimizer.memory_profile
+        )
+
         print(
             f"DP memory profile {energy_kwh:g} kWh / "
             f"{slot_count} quarter-hours: "
-            f"peak_rss={peak['rss_mb']:.1f} MB, "
-            f"peak_tracemalloc={peak['tracemalloc_peak_mb']:.1f} MB, "
-            f"max_frontier_entries={max(item['frontier_entries'] for item in optimizer.memory_profile)}, "
-            f"nodes_created={peak['nodes_created']}"
+            f"peak_rss={peak_rss:.1f} MB, "
+            f"peak_tracemalloc={peak_trace:.1f} MB, "
+            f"max_frontier_entries={max_frontier_entries}, "
+            f"peak_live_nodes={peak_live_nodes}, "
+            f"peak_live_actions={peak_live_actions}, "
+            f"nodes_created={peak_nodes_created}"
         )
