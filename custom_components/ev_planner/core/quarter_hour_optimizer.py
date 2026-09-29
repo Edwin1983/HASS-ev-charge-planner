@@ -273,7 +273,8 @@ class QuarterHourOptimizer:
                                     best_terminal = candidate
 
             frontiers = self._prune_frontiers(next_frontiers)
-            self._record_memory_profile(index, frontiers, best_terminal)
+            traced_current, traced_peak = tracemalloc.get_traced_memory() if self._memory_profile_enabled else (0, 0)
+            self._record_memory_profile(index, frontiers, best_terminal, traced_current=traced_current, traced_peak=traced_peak)
 
             if best_terminal is not None:
                 pass
