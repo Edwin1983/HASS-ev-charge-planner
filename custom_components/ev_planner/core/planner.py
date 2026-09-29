@@ -1078,8 +1078,6 @@ class EVPlanner:
     # Gezamenlijke optimalisatie: uren, fase, stroom en venster
     # tegelijk
     #
-    # VOLLEDIGE HERBOUW (native Home Assistant integratie, geen
-    # Pyscript-compatibiliteit meer nodig).
     #
     # HARDE FYSIEKE REGELS
     #
