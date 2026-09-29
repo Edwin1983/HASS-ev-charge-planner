@@ -259,20 +259,19 @@ class QuarterHourOptimizer:
                                 candidate_cost = (
                                     node.cost + paid * float(slot.price)
                                 )
-                                if best_terminal is not None and (
-                                    not self._better_terminal(
-                                        _Node(
-                                            cost=candidate_cost,
-                                            energy_ticks=target_ticks,
-                                            phase=phase,
-                                            switches=switches,
-                                            parent=None,
-                                            action=None,
-                                        ),
-                                        best_terminal,
-                                    )
-                                ):
-                                    continue
+                                if best_terminal is not None:
+                                    if candidate_cost > (
+                                        best_terminal.cost + 0.000000001
+                                    ):
+                                        continue
+                                    if (
+                                        abs(
+                                            candidate_cost - best_terminal.cost
+                                        )
+                                        <= 0.000000001
+                                        and switches >= best_terminal.switches
+                                    ):
+                                        continue
 
                                 action = QuarterHourAction(
                                     index=index,
