@@ -1523,6 +1523,21 @@ class EVPlanner:
 
                     out_buckets_by_phase[phase] = out_bucket
 
+                phase_data = []
+
+                for phase in (1, 3):
+                    out_bucket = out_buckets_by_phase[phase]
+
+                    if out_bucket is not None:
+                        phase_data.append(
+                            (
+                                phase,
+                                out_bucket,
+                                out_bucket.get,
+                                options_by_phase[phase],
+                            )
+                        )
+
                 for energy_k, (
                     cost,
                     node_id,
@@ -1571,19 +1586,16 @@ class EVPlanner:
                     if remaining <= 0.000001:
                         continue
 
-                    for phase in (1, 3):
-                        out_bucket = out_buckets_by_phase[phase]
-
-                        if out_bucket is None:
-                            continue
-
+                    for (
+                        phase,
+                        out_bucket,
+                        out_bucket_get,
+                        options,
+                    ) in phase_data:
                         ##########################################################
                         # Optie: vol uur op een van de geldige
                         # stroomsterktes.
                         ##########################################################
-
-                        out_bucket_get = out_bucket.get
-                        options = options_by_phase[phase]
 
                         for (
                             current_a,
