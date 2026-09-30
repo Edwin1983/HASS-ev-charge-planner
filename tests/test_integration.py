@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as dt
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -94,6 +95,25 @@ async def test_full_integration_setup_and_unload(hass):
     assert states.get("switch.ev_planner_smart_charging") is not None
     assert states.get("select.ev_charge_planner_departure_day") is not None
     assert states.get("select.ev_charge_planner_planner_mode") is not None
+    controller = entry.runtime_data
+    controller.replan = MagicMock(return_value=None)
+
+    await hass.services.async_call(
+        "select",
+        "select_option",
+        {
+            "entity_id": "select.ev_charge_planner_planner_mode",
+            "option": "Alleen zonneladen",
+        },
+        blocking=True,
+    )
+    await hass.async_block_till_done()
+
+    assert (
+        hass.states.get("select.ev_charge_planner_planner_mode").state
+        == "Alleen zonneladen"
+    )
+    controller.replan.assert_called_once()
     assert (
         states.get("select.ev_charge_planner_pv_charging_current_rounding")
         is not None
