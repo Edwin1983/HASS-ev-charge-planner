@@ -103,6 +103,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from math import ceil
+import resource
 
 from .logger import Logger
 from .solar import apply_solar_only
@@ -178,6 +179,20 @@ MAX_PHASE_SWITCHES_HARD_CAP = 8
 # NOOIT een echte prijsafweging kan omdraaien -- het breekt alleen
 # gevallen waarin de kosten al exact identiek zijn.
 CURRENT_TIEBREAK_EPSILON = 0.000000001
+MEMORY_DIAGNOSTIC_INTERVAL = 8
+
+
+def _process_rss_mb() -> float:
+    """Return the current Python process RSS in MB for diagnostics."""
+    try:
+        with open("/proc/self/status", encoding="utf-8") as status_file:
+            for line in status_file:
+                if line.startswith("VmRSS:"):
+                    return float(line.split()[1]) / 1024.0
+    except (OSError, ValueError):
+        pass
+
+    return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024.0
 
 
 ##############################################################################
@@ -1197,6 +1212,14 @@ class EVPlanner:
         if not hours:
             return
 
+        diagnostic_rss_before = _process_rss_mb()
+        self.logger.warning(
+            "EV Planner production DP START: "
+            f"rss={diagnostic_rss_before:.1f} MB, "
+            f"hours={len(hours)}, "
+            f"target={float(self.settings.energy_needed_kwh):.2f} kWh"
+        )
+
         ######################################################################
         # Chronologische kopie
         ######################################################################
@@ -1405,27 +1428,27 @@ class EVPlanner:
             switches_by_state[1 + (switches * 2)] = switches
             switches_by_state[2 + (switches * 2)] = switches
 
-        nodes = [
-            (None, None),
-        ]
+        ######################################################################
+        # Directe predecessor-DP.
+        #
+        # Checkpoint-reconstructie is bewust volledig verwijderd.
+        #
+        # De DP bewaart nu tijdens de eerste en enige optimalisatierun
+        # rechtstreeks de predecessor voor iedere overlevende candidate.
+        # Daardoor is achteraf geen tweede DP-run nodig om het plan te
+        # reconstrueren.
+        #
+        # Dit gebruikt meer geheugen dan de checkpointvariant, maar voorkomt
+        # de extra rekentijd en -- belangrijker -- dat de reconstructie een
+        # tweede keer exact dezelfde complexe DP moet uitvoeren.
+        ######################################################################
 
-        layers = [
-            {
-                start_state: {
-                    0: (
-                        0.0,
-                        0,
-                    )
-                }
-            }
-        ]
-
-        nodes_append = nodes.append
-
-        for index in range(count):
-            prev_layer = layers[index]
-
+        def advance_layer(
+            prev_layer,
+            index,
+        ):
             next_layer = {}
+            parent_layer = {}
 
             price = prices[index]
             options_by_phase = (
@@ -1435,15 +1458,27 @@ class EVPlanner:
                 full_options[(index, 3)],
             )
 
+            def set_candidate(
+                bucket,
+                energy_key,
+                candidate_cost,
+            ):
+                try:
+                    existing = bucket[energy_key]
+                except KeyError:
+                    existing = None
+
+                if existing is None or candidate_cost < existing:
+                    bucket[energy_key] = candidate_cost
+                    return True
+
+                return False
+
             for state_id, energies in prev_layer.items():
                 phase_prev = phase_by_state[state_id]
                 switches_prev = switches_by_state[state_id]
 
-                # The output state depends only on the current state and
-                # target phase, not on energy. Cache the buckets once per
-                # state so the hot inner energy loop does not repeatedly
-                # call dict.get().
-                out_buckets_by_phase = [None, None, None, None]
+                phase_data = []
 
                 for phase in (1, 3):
                     if phase_prev == NONE_PHASE:
@@ -1466,66 +1501,38 @@ class EVPlanner:
                         out_bucket = {}
                         next_layer[out_state] = out_bucket
 
-                    out_buckets_by_phase[phase] = out_bucket
-
-                phase_data = []
-
-                for phase in (1, 3):
-                    out_bucket = out_buckets_by_phase[phase]
-
-                    if out_bucket is not None:
-                        phase_data.append(
-                            (
-                                phase,
-                                out_bucket,
-                                out_bucket.get,
-                                options_by_phase[phase],
-                            )
+                    phase_data.append(
+                        (
+                            phase,
+                            out_state,
+                            out_bucket,
+                            options_by_phase[phase],
                         )
+                    )
 
-                for energy_k, (
-                    cost,
-                    node_id,
-                ) in energies.items():
+                for energy_k, cost in energies.items():
                     energy = float(energy_k) / ENERGY_SCALE
                     remaining = target - energy
-
-                    ##############################################################
-                    # Veilige haalbaarheidspruning.
-                    #
-                    # Als zelfs maximaal 3-fasenladen in alle resterende
-                    # slots het ontbrekende vermogen niet kan leveren,
-                    # heeft deze state geen complete oplossing meer.
-                    # Prijs en fasewisselingen worden bewust genegeerd:
-                    # daardoor is dit alleen een noodzakelijke bovengrens
-                    # en dus exact-safe.
-                    ##############################################################
 
                     if energy + suffix_max_energy[index] < target - 0.000001:
                         continue
 
-                    ##############################################################
-                    # Overslaan: altijd toegestaan, ook als het doel
-                    # al bereikt is.
-                    ##############################################################
-
+                    # Skip.
                     bucket = next_layer.setdefault(state_id, {})
-                    try:
-                        existing = bucket[energy_k]
-                    except KeyError:
-                        existing = None
 
-                    if existing is None or cost < existing[0]:
-                        nodes_append(
-                            (
-                                node_id,
-                                ("skip",),
-                            )
+                    if set_candidate(
+                        bucket,
+                        energy_k,
+                        cost,
+                    ):
+                        parent_bucket = parent_layer.setdefault(
+                            state_id,
+                            {},
                         )
-
-                        bucket[energy_k] = (
-                            cost,
-                            len(nodes) - 1,
+                        parent_bucket[energy_k] = (
+                            state_id,
+                            energy_k,
+                            ("skip",),
                         )
 
                     if remaining <= 0.000001:
@@ -1533,15 +1540,11 @@ class EVPlanner:
 
                     for (
                         phase,
+                        out_state,
                         out_bucket,
-                        out_bucket_get,
                         options,
                     ) in phase_data:
-                        ##########################################################
-                        # Optie: vol uur op een van de geldige
-                        # stroomsterktes.
-                        ##########################################################
-
+                        # Volledig uur.
                         for (
                             current_a,
                             amount,
@@ -1560,63 +1563,29 @@ class EVPlanner:
                                 - CURRENT_TIEBREAK_EPSILON * current_a
                             )
 
-                            new_key = new_energy_key
-
-                            try:
-                                existing = out_bucket_get(new_key)
-                            except KeyError:
-                                existing = None
-
-                            if existing is None or new_cost < existing[0]:
-                                nodes_append(
-                                    (
-                                        node_id,
-                                        (
-                                            "full",
-                                            phase,
-                                            current_a,
-                                        ),
-                                    )
+                            if set_candidate(
+                                out_bucket,
+                                new_energy_key,
+                                new_cost,
+                            ):
+                                parent_bucket = parent_layer.setdefault(
+                                    out_state,
+                                    {},
+                                )
+                                parent_bucket[new_energy_key] = (
+                                    state_id,
+                                    energy_k,
+                                    ("full", phase, current_a),
                                 )
 
-                                out_bucket[new_key] = (
-                                    new_cost,
-                                    len(nodes) - 1,
-                                )
-
-                        ##########################################################
-                        # Optie: dit uur maakt de planning af (mag
-                        # gecomprimeerd zijn). Kies de LAAGSTE
-                        # geldige stroom die de resterende
-                        # hoeveelheid binnen de beschikbare duur kan
-                        # leveren -- dat maximaliseert de
-                        # zonopvangst (langst mogelijke venster) en
-                        # geeft een exacte, niet-afgeronde
-                        # hoeveelheid.
-                        ##########################################################
-
+                        # Finish.
                         duration = durations[index]
 
                         if duration <= 0:
                             continue
 
                         pv_rate = pv_rates[index]
-
                         price_ok_currents = valid_currents_by_phase[phase]
-
-                        ##################################################################
-                        # De oude implementatie liep hier voor iedere DP-state
-                        # alle laadstromen af. Dat is een hot path: bij een
-                        # 60-kwartier benchmark worden miljoenen van deze
-                        # controles uitgevoerd.
-                        #
-                        # Omdat geldige laadstromen opeenvolgend 6..N A zijn
-                        # en het laadvermogen lineair met de stroom meeloopt,
-                        # kan de minimaal benodigde stroom rechtstreeks
-                        # worden berekend. Dit is exact equivalent aan het
-                        # zoeken naar de eerste stroom waarbij
-                        # power * duration >= remaining - 1e-6.
-                        ##################################################################
 
                         if not price_ok_currents:
                             continue
@@ -1648,15 +1617,6 @@ class EVPlanner:
                         power = power_by_phase_current[phase][best_current]
 
                         if price > max_price:
-                            ####################################################
-                            # Boven de maximumprijs mag dit volledige
-                            # uur alleen worden gebruikt wanneer de
-                            # volledige laadenergie door PV wordt
-                            # gedekt. Het uur blijft daarbij volledig
-                            # actief; alleen het eerste en laatste
-                            # actieve uur mogen onvolledig zijn.
-                            ####################################################
-
                             free_energy = min(
                                 pv_rate,
                                 power,
@@ -1695,41 +1655,66 @@ class EVPlanner:
                             new_energy * ENERGY_SCALE + 0.5
                         )
 
-
-
-
-
-                        try:
-                            existing = out_bucket[new_key]
-                        except KeyError:
-                            existing = None
-
-                        if existing is None or new_cost < existing[0]:
-                            nodes_append(
+                        if set_candidate(
+                            out_bucket,
+                            new_key,
+                            new_cost,
+                        ):
+                            parent_bucket = parent_layer.setdefault(
+                                out_state,
+                                {},
+                            )
+                            parent_bucket[new_key] = (
+                                state_id,
+                                energy_k,
                                 (
-                                    node_id,
-                                    (
-                                        "finish",
-                                        phase,
-                                        best_current,
-                                        finish_amount,
-                                    ),
-                                )
+                                    "finish",
+                                    phase,
+                                    best_current,
+                                    finish_amount,
+                                ),
                             )
 
-                            out_bucket[new_key] = (
-                                new_cost,
-                                len(nodes) - 1,
-                            )
+            return next_layer, parent_layer
 
-            layers.append(next_layer)
+        start_layer = {
+            start_state: {
+                0: 0.0,
+            }
+        }
+
+        current_layer = start_layer
+        parent_layers = []
+
+        for index in range(count):
+            current_layer, parent_layer = advance_layer(
+                current_layer,
+                index,
+            )
+            parent_layers.append(parent_layer)
+
+            if (
+                (index + 1) % MEMORY_DIAGNOSTIC_INTERVAL == 0
+                or index == count - 1
+            ):
+                rss = _process_rss_mb()
+                state_count = sum(
+                    len(bucket)
+                    for bucket in current_layer.values()
+                )
+                self.logger.warning(
+                    "EV Planner production DP slot="
+                    f"{index + 1}: rss={rss:.1f} MB, "
+                    f"states={state_count}, "
+                    f"parent_layers={len(parent_layers)}"
+                )
+
+        last_layer = current_layer
 
         ######################################################################
         # Beste eindstate: maximale energie, dan minimale kosten,
         # dan minimale fasewisselingen.
         ######################################################################
-
-        last_layer = layers[count]
 
         best_state = None
 
@@ -1738,7 +1723,6 @@ class EVPlanner:
         best_cost = None
 
         best_switches = None
-        best_node_id = None
 
         for state_id, energies in last_layer.items():
             if state_id == 0:
@@ -1746,10 +1730,7 @@ class EVPlanner:
             else:
                 switches = (state_id - 1) // 2
 
-            for energy_k, (
-                cost,
-                node_id,
-            ) in energies.items():
+            for energy_k, cost in energies.items():
                 if (
                     best_state is None
                     or energy_k > best_energy_key
@@ -1763,13 +1744,17 @@ class EVPlanner:
                     )
                 ):
                     best_state = state_id
-
                     best_energy_key = energy_k
-
                     best_cost = cost
-
                     best_switches = switches
-                    best_node_id = node_id
+
+        diagnostic_rss_after = _process_rss_mb()
+        self.logger.warning(
+            "EV Planner production DP END: "
+            f"rss={diagnostic_rss_after:.1f} MB, "
+            f"delta={diagnostic_rss_after - diagnostic_rss_before:.1f} MB, "
+            f"parent_layers={len(parent_layers)}"
+        )
 
         if best_state is None:
             for hour in ordered_hours:
@@ -1794,23 +1779,33 @@ class EVPlanner:
             )
 
         ######################################################################
-        # Terugleiden welke actie bij elk uur hoort.
+        # Directe reconstructie.
+        #
+        # Iedere parent_layer hoort bij precies één DP-overgang. Er wordt
+        # niets opnieuw berekend. We volgen de parent-keten vanaf de gekozen
+        # eindstate terug naar de start.
         ######################################################################
 
         actions = [None] * count
 
-        node_id = best_node_id
+        current_state = best_state
+        current_energy_key = best_energy_key
 
-        index = count
+        for index in range(count - 1, -1, -1):
+            parent_layer = parent_layers[index]
+            parent = parent_layer[current_state][current_energy_key]
 
-        while index > 0:
-            parent_node_id, action = nodes[node_id]
+            parent_state, parent_energy_key, action = parent
 
-            actions[index - 1] = action
+            actions[index] = action
 
-            node_id = parent_node_id
+            current_state = parent_state
+            current_energy_key = parent_energy_key
 
-            index -= 1
+        if current_state != start_state or current_energy_key != 0:
+            raise ValueError(
+                "DP-reconstructie eindigt niet bij de startstate."
+            )
 
         ######################################################################
         # Acties toepassen op de Hour-objecten.
