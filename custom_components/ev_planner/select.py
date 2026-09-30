@@ -146,6 +146,16 @@ class EVPlannerModeSelect(EVPlannerBaseSelect):
         self._attr_current_option = option
         self.async_write_ha_state()
 
+        # A mode change changes the planner inputs. Rebuild the current
+        # planning result immediately so the new mode is effective without
+        # requiring a separate manual replan service call.
+        await self._hass.services.async_call(
+            DOMAIN,
+            "replan",
+            {"config_entry_id": self._entry.entry_id},
+            blocking=True,
+        )
+
 
 class EVPlannerPvRoundingSelect(EVPlannerBaseSelect):
     """Select the PV charging current rounding mode."""
