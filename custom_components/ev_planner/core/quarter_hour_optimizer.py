@@ -309,24 +309,24 @@ class QuarterHourOptimizer:
                         candidate_cost = (
                             base_cost + paid * float(slot.price)
                         )
-                            terminal = _Terminal(
-                                cost=candidate_cost,
-                                slot_index=index,
-                                state=state,
-                                energy_ticks=energy_ticks,
-                                phases=phase,
-                                current_a=current,
-                                energy_kwh=required_kwh,
-                                free_energy_kwh=free,
-                                paid_energy_kwh=paid,
-                                finish_duration_hours=finish_duration,
-                                switches=switches,
-                            )
-                            if self._better_terminal_data(
-                                terminal,
-                                best_terminal,
-                            ):
-                                best_terminal = terminal
+                        terminal = _Terminal(
+                            cost=candidate_cost,
+                            slot_index=index,
+                            state=state,
+                            energy_ticks=energy_ticks,
+                            phases=phase,
+                            current_a=current,
+                            energy_kwh=required_kwh,
+                            free_energy_kwh=free,
+                            paid_energy_kwh=paid,
+                            finish_duration_hours=finish_duration,
+                            switches=switches,
+                        )
+                        if self._better_terminal_data(
+                            terminal,
+                            best_terminal,
+                        ):
+                            best_terminal = terminal
 
             parent_layers.append(parent)
             costs = next_costs
