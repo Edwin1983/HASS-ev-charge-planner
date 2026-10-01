@@ -103,6 +103,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from math import ceil
+from time import perf_counter
 import resource
 
 from .logger import Logger
@@ -392,26 +393,32 @@ class EVPlanner:
     def create_plan(
         self,
     ) -> ChargingPlan:
+        """Build and validate a charging plan, with stage timing diagnostics."""
+        perf_start = perf_counter()
 
         self._validate_settings()
+        perf_after_validate = perf_counter()
 
         ######################################################################
         # Prijzen en Solcast combineren
         ######################################################################
 
         hours = self._build_hour_list()
+        perf_after_build = perf_counter()
 
         ######################################################################
         # Alleen werkelijk beschikbare tijd
         ######################################################################
 
         hours = self._filter_available_time(hours)
+        perf_after_filter = perf_counter()
 
         ######################################################################
         # Beschikbare PV bepalen
         ######################################################################
 
         hours = self._calculate_available_energy(hours)
+        perf_after_energy = perf_counter()
 
         ######################################################################
         # Ieder uur voorbereiden
@@ -419,12 +426,14 @@ class EVPlanner:
 
         for hour in hours:
             self._prepare_hour(hour)
+        perf_after_prepare = perf_counter()
 
         ######################################################################
         # Haalbaarheid controleren
         ######################################################################
 
         self._check_feasibility(hours)
+        perf_after_feasibility = perf_counter()
 
         ######################################################################
         # Uren, fase, stroom en venster gezamenlijk optimaliseren
@@ -446,6 +455,7 @@ class EVPlanner:
             apply_solar_only(self, hours)
         else:
             self._optimize_hours(hours)
+        perf_after_optimize = perf_counter()
 
         selected = []
 
@@ -460,18 +470,40 @@ class EVPlanner:
         ######################################################################
 
         plan = self._build_plan(selected)
+        perf_after_build_plan = perf_counter()
 
         ######################################################################
         # Eindcontrole
         ######################################################################
 
         self._validate_final_plan(plan)
+        perf_after_validate_plan = perf_counter()
 
         ######################################################################
         # Logging
         ######################################################################
 
         self._log_plan(plan)
+        perf_end = perf_counter()
+
+        self.logger.debug(
+            "EV Planner PERF: "
+            f"total={(perf_end - perf_start) * 1000.0:.1f} ms "
+            f"| validate={(perf_after_validate - perf_start) * 1000.0:.1f} ms "
+            f"| build={(perf_after_build - perf_after_validate) * 1000.0:.1f} ms "
+            f"| filter={(perf_after_filter - perf_after_build) * 1000.0:.1f} ms "
+            f"| energy={(perf_after_energy - perf_after_filter) * 1000.0:.1f} ms "
+            f"| prepare={(perf_after_prepare - perf_after_energy) * 1000.0:.1f} ms "
+            f"| feasibility={(perf_after_feasibility - perf_after_prepare) * 1000.0:.1f} ms "
+            f"| optimize={(perf_after_optimize - perf_after_feasibility) * 1000.0:.1f} ms "
+            f"| build_plan={(perf_after_build_plan - perf_after_optimize) * 1000.0:.1f} ms "
+            f"| validate_plan={(perf_after_validate_plan - perf_after_build_plan) * 1000.0:.1f} ms "
+            f"| log={(perf_end - perf_after_validate_plan) * 1000.0:.1f} ms "
+            f"| hours={len(hours)} "
+            f"| selected={len(plan.decisions)} "
+            f"| target={self.settings.energy_needed_kwh:.3f} kWh "
+            f"| mode={self.settings.planner_mode}"
+        )
 
         return plan
 
