@@ -23,7 +23,7 @@ class DummyLogger:
 
 
 def _build_planner():
-    start = datetime(2026, 9, 27, tzinfo=timezone.utc)
+    start = datetime(2026, 10, 3, tzinfo=timezone.utc)
     prices = []
     solar = []
 
