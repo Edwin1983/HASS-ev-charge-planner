@@ -7,6 +7,7 @@ on:
     branches:
       - main
       - experiment/quarter-hour-dp
+      - experiment/array-dp
       - experiment/dp-memory-profile
       - 'release/**'
   pull_request:
@@ -29,9 +30,9 @@ jobs:
       matrix:
         include:
           - label: baseline
-            ref: 150cc128c5a59f0b6315495424d270a329542d6f
+            ref: release/v2.0.0-beta.1
           - label: candidate
-            ref: experiment/quarter-hour-dp
+            ref: experiment/array-dp
     runs-on: ubuntu-latest
 
     env:
@@ -59,12 +60,12 @@ jobs:
       - name: Use current benchmark test
         if: matrix.label == 'baseline'
         run: |
-          git fetch origin experiment/quarter-hour-dp:refs/remotes/origin/experiment/quarter-hour-dp
-          git show origin/experiment/quarter-hour-dp:tests/test_zonneplan_quarter_hour_prices.py > tests/test_zonneplan_quarter_hour_prices.py
+          git fetch origin experiment/array-dp:refs/remotes/origin/experiment/array-dp
+          git show origin/experiment/array-dp:tests/test_quarter_hour_optimizer_performance.py > tests/test_quarter_hour_optimizer_performance.py
 
       - name: Run benchmark
         run: |
-          python -m pytest -q tests/test_zonneplan_quarter_hour_prices.py::test_57kwh_quarter_hour_dp_regression -s
+          python -m pytest -q tests/test_quarter_hour_optimizer_performance.py::test_57kwh_quarter_hour_dp_performance -s
 
   dp-memory-profile:
     name: DP memory scaling profile
@@ -131,7 +132,7 @@ jobs:
       - name: Profile planner performance
         if: env.EV_PLANNER_RUN_PERFORMANCE == '1'
         run: |
-          python -m pytest -q tests/test_zonneplan_quarter_hour_prices.py::test_57kwh_quarter_hour_planning_regression -s
+          python -m pytest -q tests/test_quarter_hour_optimizer_performance.py::test_57kwh_quarter_hour_dp_regression -s
 
       - name: Run pytest
         run: python -m pytest -q ${{ inputs.performance == true && '-s' || '' }}
