@@ -275,7 +275,7 @@ class QuarterHourOptimizer:
                             if current < MIN_CURRENT:
                                 current = MIN_CURRENT
 
-                        if current > max_current:
+                        if current > max_current or max_current < MIN_CURRENT:
                             continue
 
                         actual_power = voltage * current * phase / 1000.0
