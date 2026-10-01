@@ -183,17 +183,33 @@ class QuarterHourOptimizer:
                 )
                 continue
 
+            price = float(slot.price)
+            pv_rate = self._pv_rate(slot)
+            negative_price = price < 0
+            price_above_limit = price > self.max_price
+            max_switches = self.max_phase_switches
+            epsilon = _EPSILON
+            unreachable = _UNREACHABLE
+            state_phases = (0, 1, 3, 1, 3, 1, 3, 1, 3,
+                            1, 3, 1, 3, 1, 3, 1, 3, 1)
+            state_switches = (0, 0, 0, 1, 1, 2, 2, 3, 3,
+                              4, 4, 5, 5, 6, 6, 7, 7, 8)
+            max_current_1 = self._max_current(1)
+            max_current_3 = self._max_current(3)
+            voltage = VOLTAGE
+
             for state in range(_STATE_COUNT):
                 energy_list = active[state]
                 if not energy_list:
                     continue
 
-                phase_before, switches_before = self._decode_state(state)
+                phase_before = state_phases[state]
+                switches_before = state_switches[state]
 
                 for energy_ticks in energy_list:
                     base_index = state * width + energy_ticks
                     base_cost = costs[base_index]
-                    if base_cost == _UNREACHABLE:
+                    if base_cost == unreachable:
                         continue
 
                     remaining_ticks = target_ticks - energy_ticks
@@ -211,67 +227,63 @@ class QuarterHourOptimizer:
                             finish_duration_hours=0.0,
                             switches=switches_before,
                         )
-                        if self._better_terminal_data(
-                            terminal,
-                            best_terminal,
+                        if best_terminal is None or (
+                            terminal.cost < best_terminal.cost - epsilon
+                            or (
+                                abs(terminal.cost - best_terminal.cost) <= epsilon
+                                and terminal.switches < best_terminal.switches
+                            )
                         ):
                             best_terminal = terminal
                         continue
 
-                    # Evaluate a partial final charge before suffix pruning.
-                    # The current quarter itself may complete the target.
-                    required_kwh = (
-                        float(remaining_ticks) / ENERGY_TICKS_PER_KWH
-                    )
+                    required_kwh = remaining_ticks / ENERGY_TICKS_PER_KWH
+                    required_power = required_kwh / duration_hours
 
-                    for phase in (1, 3):
-                        switches = self._switch_count(
-                            phase_before,
-                            phase,
-                            switches_before,
-                        )
-                        if switches > self.max_phase_switches:
+                    # Evaluate the partial final charge. All quantities that
+                    # do not depend on the state are kept local to this slot.
+                    for phase, phase_index, max_current in (
+                        (1, 1, max_current_1),
+                        (3, 2, max_current_3),
+                    ):
+                        switched = phase_before != 0 and phase_before != phase
+                        switches = switches_before + int(switched)
+                        if switches > max_switches:
                             continue
 
-                        required_power = required_kwh / duration_hours
-                        max_current = self._max_current(phase)
-                        if float(slot.price) < 0:
-                            # With a negative grid price, use the highest
-                            # current that fits the phase/power limit. The
-                            # target energy is fixed, so a shorter charge
-                            # duration consumes less PV and leaves more of
-                            # the target energy at the negative grid price.
+                        if negative_price:
                             current = max_current
                         else:
-                            # With a non-negative price, use the lowest
-                            # current that can complete within this slot.
-                            # The longer duration maximizes usable PV.
-                            current = self._current_for_power(
-                                phase,
-                                required_power,
+                            current = int(
+                                (required_power * 1000.0)
+                                / (voltage * phase)
                             )
-                        if current < MIN_CURRENT or current > max_current:
+                            if (
+                                voltage * current * phase / 1000.0
+                                + 0.000001
+                                < required_power
+                            ):
+                                current += 1
+                            if current < MIN_CURRENT:
+                                current = MIN_CURRENT
+
+                        if current > max_current:
                             continue
 
-                        actual_power = self._power_kw(phase, current)
+                        actual_power = voltage * current * phase / 1000.0
                         finish_duration = required_kwh / actual_power
                         if finish_duration > duration_hours + 0.000001:
                             continue
 
-                        free = min(
-                            self._pv_rate(slot),
-                            actual_power,
-                        ) * finish_duration
-                        paid = max(0.0, required_kwh - free)
-
-                        if (
-                            float(slot.price) > self.max_price
-                            and paid > 0.000001
-                        ):
+                        free = min(pv_rate, actual_power) * finish_duration
+                        paid = required_kwh - free
+                        if paid < 0.0:
+                            paid = 0.0
+                        if price_above_limit and paid > 0.000001:
                             continue
 
                         terminal = _Terminal(
-                            cost=base_cost + paid * float(slot.price),
+                            cost=base_cost + paid * price,
                             slot_index=index,
                             state=state,
                             energy_ticks=energy_ticks,
@@ -283,65 +295,60 @@ class QuarterHourOptimizer:
                             finish_duration_hours=finish_duration,
                             switches=switches,
                         )
-                        if self._better_terminal_data(
-                            terminal,
-                            best_terminal,
+                        if best_terminal is None or (
+                            terminal.cost < best_terminal.cost - epsilon
+                            or (
+                                abs(terminal.cost - best_terminal.cost) <= epsilon
+                                and terminal.switches < best_terminal.switches
+                            )
                         ):
                             best_terminal = terminal
 
                     if energy_ticks + suffix_capacity[index] < target_ticks:
                         continue
 
-                    if (
-                        energy_ticks + suffix_capacity[index + 1]
-                        >= target_ticks
-                    ):
-                        self._relax(
-                            next_costs,
-                            next_active,
-                            parent,
-                            state,
-                            energy_ticks,
-                            base_cost,
-                            energy_ticks,
-                            _SKIP_ACTION,
-                            width,
-                        )
+                    if energy_ticks + suffix_capacity[index + 1] >= target_ticks:
+                        next_index = base_index
+                        old = next_costs[next_index]
+                        if old == unreachable:
+                            next_active[state].append(energy_ticks)
+                            next_costs[next_index] = base_cost
+                            parent[next_index] = _SKIP_ACTION
+                        elif base_cost < old - epsilon:
+                            next_costs[next_index] = base_cost
+                            parent[next_index] = _SKIP_ACTION
 
                     for action in actions:
                         phase = action.phases
-                        switches = self._switch_count(
-                            phase_before,
-                            phase,
-                            switches_before,
-                        )
-                        if switches > self.max_phase_switches:
+                        switched = phase_before != 0 and phase_before != phase
+                        switches = switches_before + int(switched)
+                        if switches > max_switches:
                             continue
-                        if action.energy_ticks > remaining_ticks:
+                        action_ticks = action.energy_ticks
+                        if action_ticks > remaining_ticks:
                             continue
 
-                        candidate_energy = energy_ticks + action.energy_ticks
+                        candidate_energy = energy_ticks + action_ticks
                         candidate_cost = base_cost + action.cost
-                        candidate_state = switches * 3 + _PHASE_INDEX[phase]
-                        action_code = self._action_code(
-                            phase,
-                            action.current_a,
-                            phase_before != 0 and phase_before != phase,
+                        candidate_state = (
+                            switches * 3 + (1 if phase == 1 else 2)
                         )
-
-                        if self._relax(
-                            next_costs,
-                            next_active,
-                            parent,
-                            candidate_state,
-                            candidate_energy,
-                            candidate_cost,
-                            energy_ticks,
-                            action_code,
-                            width,
-                        ):
-                            if self._memory_profile_enabled:
-                                self._profile_nodes_created += 1
+                        action_code = (
+                            _ACTION_BASE
+                            + (0 if phase == 1 else 11)
+                            + (action.current_a - MIN_CURRENT)
+                            + (22 if switched else 0)
+                        )
+                        next_index = candidate_state * width + candidate_energy
+                        old = next_costs[next_index]
+                        if old != unreachable and candidate_cost >= old - epsilon:
+                            continue
+                        if old == unreachable:
+                            next_active[candidate_state].append(candidate_energy)
+                        next_costs[next_index] = candidate_cost
+                        parent[next_index] = action_code
+                        if self._memory_profile_enabled:
+                            self._profile_nodes_created += 1
 
             parent_layers.append(parent)
             costs = next_costs
