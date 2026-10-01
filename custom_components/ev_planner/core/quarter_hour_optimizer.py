@@ -190,10 +190,18 @@ class QuarterHourOptimizer:
             max_switches = self.max_phase_switches
             epsilon = _EPSILON
             unreachable = _UNREACHABLE
-            state_phases = (0, 1, 3, 1, 3, 1, 3, 1, 3,
-                            1, 3, 1, 3, 1, 3, 1, 3, 1)
-            state_switches = (0, 0, 0, 1, 1, 2, 2, 3, 3,
-                              4, 4, 5, 5, 6, 6, 7, 7, 8)
+            state_phases = (0, 1, 3) * 9
+            state_switches = (
+                0, 0, 0,
+                1, 1, 1,
+                2, 2, 2,
+                3, 3, 3,
+                4, 4, 4,
+                5, 5, 5,
+                6, 6, 6,
+                7, 7, 7,
+                8, 8, 8,
+            )
             max_current_1 = self._max_current(1)
             max_current_3 = self._max_current(3)
             voltage = VOLTAGE
