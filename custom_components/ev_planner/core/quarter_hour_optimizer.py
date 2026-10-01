@@ -154,6 +154,7 @@ class QuarterHourOptimizer:
         costs = array("d", [_UNREACHABLE]) * (_STATE_COUNT * width)
         costs[0] = 0.0
         active = [[] for _ in range(_STATE_COUNT)]
+        active[0].append(0)
 
         # One compact byte per state/energy/slot. 0 means unreachable,
         # 1 means "skip this slot", and >=2 encodes phase + current.
@@ -184,9 +185,6 @@ class QuarterHourOptimizer:
 
             for state in range(_STATE_COUNT):
                 energy_list = active[state]
-                if state == 0 and not energy_list:
-                    # The initial state is always reachable at energy 0.
-                    energy_list = [0]
                 if not energy_list:
                     continue
 
@@ -254,7 +252,11 @@ class QuarterHourOptimizer:
                         candidate_energy = energy_ticks + action.energy_ticks
                         candidate_cost = base_cost + action.cost
                         candidate_state = switches * 3 + _PHASE_INDEX[phase]
-                        action_code = self._action_code(phase, action.current_a)
+                        action_code = self._action_code(
+                            phase,
+                            action.current_a,
+                            phase_before != 0 and phase_before != phase,
+                        )
 
                         if self._relax(
                             next_costs,
@@ -284,34 +286,29 @@ class QuarterHourOptimizer:
                             continue
 
                         current = self._max_current(phase)
-                        for terminal_action in actions:
-                            if (
-                                terminal_action.phases != phase
-                                or terminal_action.current_a != current
-                            ):
-                                continue
+                        if current < MIN_CURRENT:
+                            continue
 
-                            actual_power = self._power_kw(phase, current)
-                            finish_duration = required_kwh / actual_power
-                            if finish_duration > duration_hours + 0.000001:
-                                continue
+                        actual_power = self._power_kw(phase, current)
+                        finish_duration = required_kwh / actual_power
+                        if finish_duration > duration_hours + 0.000001:
+                            continue
 
-                            free = min(
-                                terminal_action.free_energy_kwh
-                                / duration_hours,
-                                actual_power,
-                            ) * finish_duration
-                            paid = max(0.0, required_kwh - free)
+                        free = min(
+                            self._pv_rate(slot),
+                            actual_power,
+                        ) * finish_duration
+                        paid = max(0.0, required_kwh - free)
 
-                            if (
-                                float(slot.price) > self.max_price
-                                and paid > 0.000001
-                            ):
-                                continue
+                        if (
+                            float(slot.price) > self.max_price
+                            and paid > 0.000001
+                        ):
+                            continue
 
-                            candidate_cost = (
-                                base_cost + paid * float(slot.price)
-                            )
+                        candidate_cost = (
+                            base_cost + paid * float(slot.price)
+                        )
                             terminal = _Terminal(
                                 cost=candidate_cost,
                                 slot_index=index,
@@ -563,7 +560,7 @@ class QuarterHourOptimizer:
             if code == _SKIP_ACTION:
                 continue
 
-            phase, current = self._decode_action(code)
+            phase, current, switched = self._decode_action(code)
             slot = ordered[index]
             duration = self._duration_hours(slot)
             power = self._power_kw(phase, current)
@@ -591,18 +588,16 @@ class QuarterHourOptimizer:
 
             switches = state // 3
             phase_index = _PHASE_INDEX[phase]
-            previous_phase_index = state % 3
-            if (
-                previous_phase_index != 0
-                and previous_phase_index != phase_index
-            ):
+            if switched:
                 switches -= 1
+                previous_phase_index = 1 if phase_index == 2 else 2
+            else:
+                previous_phase_index = phase_index
 
-            state = switches * 3 + previous_phase_index
-            # If this was the first charging action, the predecessor state
-            # is the initial no-phase state.
-            if switches == 0:
+            if previous_phase_index == 0:
                 state = 0
+            else:
+                state = switches * 3 + previous_phase_index
 
         actions.reverse()
         return actions
@@ -678,15 +673,29 @@ class QuarterHourOptimizer:
         return _PHASES[phase_index], switches
 
     @staticmethod
-    def _action_code(phases: int, current: int) -> int:
+    def _action_code(
+        phases: int,
+        current: int,
+        switched: bool,
+    ) -> int:
         phase_index = 0 if phases == 1 else 1
-        return _ACTION_BASE + phase_index * 11 + (current - MIN_CURRENT)
+        value = phase_index * 11 + (current - MIN_CURRENT)
+        if switched:
+            value += 22
+        return _ACTION_BASE + value
 
     @staticmethod
-    def _decode_action(code: int) -> tuple[int, int]:
+    def _decode_action(code: int) -> tuple[int, int, bool]:
         value = code - _ACTION_BASE
+        switched = value >= 22
+        if switched:
+            value -= 22
         phase_index, current_offset = divmod(value, 11)
-        return _PHASES[phase_index + 1], MIN_CURRENT + current_offset
+        return (
+            _PHASES[phase_index + 1],
+            MIN_CURRENT + current_offset,
+            switched,
+        )
 
     def _better_terminal_data(
         self,
