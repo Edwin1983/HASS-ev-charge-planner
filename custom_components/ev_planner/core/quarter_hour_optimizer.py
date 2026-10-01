@@ -218,6 +218,61 @@ class QuarterHourOptimizer:
                             best_terminal = terminal
                         continue
 
+                    # Evaluate a partial final charge before suffix pruning.
+                    # The current quarter itself may complete the target.
+                    required_kwh = (
+                        float(remaining_ticks) / ENERGY_TICKS_PER_KWH
+                    )
+
+                    for phase in (1, 3):
+                        switches = self._switch_count(
+                            phase_before,
+                            phase,
+                            switches_before,
+                        )
+                        if switches > self.max_phase_switches:
+                            continue
+
+                        current = self._max_current(phase)
+                        if current < MIN_CURRENT:
+                            continue
+
+                        actual_power = self._power_kw(phase, current)
+                        finish_duration = required_kwh / actual_power
+                        if finish_duration > duration_hours + 0.000001:
+                            continue
+
+                        free = min(
+                            self._pv_rate(slot),
+                            actual_power,
+                        ) * finish_duration
+                        paid = max(0.0, required_kwh - free)
+
+                        if (
+                            float(slot.price) > self.max_price
+                            and paid > 0.000001
+                        ):
+                            continue
+
+                        terminal = _Terminal(
+                            cost=base_cost + paid * float(slot.price),
+                            slot_index=index,
+                            state=state,
+                            energy_ticks=energy_ticks,
+                            phases=phase,
+                            current_a=current,
+                            energy_kwh=required_kwh,
+                            free_energy_kwh=free,
+                            paid_energy_kwh=paid,
+                            finish_duration_hours=finish_duration,
+                            switches=switches,
+                        )
+                        if self._better_terminal_data(
+                            terminal,
+                            best_terminal,
+                        ):
+                            best_terminal = terminal
+
                     if energy_ticks + suffix_capacity[index] < target_ticks:
                         continue
 
@@ -271,62 +326,6 @@ class QuarterHourOptimizer:
                         ):
                             if self._memory_profile_enabled:
                                 self._profile_nodes_created += 1
-
-                    required_kwh = (
-                        float(remaining_ticks) / ENERGY_TICKS_PER_KWH
-                    )
-
-                    for phase in (1, 3):
-                        switches = self._switch_count(
-                            phase_before,
-                            phase,
-                            switches_before,
-                        )
-                        if switches > self.max_phase_switches:
-                            continue
-
-                        current = self._max_current(phase)
-                        if current < MIN_CURRENT:
-                            continue
-
-                        actual_power = self._power_kw(phase, current)
-                        finish_duration = required_kwh / actual_power
-                        if finish_duration > duration_hours + 0.000001:
-                            continue
-
-                        free = min(
-                            self._pv_rate(slot),
-                            actual_power,
-                        ) * finish_duration
-                        paid = max(0.0, required_kwh - free)
-
-                        if (
-                            float(slot.price) > self.max_price
-                            and paid > 0.000001
-                        ):
-                            continue
-
-                        candidate_cost = (
-                            base_cost + paid * float(slot.price)
-                        )
-                        terminal = _Terminal(
-                            cost=candidate_cost,
-                            slot_index=index,
-                            state=state,
-                            energy_ticks=energy_ticks,
-                            phases=phase,
-                            current_a=current,
-                            energy_kwh=required_kwh,
-                            free_energy_kwh=free,
-                            paid_energy_kwh=paid,
-                            finish_duration_hours=finish_duration,
-                            switches=switches,
-                        )
-                        if self._better_terminal_data(
-                            terminal,
-                            best_terminal,
-                        ):
-                            best_terminal = terminal
 
             parent_layers.append(parent)
             costs = next_costs
