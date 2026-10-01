@@ -1213,10 +1213,10 @@ class EVPlanner:
             return
 
         diagnostic_rss_before = _process_rss_mb()
-        self.logger.warning(
+        self.logger.debug(
             "EV Planner production DP START: "
             f"rss={diagnostic_rss_before:.1f} MB, "
-            f"hours={len(hours)}, "
+            f"quarters={len(hours)}, "
             f"target={float(self.settings.energy_needed_kwh):.2f} kWh"
         )
 
@@ -1701,8 +1701,8 @@ class EVPlanner:
                     len(bucket)
                     for bucket in current_layer.values()
                 )
-                self.logger.warning(
-                    "EV Planner production DP slot="
+                self.logger.debug(
+                    "EV Planner production DP quarter="
                     f"{index + 1}: rss={rss:.1f} MB, "
                     f"states={state_count}, "
                     f"parent_layers={len(parent_layers)}"
@@ -1748,7 +1748,7 @@ class EVPlanner:
                     best_switches = switches
 
         diagnostic_rss_after = _process_rss_mb()
-        self.logger.warning(
+        self.logger.debug(
             "EV Planner production DP END: "
             f"rss={diagnostic_rss_after:.1f} MB, "
             f"delta={diagnostic_rss_after - diagnostic_rss_before:.1f} MB, "
