@@ -1367,17 +1367,6 @@ class EVPlanner:
                 full_options[(index, phase)] = options
 
         ######################################################################
-        # Veilige bovengrens voor resterende energie.
-        #
-        # Deze suffixsom negeert prijs- en fasewisselbeperkingen en
-        # veronderstelt overal maximaal 3-fasenvermogen. Daardoor is het
-        # uitsluitend een noodzakelijke haalbaarheidsgrens: een state die
-        # hiermee het doel niet meer kan halen, kan nooit deel uitmaken
-        # van een complete planning. Het verwijderen van zulke states
-        # verandert dus de optimale oplossing niet.
-        ######################################################################
-
-        ######################################################################
         # Maximumprijs-bewuste bovengrens voor de resterende energie.
         #
         # Als een uur duurder is dan max_price, mag alleen de gratis PV
