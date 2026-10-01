@@ -1407,7 +1407,6 @@ class EVPlanner:
         # DP energy keys are integer nano-kWh. Convert back to kWh only
         # when a real amount is needed.
         ENERGY_SCALE = 1000000000.0
-        target_key = int(target * ENERGY_SCALE + 0.5)
 
         # Compact integer state id:
         # 0 = no active phase yet
