@@ -2,7 +2,7 @@
 
 Native Home Assistant custom integration for EV charging planning using electricity prices and PV forecasts.
 
-**Current release line: 2.0.1-beta.1**
+**Current release line: 2.0.1-beta.2**
 
 ## What's new in 2.0.0
 
