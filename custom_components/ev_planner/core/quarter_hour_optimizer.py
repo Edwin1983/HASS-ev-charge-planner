@@ -170,7 +170,7 @@ class QuarterHourOptimizer:
             parent = bytearray(_STATE_COUNT * width)
             actions = slot_actions[index]
 
-            duration_hours = actions[0].duration_hours if actions else 0.0
+            duration_hours = self._duration_hours(slot)
             if duration_hours <= 0:
                 parent_layers.append(parent)
                 costs = next_costs
@@ -233,8 +233,10 @@ class QuarterHourOptimizer:
                         if switches > self.max_phase_switches:
                             continue
 
-                        current = self._max_current(phase)
-                        if current < MIN_CURRENT:
+                        required_power = required_kwh / duration_hours
+                        current = self._current_for_power(phase, required_power)
+                        max_current = self._max_current(phase)
+                        if current < MIN_CURRENT or current > max_current:
                             continue
 
                         actual_power = self._power_kw(phase, current)
