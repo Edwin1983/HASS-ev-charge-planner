@@ -8,6 +8,7 @@ on:
       - main
       - experiment/quarter-hour-dp
       - experiment/array-dp
+      - experiment/array-dp-fast-loop
       - experiment/dp-memory-profile
       - 'release/**'
   pull_request:
@@ -29,10 +30,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - label: baseline
-            ref: release/v2.0.0-beta.1
-          - label: candidate
+          - label: array-dp
             ref: experiment/array-dp
+          - label: array-dp-fast-loop
+            ref: experiment/array-dp-fast-loop
     runs-on: ubuntu-latest
 
     env:
