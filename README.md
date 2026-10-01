@@ -2,11 +2,21 @@
 
 Native Home Assistant custom integration for EV charging planning using electricity prices and PV forecasts.
 
-**Next release: 1.1.5**
+**Current release line: 2.0.0**
 
-## What's new in 1.1.5
+## What's new in 2.0.0
 
-Version 1.1.5 improves backwards compatibility for existing Home Assistant automations while retaining the native Home Assistant entity model introduced in 1.1.0.
+Version 2.0.0 introduces a memory-safe production planner implementation while retaining the native Home Assistant entity model and decision-layer architecture introduced in 1.1.x.
+
+Highlights:
+
+- memory-safe dynamic programming with direct predecessor reconstruction;
+- bounded phase-switch state space with a hard safety cap;
+- native planner mode with immediate replanning when the mode changes;
+- native planner settings and outputs remain available through Home Assistant entities;
+- solar-only planning and PV-current rounding remain supported;
+- compatibility fallbacks for existing installations using the previous `input_*` helpers;
+- the planner remains a decision layer and does not directly control the physical charger.
 
 Highlights:
 
