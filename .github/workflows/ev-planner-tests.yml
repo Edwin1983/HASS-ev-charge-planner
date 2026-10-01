@@ -25,7 +25,7 @@ on:
 jobs:
   performance-ab:
     name: Performance A/B - ${{ matrix.label }}
-    if: inputs.performance == true
+    if: inputs.performance == true || github.ref == 'refs/heads/experiment/array-dp-fast-loop'
     strategy:
       fail-fast: false
       matrix:
@@ -59,7 +59,6 @@ jobs:
         run: python -m pip install -r requirements_test.txt
 
       - name: Use current benchmark test
-        if: matrix.label == 'baseline'
         run: |
           git fetch origin experiment/array-dp:refs/remotes/origin/experiment/array-dp
           git show origin/experiment/array-dp:tests/test_quarter_hour_optimizer_performance.py > tests/test_quarter_hour_optimizer_performance.py
