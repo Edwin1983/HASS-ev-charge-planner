@@ -2,6 +2,32 @@
 
 All notable changes to EV Charge Planner are documented here.
 
+## [2.0.0] - 2026-10-01
+
+### Added
+
+- Native planner mode changes now trigger an immediate replan.
+- Production planning uses direct predecessor tracking for deterministic reconstruction.
+
+### Changed
+
+- Reworked the production dynamic-programming planner to avoid the previous checkpoint reconstruction approach.
+- Added a hard safety cap of 8 phase switches to bound the planner state space.
+- Preserved native Home Assistant settings, solar-only planning, PV-current rounding and charger-control separation.
+- Kept compatibility fallbacks for existing `input_*` helper configurations.
+
+### Removed
+
+- Obsolete planner lint exceptions and unused planner bindings.
+
+### Validation
+
+- Pytest: passed.
+- Ruff: passed.
+- Hassfest: passed on the validated release baseline.
+- HACS validation: passed on the validated release baseline.
+
+
 ## [1.1.5-beta.3] - 2026-09-27
 
 ### Changed
