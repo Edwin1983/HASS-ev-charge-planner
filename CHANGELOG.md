@@ -1,5 +1,26 @@
 # Changelog
 
+## [2.0.1-beta.2] - 2026-10-01
+
+### Changed
+
+- Optimized the production hour-based planner hot loop to reduce repeated helper calls and dictionary lookups.
+- Preserved the planner's existing scheduling behavior and electrical constraints.
+
+### Performance
+
+- Production `EVPlanner.create_plan()` benchmark: approximately 1.49s median for the 57 kWh / 60-hour planning workload.
+- This release candidate is intended to validate the optimized production planner path in Home Assistant before a stable 2.0.1 release.
+
+### Validation
+
+- Pytest: passed.
+- Ruff: passed.
+- Hassfest: passed on the validated branch.
+- HACS validation: passed on the validated branch.
+- Production planner performance benchmark: passed.
+
+
 All notable changes to EV Charge Planner are documented here.
 
 ## [2.0.0] - 2026-10-01

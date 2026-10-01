@@ -1,16 +1,16 @@
-""" 
+"""
 Experimental quarter-hour EV optimizer.
 
 This module is intentionally separate from the production planner.
 
-Model:
+The DP uses dense numeric arrays for costs and compact byte back-pointers.
+The state model remains identical to the reference optimizer:
 - one decision slot per quarter-hour;
 - 1F/3F and integer 6..16 A;
 - PV is free energy;
 - grid energy is charged at the slot price;
 - max_price is a HARD price-per-kWh limit for grid energy;
 - phase changes are part of the DP state;
-- dominated states are removed from the Pareto frontier;
 - the final slot may be partial so the target can be met exactly.
 
 The optimizer does not control Home Assistant or a charger.
@@ -18,9 +18,9 @@ The optimizer does not control Home Assistant or a charger.
 
 from __future__ import annotations
 
+from array import array
 from dataclasses import dataclass
-from datetime import datetime
-import gc
+from datetime import datetime, timedelta
 import os
 import resource
 import tracemalloc
@@ -36,6 +36,16 @@ from .config import (
 
 ENERGY_TICK_KWH = 0.0025
 ENERGY_TICKS_PER_KWH = 400
+_EPSILON = 0.000000001
+_UNREACHABLE = float("inf")
+
+# State 0 is the initial "no phase yet" state. The remaining states are
+# phase 1 / phase 3 combined with the number of phase switches used.
+_PHASES = (0, 1, 3)
+_PHASE_INDEX = {phase: index for index, phase in enumerate(_PHASES)}
+_STATE_COUNT = 3 * 9
+_SKIP_ACTION = 1
+_ACTION_BASE = 2
 
 
 @dataclass(frozen=True)
@@ -63,14 +73,31 @@ class QuarterHourPlan:
     phase_switches: int
 
 
-@dataclass
-class _Node:
-    cost: float
+@dataclass(frozen=True)
+class _Action:
+    phases: int
+    current_a: int
+    energy_kwh: float
     energy_ticks: int
-    phase: int
+    free_energy_kwh: float
+    paid_energy_kwh: float
+    cost: float
+    duration_hours: float
+
+
+@dataclass(frozen=True)
+class _Terminal:
+    cost: float
+    slot_index: int
+    state: int
+    energy_ticks: int
+    phases: int
+    current_a: int
+    energy_kwh: float
+    free_energy_kwh: float
+    paid_energy_kwh: float
+    finish_duration_hours: float
     switches: int
-    parent: "_Node | None"
-    action: QuarterHourAction | None
 
 
 class QuarterHourOptimizer:
@@ -120,363 +147,371 @@ class QuarterHourOptimizer:
             return self._empty_plan()
 
         target_ticks = self._to_ticks(self.target_kwh)
+        width = target_ticks + 1
         suffix_capacity = self._build_suffix_capacity(ordered)
+        slot_actions = self._build_slot_actions(ordered)
 
-        frontiers = {(0, 0): {0: _Node(0.0, 0, 0, 0, None, None)}}
-        best_terminal: _Node | None = None
+        costs = array("d", [_UNREACHABLE]) * (_STATE_COUNT * width)
+        costs[0] = 0.0
+        active = [[] for _ in range(_STATE_COUNT)]
+        active[0].append(0)
+
+        # One compact byte per state/energy/slot. 0 means unreachable,
+        # 1 means "skip this slot", and >=2 encodes phase + current.
+        parent_layers: list[bytearray] = []
+        best_terminal: _Terminal | None = None
 
         for index, slot in enumerate(ordered):
-            next_frontiers = {}
+            next_costs = array(
+                "d",
+                [_UNREACHABLE],
+            ) * (_STATE_COUNT * width)
+            next_active = [[] for _ in range(_STATE_COUNT)]
+            parent = bytearray(_STATE_COUNT * width)
+            actions = slot_actions[index]
 
             duration_hours = self._duration_hours(slot)
             if duration_hours <= 0:
-                frontiers = self._prune_frontiers(next_frontiers)
+                parent_layers.append(parent)
+                costs = next_costs
+                active = next_active
+                self._record_array_profile(
+                    index,
+                    active,
+                    best_terminal,
+                    width,
+                )
                 continue
 
-            for state, nodes in frontiers.items():
-                phase_before, switches_before = state
+            price = float(slot.price)
+            pv_rate = self._pv_rate(slot)
+            negative_price = price < 0
+            price_above_limit = price > self.max_price
+            max_switches = self.max_phase_switches
+            epsilon = _EPSILON
+            unreachable = _UNREACHABLE
+            state_phases = (0, 1, 3) * 9
+            state_switches = (
+                0, 0, 0,
+                1, 1, 1,
+                2, 2, 2,
+                3, 3, 3,
+                4, 4, 4,
+                5, 5, 5,
+                6, 6, 6,
+                7, 7, 7,
+                8, 8, 8,
+            )
+            max_current_1 = self._max_current(1)
+            max_current_3 = self._max_current(3)
+            voltage = VOLTAGE
 
-                for node in nodes.values():
-                    remaining_ticks = target_ticks - node.energy_ticks
+            for state in range(_STATE_COUNT):
+                energy_list = active[state]
+                if not energy_list:
+                    continue
+
+                phase_before = state_phases[state]
+                switches_before = state_switches[state]
+
+                for energy_ticks in energy_list:
+                    base_index = state * width + energy_ticks
+                    base_cost = costs[base_index]
+                    if base_cost == unreachable:
+                        continue
+
+                    remaining_ticks = target_ticks - energy_ticks
                     if remaining_ticks <= 0:
-                        if self._better_terminal(node, best_terminal):
-                            best_terminal = node
+                        terminal = _Terminal(
+                            cost=base_cost,
+                            slot_index=index,
+                            state=state,
+                            energy_ticks=energy_ticks,
+                            phases=phase_before,
+                            current_a=0,
+                            energy_kwh=0.0,
+                            free_energy_kwh=0.0,
+                            paid_energy_kwh=0.0,
+                            finish_duration_hours=0.0,
+                            switches=switches_before,
+                        )
+                        if best_terminal is None or (
+                            terminal.cost < best_terminal.cost - epsilon
+                            or (
+                                abs(terminal.cost - best_terminal.cost) <= epsilon
+                                and terminal.switches < best_terminal.switches
+                            )
+                        ):
+                            best_terminal = terminal
                         continue
 
-                    if (
-                        node.energy_ticks + suffix_capacity[index]
-                        < target_ticks
-                    ):
-                        continue
+                    required_kwh = remaining_ticks / ENERGY_TICKS_PER_KWH
+                    required_power = required_kwh / duration_hours
 
-                    if (
-                        node.energy_ticks + suffix_capacity[index + 1]
-                        >= target_ticks
+                    # Evaluate the partial final charge. All quantities that
+                    # do not depend on the state are kept local to this slot.
+                    for phase, phase_index, max_current in (
+                        (1, 1, max_current_1),
+                        (3, 2, max_current_3),
                     ):
-                        skip_bucket = next_frontiers.setdefault(
-                            (phase_before, switches_before),
-                            {},
-                        )
-                        self._keep_frontier(skip_bucket, node)
-
-                    for phase in (1, 3):
-                        switches = self._switch_count(
-                            phase_before,
-                            phase,
-                            node.switches,
-                        )
-                        if switches > self.max_phase_switches:
+                        switched = phase_before != 0 and phase_before != phase
+                        switches = switches_before + int(switched)
+                        if switches > max_switches:
                             continue
 
-                        for current in range(
-                            MIN_CURRENT,
-                            self._max_current(phase) + 1,
-                        ):
-                            action_power = self._power_kw(phase, current)
-                            amount = action_power * duration_hours
-                            amount_ticks = self._to_ticks(amount)
-
-                            if amount_ticks <= 0 or amount_ticks > remaining_ticks:
-                                continue
-
-                            free = min(
-                                self._pv_rate(slot),
-                                action_power,
-                            ) * duration_hours
-                            paid = max(0.0, amount - free)
-
+                        if negative_price:
+                            current = max_current
+                        else:
+                            current = int(
+                                (required_power * 1000.0)
+                                / (voltage * phase)
+                            )
                             if (
-                                float(slot.price) > self.max_price
-                                and paid > 0.000001
+                                voltage * current * phase / 1000.0
+                                + 0.000001
+                                < required_power
                             ):
-                                continue
+                                current += 1
+                            if current < MIN_CURRENT:
+                                current = MIN_CURRENT
 
-                            candidate_energy_ticks = (
-                                node.energy_ticks + amount_ticks
-                            )
-                            candidate_cost = (
-                                node.cost + paid * float(slot.price)
-                            )
-                            bucket = next_frontiers.setdefault(
-                                (phase, switches),
-                                {},
-                            )
-                            old = bucket.get(candidate_energy_ticks)
-                            if old is not None and (
-                                candidate_cost >= old.cost - 0.000000001
-                            ):
-                                continue
+                        if current > max_current or max_current < MIN_CURRENT:
+                            continue
 
-                            action = QuarterHourAction(
-                                index=index,
-                                start=slot.start,
-                                end=slot.end,
-                                phases=phase,
-                                current_a=current,
-                                energy_kwh=amount,
-                                free_energy_kwh=free,
-                                paid_energy_kwh=paid,
-                                cost=paid * float(slot.price),
-                            )
-                            candidate = _Node(
-                                cost=candidate_cost,
-                                energy_ticks=candidate_energy_ticks,
-                                phase=phase,
-                                switches=switches,
-                                parent=node,
-                                action=action,
-                            )
+                        actual_power = voltage * current * phase / 1000.0
+                        finish_duration = required_kwh / actual_power
+                        if finish_duration > duration_hours + 0.000001:
+                            continue
 
-                            if self._memory_profile_enabled:
-                                self._profile_nodes_created += 1
+                        free = min(pv_rate, actual_power) * finish_duration
+                        paid = required_kwh - free
+                        if paid < 0.0:
+                            paid = 0.0
+                        if price_above_limit and paid > 0.000001:
+                            continue
 
-                            bucket[candidate_energy_ticks] = candidate
-
-                        required_kwh = (
-                            float(remaining_ticks) / ENERGY_TICKS_PER_KWH
+                        terminal = _Terminal(
+                            cost=base_cost + paid * price,
+                            slot_index=index,
+                            state=state,
+                            energy_ticks=energy_ticks,
+                            phases=phase,
+                            current_a=current,
+                            energy_kwh=required_kwh,
+                            free_energy_kwh=free,
+                            paid_energy_kwh=paid,
+                            finish_duration_hours=finish_duration,
+                            switches=switches,
                         )
-
-                        for current in range(
-                            MIN_CURRENT,
-                            self._max_current(phase) + 1,
+                        if best_terminal is None or (
+                            terminal.cost < best_terminal.cost - epsilon
+                            or (
+                                abs(terminal.cost - best_terminal.cost) <= epsilon
+                                and terminal.switches < best_terminal.switches
+                            )
                         ):
-                            actual_power = self._power_kw(phase, current)
-                            finish_duration = required_kwh / actual_power
+                            best_terminal = terminal
 
-                            if finish_duration > duration_hours + 0.000001:
-                                continue
+                    if energy_ticks + suffix_capacity[index] < target_ticks:
+                        continue
 
-                            free = min(
-                                self._pv_rate(slot),
-                                actual_power,
-                            ) * finish_duration
-                            paid = max(0.0, required_kwh - free)
+                    if energy_ticks + suffix_capacity[index + 1] >= target_ticks:
+                        next_index = base_index
+                        old = next_costs[next_index]
+                        if old == unreachable:
+                            next_active[state].append(energy_ticks)
+                            next_costs[next_index] = base_cost
+                            parent[next_index] = _SKIP_ACTION
+                        elif base_cost < old - epsilon:
+                            next_costs[next_index] = base_cost
+                            parent[next_index] = _SKIP_ACTION
 
-                            if (
-                                float(slot.price) <= self.max_price
-                                or paid <= 0.000001
-                            ):
-                                candidate_cost = (
-                                    node.cost + paid * float(slot.price)
-                                )
-                                if best_terminal is not None:
-                                    if candidate_cost > (
-                                        best_terminal.cost + 0.000000001
-                                    ):
-                                        continue
-                                    if (
-                                        abs(
-                                            candidate_cost - best_terminal.cost
-                                        )
-                                        <= 0.000000001
-                                        and switches >= best_terminal.switches
-                                    ):
-                                        continue
+                    for action in actions:
+                        phase = action.phases
+                        switched = phase_before != 0 and phase_before != phase
+                        switches = switches_before + int(switched)
+                        if switches > max_switches:
+                            continue
+                        action_ticks = action.energy_ticks
+                        if action_ticks > remaining_ticks:
+                            continue
 
-                                action = QuarterHourAction(
-                                    index=index,
-                                    start=slot.start,
-                                    end=slot.start
-                                    + self._seconds_to_timedelta(
-                                        finish_duration * 3600.0
-                                    ),
-                                    phases=phase,
-                                    current_a=current,
-                                    energy_kwh=required_kwh,
-                                    free_energy_kwh=free,
-                                    paid_energy_kwh=paid,
-                                    cost=paid * float(slot.price),
-                                )
-                                candidate = _Node(
-                                    cost=candidate_cost,
-                                    energy_ticks=target_ticks,
-                                    phase=phase,
-                                    switches=switches,
-                                    parent=node,
-                                    action=action,
-                                )
-                                if self._memory_profile_enabled:
-                                    self._profile_nodes_created += 1
-                                if self._better_terminal(
-                                    candidate,
-                                    best_terminal,
-                                ):
-                                    best_terminal = candidate
+                        candidate_energy = energy_ticks + action_ticks
+                        candidate_cost = base_cost + action.cost
+                        candidate_state = (
+                            switches * 3 + (1 if phase == 1 else 2)
+                        )
+                        action_code = (
+                            _ACTION_BASE
+                            + (0 if phase == 1 else 11)
+                            + (action.current_a - MIN_CURRENT)
+                            + (22 if switched else 0)
+                        )
+                        next_index = candidate_state * width + candidate_energy
+                        old = next_costs[next_index]
+                        if old != unreachable and candidate_cost >= old - epsilon:
+                            continue
+                        if old == unreachable:
+                            next_active[candidate_state].append(candidate_energy)
+                        next_costs[next_index] = candidate_cost
+                        parent[next_index] = action_code
+                        if self._memory_profile_enabled:
+                            self._profile_nodes_created += 1
 
-            frontiers = self._prune_frontiers(next_frontiers)
-            if self._memory_profile_enabled:
-                traced_current, traced_peak = tracemalloc.get_traced_memory()
-                live_nodes = sum(
-                    1 for item in gc.get_objects() if isinstance(item, _Node)
-                )
-                live_actions = sum(
-                    1
-                    for item in gc.get_objects()
-                    if isinstance(item, QuarterHourAction)
-                )
-            else:
-                traced_current, traced_peak = 0, 0
-                live_nodes, live_actions = 0, 0
+            parent_layers.append(parent)
+            costs = next_costs
+            active = next_active
 
-            self._record_memory_profile(
+            self._record_array_profile(
                 index,
-                frontiers,
+                active,
                 best_terminal,
-                traced_current=traced_current,
-                traced_peak=traced_peak,
-                live_nodes=live_nodes,
-                live_actions=live_actions,
+                width,
             )
 
-            if not frontiers and best_terminal is not None:
+            if not active and best_terminal is not None:
                 break
 
         if self._memory_profile_enabled:
-            current, peak = tracemalloc.get_traced_memory()
-            live_nodes = sum(
-                1 for item in gc.get_objects() if isinstance(item, _Node)
-            )
-            live_actions = sum(
-                1
-                for item in gc.get_objects()
-                if isinstance(item, QuarterHourAction)
-            )
-            self._record_memory_profile(
-                len(ordered),
-                frontiers,
+            self._record_array_final_profile(
+                len(parent_layers),
+                active,
                 best_terminal,
-                final=True,
-                traced_current=current,
-                traced_peak=peak,
-                live_nodes=live_nodes,
-                live_actions=live_actions,
+                width,
             )
             tracemalloc.stop()
 
         if best_terminal is None:
-            return self._best_partial_plan(frontiers)
+            return self._best_partial_plan(
+                ordered,
+                costs,
+                active,
+                parent_layers,
+                width,
+                target_ticks,
+            )
 
-        return self._build_plan(best_terminal)
-
-    def _record_memory_profile(
-        self,
-        index,
-        frontiers,
-        best_terminal,
-        final=False,
-        traced_current=0,
-        traced_peak=0,
-        live_nodes=0,
-        live_actions=0,
-    ):
-        if not self._memory_profile_enabled:
-            return
-
-        frontier_nodes = sum(len(bucket) for bucket in frontiers.values())
-        rss_kb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-        current_rss_mb = self._current_rss_mb()
-        self.memory_profile.append(
-            {
-                "slot": index,
-                "final": int(final),
-                "frontier_states": len(frontiers),
-                "frontier_entries": frontier_nodes,
-                "nodes_created": self._profile_nodes_created,
-                "best_terminal": int(best_terminal is not None),
-                "rss_mb": rss_kb / 1024.0,
-                "current_rss_mb": current_rss_mb,
-                "tracemalloc_current_mb": (
-                    traced_current / (1024.0 * 1024.0)
-                ),
-                "tracemalloc_peak_mb": traced_peak / (1024.0 * 1024.0),
-                "live_nodes": live_nodes,
-                "live_actions": live_actions,
-            }
+        return self._build_terminal_plan(
+            ordered,
+            parent_layers,
+            best_terminal,
+            width,
         )
 
-    @staticmethod
-    def _current_rss_mb() -> float:
-        """Return the current resident set size on Linux."""
-        try:
-            with open("/proc/self/status", encoding="utf-8") as status_file:
-                for line in status_file:
-                    if line.startswith("VmRSS:"):
-                        parts = line.split()
-                        return float(parts[1]) / 1024.0
-        except (OSError, ValueError):
-            pass
+    def _build_slot_actions(self, slots) -> list[list[_Action]]:
+        result = []
+        max_current_1 = self._max_current(1)
+        max_current_3 = self._max_current(3)
 
-        rss_kb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-        return rss_kb / 1024.0
-
-    def _build_suffix_capacity(self, slots) -> list[int]:
-        suffix = [0] * (len(slots) + 1)
-        for index in range(len(slots) - 1, -1, -1):
-            slot = slots[index]
-            max_power = max(
-                self._power_kw(1, self._max_current(1)),
-                self._power_kw(3, self._max_current(3)),
-            )
+        for slot in slots:
             duration = self._duration_hours(slot)
-            raw = max_power * duration
+            if duration <= 0:
+                result.append([])
+                continue
 
-            if float(slot.price) > self.max_price:
-                raw = min(raw, self._pv_rate(slot) * duration)
+            price = float(slot.price)
+            pv_rate = self._pv_rate(slot)
+            actions = []
 
-            suffix[index] = suffix[index + 1] + self._to_ticks(raw)
-        return suffix
+            for phase, max_current in (
+                (1, max_current_1),
+                (3, max_current_3),
+            ):
+                for current in range(MIN_CURRENT, max_current + 1):
+                    power = self._power_kw(phase, current)
+                    amount = power * duration
+                    amount_ticks = self._to_ticks(amount)
+                    if amount_ticks <= 0:
+                        continue
 
-    def _keep_frontier(self, bucket, candidate: _Node) -> None:
-        energy_ticks = candidate.energy_ticks
-        old = bucket.setdefault(energy_ticks, candidate)
-        if old is not candidate and candidate.cost < old.cost - 0.000000001:
-            bucket[energy_ticks] = candidate
+                    free = min(pv_rate, power) * duration
+                    paid = max(0.0, amount - free)
+                    if price > self.max_price and paid > 0.000001:
+                        continue
 
-    def _prune_frontiers(self, frontiers):
-        # Energy cannot be used as a dominance dimension here. A state with
-        # more energy is not necessarily better: charging actions are discrete
-        # and may not overshoot the target, while the terminal action is only
-        # allowed in the current slot. Therefore a lower-energy state can be
-        # the only state from which an exact target remains reachable.
-        #
-        # _keep_frontier() already removes the only safe duplicate: for the
-        # exact same energy/state, retain the cheapest node.
-        return {
-            state: bucket
-            for state, bucket in frontiers.items()
-            if bucket
-        }
+                    actions.append(
+                        _Action(
+                            phases=phase,
+                            current_a=current,
+                            energy_kwh=amount,
+                            energy_ticks=amount_ticks,
+                            free_energy_kwh=free,
+                            paid_energy_kwh=paid,
+                            cost=paid * price,
+                            duration_hours=duration,
+                        )
+                    )
 
-    def _better_terminal(self, candidate, current) -> bool:
-        if current is None:
-            return True
-        if candidate.cost < current.cost - 0.000000001:
-            return True
-        if abs(candidate.cost - current.cost) <= 0.000000001:
-            return candidate.switches < current.switches
-        return False
+            result.append(actions)
 
-    def _best_partial_plan(self, frontiers) -> QuarterHourPlan:
-        best = None
-        for bucket in frontiers.values():
-            for node in bucket.values():
-                if best is None:
-                    best = node
-                elif node.energy_ticks > best.energy_ticks:
-                    best = node
-                elif (
-                    node.energy_ticks == best.energy_ticks
-                    and node.cost < best.cost
+        return result
+
+    def _relax(
+        self,
+        next_costs,
+        next_active,
+        parent,
+        state,
+        energy_ticks,
+        candidate_cost,
+        parent_energy,
+        action_code,
+        width,
+    ) -> bool:
+        index = state * width + energy_ticks
+        old = next_costs[index]
+        if old != _UNREACHABLE and candidate_cost >= old - _EPSILON:
+            return False
+
+        if old == _UNREACHABLE:
+            next_active[state].append(energy_ticks)
+
+        next_costs[index] = candidate_cost
+        parent[index] = action_code
+        return True
+
+    def _best_partial_plan(
+        self,
+        ordered,
+        costs,
+        active,
+        parent_layers,
+        width,
+        target_ticks,
+    ) -> QuarterHourPlan:
+        best_state = -1
+        best_energy = -1
+        best_cost = _UNREACHABLE
+
+        for state in range(_STATE_COUNT):
+            for energy_ticks in active[state]:
+                cost = costs[state * width + energy_ticks]
+                if (
+                    energy_ticks > best_energy
+                    or (
+                        energy_ticks == best_energy
+                        and cost < best_cost
+                    )
                 ):
-                    best = node
+                    best_state = state
+                    best_energy = energy_ticks
+                    best_cost = cost
 
-        if best is None:
+        if best_state < 0:
             return self._empty_plan()
 
-        actions = self._actions_from_node(best)
+        actions = self._reconstruct_prefix(
+            ordered,
+            parent_layers,
+            len(parent_layers) - 1,
+            best_state,
+            best_energy,
+            width,
+        )
         energy = sum(action.energy_kwh for action in actions)
         free = sum(action.free_energy_kwh for action in actions)
         paid = sum(action.paid_energy_kwh for action in actions)
+
         return QuarterHourPlan(
             actions=actions,
             energy_kwh=energy,
@@ -485,30 +520,243 @@ class QuarterHourOptimizer:
             cost=sum(action.cost for action in actions),
             complete=False,
             missing_energy_kwh=max(0.0, self.target_kwh - energy),
-            phase_switches=best.switches,
+            phase_switches=self._decode_state(best_state)[1],
         )
 
-    def _build_plan(self, node: _Node) -> QuarterHourPlan:
-        actions = self._actions_from_node(node)
+    def _build_terminal_plan(
+        self,
+        ordered,
+        parent_layers,
+        terminal,
+        width,
+    ) -> QuarterHourPlan:
+        prefix = self._reconstruct_prefix(
+            ordered,
+            parent_layers,
+            terminal.slot_index - 1,
+            terminal.state,
+            terminal.energy_ticks,
+            width,
+        )
+
+        slot = ordered[terminal.slot_index]
+        prefix.append(
+            QuarterHourAction(
+                index=terminal.slot_index,
+                start=slot.start,
+                end=slot.start
+                + self._seconds_to_timedelta(
+                    terminal.finish_duration_hours * 3600.0
+                ),
+                phases=terminal.phases,
+                current_a=terminal.current_a,
+                energy_kwh=terminal.energy_kwh,
+                free_energy_kwh=terminal.free_energy_kwh,
+                paid_energy_kwh=terminal.paid_energy_kwh,
+                cost=terminal.paid_energy_kwh * float(slot.price),
+            )
+        )
+
         return QuarterHourPlan(
-            actions=actions,
-            energy_kwh=sum(action.energy_kwh for action in actions),
-            free_energy_kwh=sum(action.free_energy_kwh for action in actions),
-            paid_energy_kwh=sum(action.paid_energy_kwh for action in actions),
-            cost=sum(action.cost for action in actions),
+            actions=prefix,
+            energy_kwh=sum(action.energy_kwh for action in prefix),
+            free_energy_kwh=sum(
+                action.free_energy_kwh for action in prefix
+            ),
+            paid_energy_kwh=sum(
+                action.paid_energy_kwh for action in prefix
+            ),
+            cost=sum(action.cost for action in prefix),
             complete=True,
             missing_energy_kwh=0.0,
-            phase_switches=node.switches,
+            phase_switches=terminal.switches,
         )
 
-    def _actions_from_node(self, node: _Node) -> list[QuarterHourAction]:
+    def _reconstruct_prefix(
+        self,
+        ordered,
+        parent_layers,
+        last_slot,
+        state,
+        energy_ticks,
+        width,
+    ) -> list[QuarterHourAction]:
         actions = []
-        current = node
-        while current is not None and current.action is not None:
-            actions.append(current.action)
-            current = current.parent
+
+        for index in range(last_slot, -1, -1):
+            code = parent_layers[index][state * width + energy_ticks]
+            if code == 0:
+                break
+            if code == _SKIP_ACTION:
+                continue
+
+            phase, current, switched = self._decode_action(code)
+            slot = ordered[index]
+            duration = self._duration_hours(slot)
+            power = self._power_kw(phase, current)
+            amount = power * duration
+            pv_rate = self._pv_rate(slot)
+            free = min(pv_rate, power) * duration
+            paid = max(0.0, amount - free)
+
+            actions.append(
+                QuarterHourAction(
+                    index=index,
+                    start=slot.start,
+                    end=slot.end,
+                    phases=phase,
+                    current_a=current,
+                    energy_kwh=amount,
+                    free_energy_kwh=free,
+                    paid_energy_kwh=paid,
+                    cost=paid * float(slot.price),
+                )
+            )
+
+            amount_ticks = self._to_ticks(amount)
+            energy_ticks -= amount_ticks
+
+            switches = state // 3
+            phase_index = _PHASE_INDEX[phase]
+            if switched:
+                switches -= 1
+                previous_phase_index = 1 if phase_index == 2 else 2
+            else:
+                previous_phase_index = phase_index
+
+            if previous_phase_index == 0:
+                state = 0
+            else:
+                state = switches * 3 + previous_phase_index
+
         actions.reverse()
         return actions
+
+    def _record_array_profile(
+        self,
+        index,
+        active,
+        best_terminal,
+        width,
+    ) -> None:
+        if not self._memory_profile_enabled:
+            return
+
+        frontier_entries = sum(len(items) for items in active)
+        current, peak = tracemalloc.get_traced_memory()
+        rss_kb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        self.memory_profile.append(
+            {
+                "slot": index,
+                "final": 0,
+                "frontier_states": sum(bool(items) for items in active),
+                "frontier_entries": frontier_entries,
+                "nodes_created": self._profile_nodes_created,
+                "best_terminal": int(best_terminal is not None),
+                "rss_mb": rss_kb / 1024.0,
+                "current_rss_mb": self._current_rss_mb(),
+                "tracemalloc_current_mb": current / (1024.0 * 1024.0),
+                "tracemalloc_peak_mb": peak / (1024.0 * 1024.0),
+                "live_nodes": 0,
+                "live_actions": 0,
+                "array_width": width,
+            }
+        )
+
+    def _record_array_final_profile(
+        self,
+        index,
+        active,
+        best_terminal,
+        width,
+    ) -> None:
+        if not self._memory_profile_enabled:
+            return
+
+        current, peak = tracemalloc.get_traced_memory()
+        rss_kb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        self.memory_profile.append(
+            {
+                "slot": index,
+                "final": 1,
+                "frontier_states": sum(bool(items) for items in active),
+                "frontier_entries": sum(len(items) for items in active),
+                "nodes_created": self._profile_nodes_created,
+                "best_terminal": int(best_terminal is not None),
+                "rss_mb": rss_kb / 1024.0,
+                "current_rss_mb": self._current_rss_mb(),
+                "tracemalloc_current_mb": current / (1024.0 * 1024.0),
+                "tracemalloc_peak_mb": peak / (1024.0 * 1024.0),
+                "live_nodes": 0,
+                "live_actions": 0,
+                "array_width": width,
+            }
+        )
+
+    @staticmethod
+    def _state(phase: int, switches: int) -> int:
+        return switches * 3 + _PHASE_INDEX[phase]
+
+    @staticmethod
+    def _decode_state(state: int) -> tuple[int, int]:
+        switches, phase_index = divmod(state, 3)
+        return _PHASES[phase_index], switches
+
+    @staticmethod
+    def _action_code(
+        phases: int,
+        current: int,
+        switched: bool,
+    ) -> int:
+        phase_index = 0 if phases == 1 else 1
+        value = phase_index * 11 + (current - MIN_CURRENT)
+        if switched:
+            value += 22
+        return _ACTION_BASE + value
+
+    @staticmethod
+    def _decode_action(code: int) -> tuple[int, int, bool]:
+        value = code - _ACTION_BASE
+        switched = value >= 22
+        if switched:
+            value -= 22
+        phase_index, current_offset = divmod(value, 11)
+        return (
+            _PHASES[phase_index + 1],
+            MIN_CURRENT + current_offset,
+            switched,
+        )
+
+    def _better_terminal_data(
+        self,
+        candidate: _Terminal,
+        current: _Terminal | None,
+    ) -> bool:
+        if current is None:
+            return True
+        if candidate.cost < current.cost - _EPSILON:
+            return True
+        if abs(candidate.cost - current.cost) <= _EPSILON:
+            return candidate.switches < current.switches
+        return False
+
+    def _build_suffix_capacity(self, slots) -> list[int]:
+        suffix = [0] * (len(slots) + 1)
+        max_power = max(
+            self._power_kw(1, self._max_current(1)),
+            self._power_kw(3, self._max_current(3)),
+        )
+
+        for index in range(len(slots) - 1, -1, -1):
+            slot = slots[index]
+            duration = self._duration_hours(slot)
+            raw = max_power * duration
+
+            if float(slot.price) > self.max_price:
+                raw = min(raw, self._pv_rate(slot) * duration)
+
+            suffix[index] = suffix[index + 1] + self._to_ticks(raw)
+        return suffix
 
     def _empty_plan(self) -> QuarterHourPlan:
         return QuarterHourPlan(
@@ -531,7 +779,10 @@ class QuarterHourOptimizer:
         duration = QuarterHourOptimizer._duration_hours(slot)
         if duration <= 0:
             return 0.0
-        return max(0.0, float(getattr(slot, "usable_pv", 0.0)) / duration)
+        return max(
+            0.0,
+            float(getattr(slot, "usable_pv", 0.0)) / duration,
+        )
 
     @staticmethod
     def _power_kw(phases: int, current: int) -> float:
@@ -554,7 +805,11 @@ class QuarterHourOptimizer:
         current = int(
             (required_power * 1000.0) / (VOLTAGE * phases)
         )
-        if QuarterHourOptimizer._power_kw(phases, current) + 0.000001 < required_power:
+        if (
+            QuarterHourOptimizer._power_kw(phases, current)
+            + 0.000001
+            < required_power
+        ):
             current += 1
         return max(MIN_CURRENT, current)
 
@@ -570,5 +825,4 @@ class QuarterHourOptimizer:
 
     @staticmethod
     def _seconds_to_timedelta(seconds: float):
-        from datetime import timedelta
         return timedelta(seconds=seconds)

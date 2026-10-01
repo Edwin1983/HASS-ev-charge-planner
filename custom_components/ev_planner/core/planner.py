@@ -1468,22 +1468,6 @@ class EVPlanner:
                 full_options[(index, 3)],
             )
 
-            def set_candidate(
-                bucket,
-                energy_key,
-                candidate_cost,
-            ):
-                try:
-                    existing = bucket[energy_key]
-                except KeyError:
-                    existing = None
-
-                if existing is None or candidate_cost < existing:
-                    bucket[energy_key] = candidate_cost
-                    return True
-
-                return False
-
             for state_id, energies in prev_layer.items():
                 phase_prev = phase_by_state[state_id]
                 switches_prev = switches_by_state[state_id]
@@ -1531,18 +1515,18 @@ class EVPlanner:
                     ):
                         continue
 
-                    # Skip.
-                    bucket = next_layer.setdefault(state_id, {})
+                    bucket = next_layer.get(state_id)
+                    if bucket is None:
+                        bucket = {}
+                        next_layer[state_id] = bucket
 
-                    if set_candidate(
-                        bucket,
-                        energy_k,
-                        cost,
-                    ):
-                        parent_bucket = parent_layer.setdefault(
-                            state_id,
-                            {},
-                        )
+                    existing = bucket.get(energy_k)
+                    if existing is None or cost < existing:
+                        bucket[energy_k] = cost
+                        parent_bucket = parent_layer.get(state_id)
+                        if parent_bucket is None:
+                            parent_bucket = {}
+                            parent_layer[state_id] = parent_bucket
                         parent_bucket[energy_k] = (
                             state_id,
                             energy_k,
@@ -1577,15 +1561,13 @@ class EVPlanner:
                                 - CURRENT_TIEBREAK_EPSILON * current_a
                             )
 
-                            if set_candidate(
-                                out_bucket,
-                                new_energy_key,
-                                new_cost,
-                            ):
-                                parent_bucket = parent_layer.setdefault(
-                                    out_state,
-                                    {},
-                                )
+                            existing = out_bucket.get(new_energy_key)
+                            if existing is None or new_cost < existing:
+                                out_bucket[new_energy_key] = new_cost
+                                parent_bucket = parent_layer.get(out_state)
+                                if parent_bucket is None:
+                                    parent_bucket = {}
+                                    parent_layer[out_state] = parent_bucket
                                 parent_bucket[new_energy_key] = (
                                     state_id,
                                     energy_k,
@@ -1669,15 +1651,13 @@ class EVPlanner:
                             new_energy * ENERGY_SCALE + 0.5
                         )
 
-                        if set_candidate(
-                            out_bucket,
-                            new_key,
-                            new_cost,
-                        ):
-                            parent_bucket = parent_layer.setdefault(
-                                out_state,
-                                {},
-                            )
+                        existing = out_bucket.get(new_key)
+                        if existing is None or new_cost < existing:
+                            out_bucket[new_key] = new_cost
+                            parent_bucket = parent_layer.get(out_state)
+                            if parent_bucket is None:
+                                parent_bucket = {}
+                                parent_layer[out_state] = parent_bucket
                             parent_bucket[new_key] = (
                                 state_id,
                                 energy_k,
