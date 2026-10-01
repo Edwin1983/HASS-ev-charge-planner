@@ -234,8 +234,22 @@ class QuarterHourOptimizer:
                             continue
 
                         required_power = required_kwh / duration_hours
-                        current = self._current_for_power(phase, required_power)
                         max_current = self._max_current(phase)
+                        if float(slot.price) < 0:
+                            # With a negative grid price, use the highest
+                            # current that fits the phase/power limit. The
+                            # target energy is fixed, so a shorter charge
+                            # duration consumes less PV and leaves more of
+                            # the target energy at the negative grid price.
+                            current = max_current
+                        else:
+                            # With a non-negative price, use the lowest
+                            # current that can complete within this slot.
+                            # The longer duration maximizes usable PV.
+                            current = self._current_for_power(
+                                phase,
+                                required_power,
+                            )
                         if current < MIN_CURRENT or current > max_current:
                             continue
 
