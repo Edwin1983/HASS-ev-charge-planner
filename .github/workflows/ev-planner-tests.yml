@@ -10,6 +10,7 @@ on:
       - experiment/array-dp
       - experiment/array-dp-fast-loop
       - experiment/dp-memory-profile
+      - experiment/ha-planner-fast-loop
       - 'release/**'
   pull_request:
     branches:
@@ -66,6 +67,49 @@ jobs:
       - name: Run benchmark
         run: |
           python -m pytest -q tests/test_quarter_hour_optimizer_performance.py::test_57kwh_quarter_hour_dp_performance -s
+
+  production-planner-ab:
+    name: Production planner A/B - ${{ matrix.label }}
+    if: github.ref == 'refs/heads/experiment/ha-planner-fast-loop'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: v2.0.0
+            ref: v2.0.0
+          - label: ha-planner-fast-loop
+            ref: experiment/ha-planner-fast-loop
+    runs-on: ubuntu-latest
+
+    env:
+      PYTHONPATH: .
+      EV_PLANNER_RUN_PERFORMANCE: "1"
+
+    steps:
+      - name: Checkout benchmark revision
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ matrix.ref }}
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements_test.txt
+
+      - name: Install test dependencies
+        run: python -m pip install -r requirements_test.txt
+
+      - name: Use production benchmark test
+        run: |
+          git fetch origin experiment/ha-planner-fast-loop:refs/remotes/origin/experiment/ha-planner-fast-loop
+          git show origin/experiment/ha-planner-fast-loop:tests/test_production_planner_performance.py > tests/test_production_planner_performance.py
+
+      - name: Run production planner benchmark
+        run: |
+          python -m pytest -q tests/test_production_planner_performance.py::test_production_planner_performance -s
 
   dp-memory-profile:
     name: DP memory scaling profile
