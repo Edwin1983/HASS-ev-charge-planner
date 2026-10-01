@@ -1377,37 +1377,25 @@ class EVPlanner:
         # verandert dus de optimale oplossing niet.
         ######################################################################
 
-        suffix_max_energy = [0.0] * (count + 1)
-
-        for index in range(count - 1, -1, -1):
-            suffix_max_energy[index] = (
-                suffix_max_energy[index + 1]
-                + self._hour_max_energy(
-                    ordered_hours[index],
-                    3,
-                )
-            )
-
         ######################################################################
         # Maximumprijs-bewuste bovengrens voor de resterende energie.
         #
         # Als een uur duurder is dan max_price, mag alleen de gratis PV
         # uit dat uur worden gebruikt. Voor betaalbare uren blijft de
-        # volledige fysieke capaciteit beschikbaar. Deze bovengrens is
-        # bewust onafhankelijk van het fasewisselbudget: hij is alleen
-        # bedoeld als veilige noodzakelijke voorwaarde voor een COMPLETE
-        # planning.
+        # volledige fysieke capaciteit beschikbaar.
         #
-        # Belangrijk: als de volledige target-energie überhaupt niet
-        # haalbaar is binnen de maximumprijs, mag de DP niet alle
-        # gedeeltelijke states wegprunen. In dat geval moet de planner
-        # juist de maximaal haalbare PARTIËLE planning teruggeven.
+        # Deze bovengrens is alleen een noodzakelijke voorwaarde voor een
+        # COMPLETE planning. Als de target-energie binnen de maximumprijs
+        # niet volledig haalbaar is, schakelen we de target-pruning uit
+        # zodat de DP juist de maximaal haalbare PARTIËLE planning kan
+        # teruggeven.
         ######################################################################
 
         suffix_max_price_energy = [0.0] * (count + 1)
 
         for index in range(count - 1, -1, -1):
             hour = ordered_hours[index]
+
             if float(hour.price) <= max_price + 0.000001:
                 eligible_energy = self._hour_max_energy(hour, 3)
             else:
