@@ -1485,10 +1485,13 @@ class EVPlanner:
         # tweede keer exact dezelfde complexe DP moet uitvoeren.
         ######################################################################
 
+        layer_profile = []
+
         def advance_layer(
             prev_layer,
             index,
         ):
+            layer_start = perf_counter()
             next_layer = {}
             parent_layer = {}
 
@@ -1701,6 +1704,19 @@ class EVPlanner:
                                 ),
                             )
 
+            layer_elapsed_ms = (perf_counter() - layer_start) * 1000.0
+            layer_state_count = sum(
+                len(bucket)
+                for bucket in next_layer.values()
+            )
+            layer_profile.append(
+                (
+                    index,
+                    layer_elapsed_ms,
+                    layer_state_count,
+                )
+            )
+
             return next_layer, parent_layer
 
         start_layer = {
@@ -1728,11 +1744,12 @@ class EVPlanner:
                     len(bucket)
                     for bucket in current_layer.values()
                 )
-                self.logger.debug(
-                    "EV Planner production DP quarter="
-                    f"{index + 1}: rss={rss:.1f} MB, "
+                self.logger.info(
+                    "EV Planner DP PERF quarter="
+                    f"{index + 1}/{count}: "
+                    f"layer={layer_profile[-1][1]:.1f} ms, "
                     f"states={state_count}, "
-                    f"parent_layers={len(parent_layers)}"
+                    f"rss={rss:.1f} MB"
                 )
 
         last_layer = current_layer
@@ -1775,6 +1792,26 @@ class EVPlanner:
                     best_switches = switches
 
         diagnostic_rss_after = _process_rss_mb()
+
+        if layer_profile:
+            slowest_layer = max(
+                layer_profile,
+                key=lambda item: item[1],
+            )
+            total_layer_ms = sum(
+                item[1]
+                for item in layer_profile
+            )
+            self.logger.info(
+                "EV Planner DP PERF SUMMARY: "
+                f"layers={len(layer_profile)}, "
+                f"total_layers={total_layer_ms:.1f} ms, "
+                f"slowest_quarter={slowest_layer[0] + 1}, "
+                f"slowest_layer={slowest_layer[1]:.1f} ms, "
+                f"slowest_states={slowest_layer[2]}, "
+                f"rss_delta={diagnostic_rss_after - diagnostic_rss_before:.1f} MB"
+            )
+
         self.logger.debug(
             "EV Planner production DP END: "
             f"rss={diagnostic_rss_after:.1f} MB, "
