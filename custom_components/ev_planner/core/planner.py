@@ -1495,6 +1495,9 @@ class EVPlanner:
             "skip_attempts": 0,
             "skip_updates": 0,
             "full_attempts": 0,
+            "full_breaks_remaining": 0,
+            "full_candidates_evaluated": 0,
+            "full_no_update": 0,
             "full_updates": 0,
             "finish_attempts": 0,
             "finish_updates": 0,
@@ -1611,8 +1614,10 @@ class EVPlanner:
                         ) in options:
                             profile["full_attempts"] += 1
                             if amount > remaining + 0.000001:
+                                profile["full_breaks_remaining"] += 1
                                 break
 
+                            profile["full_candidates_evaluated"] += 1
                             new_energy_key = energy_k + amount_key
 
                             new_cost = (
@@ -1634,6 +1639,8 @@ class EVPlanner:
                                     energy_k,
                                     ("full", phase, current_a),
                                 )
+                            else:
+                                profile["full_no_update"] += 1
 
                         profile["full_loop_ms"] += (perf_counter() - full_loop_start) * 1000.0
 
@@ -1737,7 +1744,9 @@ class EVPlanner:
 
                         profile["finish_ms"] += (perf_counter() - finish_start) * 1000.0
 
-                    profile["state_iteration_ms"] += (perf_counter() - state_iteration_start) * 1000.0
+                profile["state_iteration_ms"] += (
+                    perf_counter() - state_iteration_start
+                ) * 1000.0
 
             layer_elapsed_ms = (perf_counter() - layer_start) * 1000.0
             layer_state_count = sum(
@@ -1792,7 +1801,11 @@ class EVPlanner:
             f"states={profile['states']}, "
             f"pruned={profile['states_pruned']}, "
             f"skip={profile['skip_attempts']}/{profile['skip_updates']}, "
-            f"full={profile['full_attempts']}/{profile['full_updates']}, "
+            f"full={profile['full_attempts']}/"
+            f"{profile['full_candidates_evaluated']}/"
+            f"{profile['full_updates']}/"
+            f"{profile['full_no_update']}/"
+            f"break={profile['full_breaks_remaining']}, "
             f"finish={profile['finish_attempts']}/{profile['finish_updates']}, "
             f"state_loop={profile['state_iteration_ms']:.1f} ms, "
             f"full_loop={profile['full_loop_ms']:.1f} ms, "
