@@ -235,7 +235,7 @@ class QuarterHourOptimizer:
                         (
                             action.energy_ticks,
                             action.cost,
-                            candidate_state,
+                            candidate_state * width + action.energy_ticks,
                             action_code,
                         )
                     )
@@ -363,7 +363,7 @@ class QuarterHourOptimizer:
                     for (
                         action_ticks,
                         action_cost,
-                        candidate_state,
+                        candidate_index_offset,
                         action_code,
                     ) in transition_actions[state]:
                         if action_ticks > remaining_ticks:
@@ -371,7 +371,7 @@ class QuarterHourOptimizer:
 
                         candidate_energy = energy_ticks + action_ticks
                         candidate_cost = base_cost + action_cost
-                        next_index = candidate_state * width + candidate_energy
+                        next_index = energy_ticks + candidate_index_offset
                         old = next_costs[next_index]
                         if old != unreachable and candidate_cost >= old - epsilon:
                             continue
