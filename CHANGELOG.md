@@ -4,6 +4,32 @@ All notable changes to EV Charge Planner are documented here.
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-10-02
+
+### Performance
+
+- Added a dense NumPy array-based dynamic-programming planner for quarter-hour schedules.
+- Reduced the 57 kWh / 60 quarter-hour benchmark from roughly 6.9 seconds per run to roughly 0.13 seconds per run in the dedicated A/B benchmark.
+- Added a safe fallback to the reference planner when the fast planner cannot represent the requested planning problem.
+
+### Fixed
+
+- Preserve the maximum achievable partial plan when the requested target energy cannot be fully scheduled.
+- Preserve negative electricity prices instead of clamping or rejecting them.
+- Corrected missing quarter-hour forecast end times by inferring the interval from adjacent forecast records.
+- Pass the controller's current time explicitly to price and Solcast readers.
+- Removed hidden mutable forecast-interval state from the Solcast reader.
+- Reconfigure now correctly overrides conflicting stored options.
+- Updated controller data-error tests for the explicit reader time argument.
+
+### Validation
+
+- EV Planner test suite: passed.
+- Ruff: passed.
+- Array-DP equivalence tests: passed.
+- Performance A/B benchmark: passed.
+
+
 ### Performance
 
 - Added `core/planner_fast.py`: a dense numpy implementation of the planner DP on the energy lattice. Same optimum as the existing DP (verified differentially), roughly 30x faster and ~3x less memory on 96-slot / 57 kWh workloads.
