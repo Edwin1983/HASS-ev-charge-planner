@@ -793,7 +793,7 @@ class EVPlannerController:
         # ------------------------------------------------------------------
 
         try:
-            price_data = self.prices.read()
+            price_data = self.prices.read(now)
 
         except Exception as err:
             self.logger.warning(f"Prijsdata kon niet worden gelezen: {err}")
@@ -814,7 +814,7 @@ class EVPlannerController:
         # ------------------------------------------------------------------
 
         try:
-            solcast_data = self.solcast.read()
+            solcast_data = self.solcast.read(now)
 
         except Exception as err:
             self.logger.warning(f"Solcast-data kon niet worden gelezen: {err}")
