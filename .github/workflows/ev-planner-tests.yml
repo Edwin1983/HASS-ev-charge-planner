@@ -162,7 +162,7 @@ jobs:
 
   performance-ab-hotloop-action-limit:
     name: Performance A/B - hotloop-action-limit ${{ matrix.label }}
-    if: github.ref == 'refs/heads/experiment/ha-planner-hotloop-action-limit'
+    if: github.ref == 'refs/heads/experiment/ha-planner-hotloop-action-limit' || (github.event_name == 'pull_request' && github.head_ref == 'experiment/ha-planner-hotloop-action-limit')
     strategy:
       fail-fast: false
       matrix:
