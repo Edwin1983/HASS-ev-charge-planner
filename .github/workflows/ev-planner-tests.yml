@@ -162,7 +162,7 @@ jobs:
 
   performance-ab-hotloop-index-cache:
     name: Performance A/B - hotloop-index-cache ${{ matrix.label }}
-    if: github.ref == 'refs/heads/experiment/ha-planner-hotloop-index-cache'
+    if: github.ref == 'refs/heads/experiment/ha-planner-hotloop-index-cache' || (github.event_name == 'pull_request' && github.head_ref == 'experiment/ha-planner-hotloop-index-cache')
     strategy:
       fail-fast: false
       matrix:
