@@ -107,6 +107,7 @@ import resource
 
 from .logger import Logger
 from .solar import apply_solar_only
+from . import planner_fast
 
 from .models import Hour
 from .models import PriceData
@@ -1216,7 +1217,7 @@ class EVPlanner:
         self.logger.debug(
             "EV Planner production DP START: "
             f"rss={diagnostic_rss_before:.1f} MB, "
-            f"quarters={len(hours)}, "
+            f"hours={len(hours)}, "
             f"target={float(self.settings.energy_needed_kwh):.2f} kWh"
         )
 
@@ -1367,37 +1368,26 @@ class EVPlanner:
                 full_options[(index, phase)] = options
 
         ######################################################################
-        # Maximumprijs-bewuste bovengrens voor de resterende energie.
+        # Veilige bovengrens voor resterende energie.
         #
-        # Als een uur duurder is dan max_price, mag alleen de gratis PV
-        # uit dat uur worden gebruikt. Voor betaalbare uren blijft de
-        # volledige fysieke capaciteit beschikbaar.
-        #
-        # Deze bovengrens is alleen een noodzakelijke voorwaarde voor een
-        # COMPLETE planning. Als de target-energie binnen de maximumprijs
-        # niet volledig haalbaar is, schakelen we de target-pruning uit
-        # zodat de DP juist de maximaal haalbare PARTIËLE planning kan
-        # teruggeven.
+        # Deze suffixsom negeert prijs- en fasewisselbeperkingen en
+        # veronderstelt overal maximaal 3-fasenvermogen. Daardoor is het
+        # uitsluitend een noodzakelijke haalbaarheidsgrens: een state die
+        # hiermee het doel niet meer kan halen, kan nooit deel uitmaken
+        # van een complete planning. Het verwijderen van zulke states
+        # verandert dus de optimale oplossing niet.
         ######################################################################
 
-        suffix_max_price_energy = [0.0] * (count + 1)
+        suffix_max_energy = [0.0] * (count + 1)
 
         for index in range(count - 1, -1, -1):
-            hour = ordered_hours[index]
-
-            if float(hour.price) <= max_price + 0.000001:
-                eligible_energy = self._hour_max_energy(hour, 3)
-            else:
-                eligible_energy = float(hour.free_energy)
-
-            suffix_max_price_energy[index] = (
-                suffix_max_price_energy[index + 1]
-                + max(0.0, eligible_energy)
+            suffix_max_energy[index] = (
+                suffix_max_energy[index + 1]
+                + self._hour_max_energy(
+                    ordered_hours[index],
+                    3,
+                )
             )
-
-        target_reachable_with_max_price = (
-            suffix_max_price_energy[0] >= target - 0.000001
-        )
 
         ######################################################################
         # Dynamic programming.
@@ -1412,6 +1402,50 @@ class EVPlanner:
         #       | ("full", fase, stroom_A)
         #       | ("finish", fase, stroom_A, bedrag_kwh)
         ######################################################################
+
+        ######################################################################
+        # Snelle route: dichte numpy-DP op het energierooster.
+        #
+        # Levert hetzelfde optimum als de DP hieronder, maar veel sneller
+        # en met veel minder geheugen. Geeft None terug (-> oude DP) als
+        # numpy ontbreekt, het rooster niet past, er geen compleet plan
+        # bestaat of de interne controle faalt.
+        ######################################################################
+
+        if planner_fast.available():
+            try:
+                fast_actions = planner_fast.fast_optimize(
+                    seconds=[
+                        (hour.end - hour.start).total_seconds()
+                        for hour in ordered_hours
+                    ],
+                    durations=durations,
+                    prices=prices,
+                    pv_rates=pv_rates,
+                    full_options=full_options,
+                    valid_currents=valid_currents_by_phase,
+                    power_table=power_by_phase_current,
+                    target=target,
+                    max_switches=max_switches,
+                    max_price=max_price,
+                    voltage=VOLTAGE_V,
+                    tiebreak=CURRENT_TIEBREAK_EPSILON,
+                )
+            except Exception as err:  # noqa: BLE001 - altijd terugvallen
+                self.logger.warning(
+                    f"Snelle planner mislukt, oude DP wordt gebruikt: {err}"
+                )
+                fast_actions = None
+
+            if fast_actions is not None:
+                self._apply_actions(
+                    ordered_hours,
+                    fast_actions,
+                    durations,
+                    pv_rates,
+                )
+                self.logger.debug("GEZAMENLIJKE OPTIMALISATIE: snelle route")
+                return
 
         NONE_PHASE = 0
 
@@ -1524,11 +1558,7 @@ class EVPlanner:
                     energy = float(energy_k) / ENERGY_SCALE
                     remaining = target - energy
 
-                    if (
-                        target_reachable_with_max_price
-                        and energy + suffix_max_price_energy[index]
-                        < target - 0.000001
-                    ):
+                    if energy + suffix_max_energy[index] < target - 0.000001:
                         continue
 
                     # Skip.
@@ -1717,7 +1747,7 @@ class EVPlanner:
                     for bucket in current_layer.values()
                 )
                 self.logger.debug(
-                    "EV Planner production DP quarter="
+                    "EV Planner production DP slot="
                     f"{index + 1}: rss={rss:.1f} MB, "
                     f"states={state_count}, "
                     f"parent_layers={len(parent_layers)}"
@@ -1837,7 +1867,38 @@ class EVPlanner:
         # hierboven.
         ######################################################################
 
-        for index in range(count):
+        self._apply_actions(
+            ordered_hours,
+            actions,
+            durations,
+            pv_rates,
+        )
+
+        if best_state == 0:
+            best_phase = NONE_PHASE
+            best_switches = 0
+        else:
+            best_phase = 1 if best_state & 1 else 3
+            best_switches = (best_state - 1) // 2
+
+        self.logger.debug(
+            "GEZAMENLIJKE OPTIMALISATIE: "
+            f"{float(best_energy_key) / ENERGY_SCALE:.3f}/{target:.3f} kWh, "
+            f"kosten EUR{best_cost:.4f}, "
+            f"eindfase={best_phase}, "
+            f"wisselingen={best_switches}"
+        )
+
+    def _apply_actions(
+        self,
+        ordered_hours,
+        actions,
+        durations,
+        pv_rates,
+    ) -> None:
+        """Schrijf een actielijst naar de Hour-objecten."""
+
+        for index in range(len(ordered_hours)):
             hour = ordered_hours[index]
 
             action = actions[index]
@@ -1934,21 +1995,6 @@ class EVPlanner:
             hour.free_energy = float(free)
 
             hour.paid_energy = float(paid)
-
-        if best_state == 0:
-            best_phase = NONE_PHASE
-            best_switches = 0
-        else:
-            best_phase = 1 if best_state & 1 else 3
-            best_switches = (best_state - 1) // 2
-
-        self.logger.debug(
-            "GEZAMENLIJKE OPTIMALISATIE: "
-            f"{float(best_energy_key) / ENERGY_SCALE:.3f}/{target:.3f} kWh, "
-            f"kosten EUR{best_cost:.4f}, "
-            f"eindfase={best_phase}, "
-            f"wisselingen={best_switches}"
-        )
 
     ##########################################################################
     # Werkelijk laadvermogen

@@ -2,6 +2,22 @@
 
 All notable changes to EV Charge Planner are documented here.
 
+## [Unreleased]
+
+### Performance
+
+- Added `core/planner_fast.py`: a dense numpy implementation of the planner DP on the energy lattice. Same optimum as the existing DP (verified differentially), roughly 30x faster and ~3x less memory on 96-slot / 57 kWh workloads.
+- The original DP remains as automatic fallback (numpy missing, infeasible target, non-lattice slot durations, failed self-check).
+- Planner memory diagnostics are logged at debug level instead of warning.
+
+### Fixed
+
+- Planner runs triggered from different services are now serialized with a lock.
+
+### Tests
+
+- Added `tests/test_planner_fast.py` (fast DP vs. reference DP).
+
 ## [2.0.0] - 2026-10-01
 
 ### Added

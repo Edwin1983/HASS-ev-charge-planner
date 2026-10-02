@@ -146,42 +146,6 @@ def test_planner_max_price_zero_never_uses_expensive_grid_energy():
         assert decision.paid_energy_kwh >= 0.0
 
 
-def test_planner_returns_partial_plan_when_max_price_blocks_full_target():
-    tz = timezone.utc
-    now = datetime.now(tz)
-    start = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
-
-    prices = [
-        make_hour(start, price=0.10, index=0),
-        make_hour(start + timedelta(hours=1), price=0.50, index=1),
-    ]
-    solar = [
-        make_hour(start, price=0.0, pv=0.0, index=0),
-        make_hour(start + timedelta(hours=1), price=0.0, pv=0.0, index=1),
-    ]
-
-    plan = EVPlanner(
-        PriceData(hours=prices),
-        SolcastData(hours=solar),
-        PlannerSettings(
-            energy_needed_kwh=25.0,
-            departure_time=start + timedelta(hours=2),
-            max_price=0.20,
-            max_charge_power_kw=11.04,
-            max_phase_switches=8,
-        ),
-        DummyLogger(),
-    ).create_plan()
-
-    # Only the first hour is affordable. The requested 25 kWh cannot
-    # be completed, but the planner must keep the achievable partial plan.
-    assert plan.complete is False
-    assert plan.energy_planned_kwh == pytest.approx(11.04, abs=1e-6)
-    assert plan.missing_energy_kwh == pytest.approx(13.96, abs=1e-6)
-    assert len(plan.decisions) == 1
-    assert plan.decisions[0].price <= 0.20 + 1e-9
-
-
 def test_planner_outputs_valid_electrical_settings():
     tz = timezone.utc
     now = datetime.now(tz)

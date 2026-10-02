@@ -55,6 +55,9 @@ De planner levert alleen de benodigde informatie aan Home Assistant.
 
 from __future__ import annotations
 
+import functools
+import threading
+
 from datetime import datetime, time, timedelta
 
 from homeassistant.helpers import entity_registry as er
@@ -110,6 +113,17 @@ from .solcast import SolcastReader
 from .status import EVStatusManager
 
 
+def _locked(method):
+    """Serialiseer planner-runs: services draaien in executor-threads."""
+
+    @functools.wraps(method)
+    def wrapper(self, *args, **kwargs):
+        with self._plan_lock:
+            return method(self, *args, **kwargs)
+
+    return wrapper
+
+
 class EVPlannerController:
     """
     Centrale controller van de EV Planner.
@@ -128,6 +142,9 @@ class EVPlannerController:
         entry_id=None,
     ):
         self.logger = logger
+
+        # Reentrant: replan() roept create_plan() aan.
+        self._plan_lock = threading.RLock()
 
         self.config = config or {}
 
@@ -715,6 +732,7 @@ class EVPlannerController:
     # Planning
     ##########################################################################
 
+    @_locked
     def create_plan(
         self,
         now: datetime | None = None,
@@ -884,6 +902,7 @@ class EVPlannerController:
     # Update
     ##########################################################################
 
+    @_locked
     def update(
         self,
         now: datetime | None = None,
@@ -968,6 +987,7 @@ class EVPlannerController:
     # Planning wissen
     ##########################################################################
 
+    @_locked
     def clear_plan(self) -> None:
         """
         Verwijdert de huidige planning volledig.
@@ -990,6 +1010,7 @@ class EVPlannerController:
     # Opnieuw plannen
     ##########################################################################
 
+    @_locked
     def replan(
         self,
         now: datetime | None = None,
