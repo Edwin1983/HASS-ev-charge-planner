@@ -475,11 +475,6 @@ class PriceReader:
                 "Ongeldige electricity_price."
             )
 
-        if price_raw < 0:
-            raise ValueError(
-                "electricity_price mag niet negatief zijn."
-            )
-
         price = (
             price_raw
             / self.PRICE_FACTOR
