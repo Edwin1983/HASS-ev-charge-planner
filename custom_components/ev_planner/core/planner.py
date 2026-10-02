@@ -1487,6 +1487,24 @@ class EVPlanner:
 
         layer_profile = []
 
+        # Fine-grained hot-loop diagnostics. These counters are intentionally
+        # kept local to the profiling branch so production code is unchanged.
+        profile = {
+            "states": 0,
+            "states_pruned": 0,
+            "skip_attempts": 0,
+            "skip_updates": 0,
+            "full_attempts": 0,
+            "full_updates": 0,
+            "finish_attempts": 0,
+            "finish_updates": 0,
+            "state_iteration_ms": 0.0,
+            "full_loop_ms": 0.0,
+            "finish_ms": 0.0,
+            "dict_lookup_ms": 0.0,
+            "parent_write_ms": 0.0,
+        }
+
         def advance_layer(
             prev_layer,
             index,
@@ -1504,6 +1522,7 @@ class EVPlanner:
             )
 
             for state_id, energies in prev_layer.items():
+                state_iteration_start = perf_counter()
                 phase_prev = phase_by_state[state_id]
                 switches_prev = switches_by_state[state_id]
 
@@ -1540,6 +1559,7 @@ class EVPlanner:
                     )
 
                 for energy_k, cost in energies.items():
+                    profile["states"] += 1
                     energy = float(energy_k) / ENERGY_SCALE
                     remaining = target - energy
 
@@ -1548,6 +1568,7 @@ class EVPlanner:
                         and energy + suffix_max_price_energy[index]
                         < target - 0.000001
                     ):
+                        profile["states_pruned"] += 1
                         continue
 
                     bucket = next_layer.get(state_id)
@@ -1555,8 +1576,10 @@ class EVPlanner:
                         bucket = {}
                         next_layer[state_id] = bucket
 
+                    profile["skip_attempts"] += 1
                     existing = bucket.get(energy_k)
                     if existing is None or cost < existing:
+                        profile["skip_updates"] += 1
                         bucket[energy_k] = cost
                         parent_bucket = parent_layer.get(state_id)
                         if parent_bucket is None:
@@ -1578,6 +1601,7 @@ class EVPlanner:
                         options,
                     ) in phase_data:
                         # Volledig uur.
+                        full_loop_start = perf_counter()
                         for (
                             current_a,
                             amount,
@@ -1585,6 +1609,7 @@ class EVPlanner:
                             free,
                             paid,
                         ) in options:
+                            profile["full_attempts"] += 1
                             if amount > remaining + 0.000001:
                                 break
 
@@ -1598,6 +1623,7 @@ class EVPlanner:
 
                             existing = out_bucket.get(new_energy_key)
                             if existing is None or new_cost < existing:
+                                profile["full_updates"] += 1
                                 out_bucket[new_energy_key] = new_cost
                                 parent_bucket = parent_layer.get(out_state)
                                 if parent_bucket is None:
@@ -1609,7 +1635,10 @@ class EVPlanner:
                                     ("full", phase, current_a),
                                 )
 
+                        profile["full_loop_ms"] += (perf_counter() - full_loop_start) * 1000.0
+
                         # Finish.
+                        finish_start = perf_counter()
                         duration = durations[index]
 
                         if duration <= 0:
@@ -1686,8 +1715,10 @@ class EVPlanner:
                             new_energy * ENERGY_SCALE + 0.5
                         )
 
+                        profile["finish_attempts"] += 1
                         existing = out_bucket.get(new_key)
                         if existing is None or new_cost < existing:
+                            profile["finish_updates"] += 1
                             out_bucket[new_key] = new_cost
                             parent_bucket = parent_layer.get(out_state)
                             if parent_bucket is None:
@@ -1703,6 +1734,10 @@ class EVPlanner:
                                     finish_amount,
                                 ),
                             )
+
+                        profile["finish_ms"] += (perf_counter() - finish_start) * 1000.0
+
+                    profile["state_iteration_ms"] += (perf_counter() - state_iteration_start) * 1000.0
 
             layer_elapsed_ms = (perf_counter() - layer_start) * 1000.0
             layer_state_count = sum(
@@ -1751,6 +1786,18 @@ class EVPlanner:
                     f"states={state_count}, "
                     f"rss={rss:.1f} MB"
                 )
+
+        self.logger.info(
+            "EV Planner DP HOTLOOP PERF: "
+            f"states={profile['states']}, "
+            f"pruned={profile['states_pruned']}, "
+            f"skip={profile['skip_attempts']}/{profile['skip_updates']}, "
+            f"full={profile['full_attempts']}/{profile['full_updates']}, "
+            f"finish={profile['finish_attempts']}/{profile['finish_updates']}, "
+            f"state_loop={profile['state_iteration_ms']:.1f} ms, "
+            f"full_loop={profile['full_loop_ms']:.1f} ms, "
+            f"finish={profile['finish_ms']:.1f} ms"
+        )
 
         last_layer = current_layer
 
