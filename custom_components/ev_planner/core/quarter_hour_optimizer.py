@@ -170,40 +170,6 @@ class QuarterHourOptimizer:
             parent = bytearray(_STATE_COUNT * width)
             actions = slot_actions[index]
 
-            # Precompute state-specific transitions once per slot.  The hot
-            # loop processes millions of state/action combinations; phase
-            # switch accounting and action-code construction do not depend on
-            # the energy value, so doing them outside that loop avoids
-            # repeating the same Python work for every frontier entry.
-            transition_actions = [[] for _ in range(_STATE_COUNT)]
-            for state in range(_STATE_COUNT):
-                phase_before = state_phases[state]
-                switches_before = state_switches[state]
-                transitions = transition_actions[state]
-                for action in actions:
-                    phase = action.phases
-                    switched = phase_before != 0 and phase_before != phase
-                    switches = switches_before + int(switched)
-                    if switches > max_switches:
-                        continue
-                    candidate_state = (
-                        switches * 3 + (1 if phase == 1 else 2)
-                    )
-                    action_code = (
-                        _ACTION_BASE
-                        + (0 if phase == 1 else 11)
-                        + (action.current_a - MIN_CURRENT)
-                        + (22 if switched else 0)
-                    )
-                    transitions.append(
-                        (
-                            action.energy_ticks,
-                            action.cost,
-                            candidate_state,
-                            action_code,
-                        )
-                    )
-
             duration_hours = self._duration_hours(slot)
             if duration_hours <= 0:
                 parent_layers.append(parent)
@@ -239,6 +205,40 @@ class QuarterHourOptimizer:
             max_current_1 = self._max_current(1)
             max_current_3 = self._max_current(3)
             voltage = VOLTAGE
+
+            # Precompute state-specific transitions once per slot.  The hot
+            # loop processes millions of state/action combinations; phase
+            # switch accounting and action-code construction do not depend on
+            # the energy value, so doing them outside that loop avoids
+            # repeating the same Python work for every frontier entry.
+            transition_actions = [[] for _ in range(_STATE_COUNT)]
+            for state in range(_STATE_COUNT):
+                phase_before = state_phases[state]
+                switches_before = state_switches[state]
+                transitions = transition_actions[state]
+                for action in actions:
+                    phase = action.phases
+                    switched = phase_before != 0 and phase_before != phase
+                    switches = switches_before + int(switched)
+                    if switches > max_switches:
+                        continue
+                    candidate_state = (
+                        switches * 3 + (1 if phase == 1 else 2)
+                    )
+                    action_code = (
+                        _ACTION_BASE
+                        + (0 if phase == 1 else 11)
+                        + (action.current_a - MIN_CURRENT)
+                        + (22 if switched else 0)
+                    )
+                    transitions.append(
+                        (
+                            action.energy_ticks,
+                            action.cost,
+                            candidate_state,
+                            action_code,
+                        )
+                    )
 
             for state in range(_STATE_COUNT):
                 energy_list = active[state]
