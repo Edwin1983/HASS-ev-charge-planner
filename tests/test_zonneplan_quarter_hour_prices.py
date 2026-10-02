@@ -760,15 +760,49 @@ def test_array_dp_matches_exact_dp_across_representative_scenarios(monkeypatch):
             for hour in hours
             if hour.selected
         ]
+        total_energy = sum(
+            hour.charge_energy
+            for hour in hours
+            if hour.selected
+        )
+        total_free = sum(
+            hour.free_energy
+            for hour in hours
+            if hour.selected
+        )
+        total_paid = sum(
+            hour.paid_energy
+            for hour in hours
+            if hour.selected
+        )
         total_cost = sum(
             hour.paid_energy * hour.price
             for hour in hours
             if hour.selected
         )
-        return selected, round(total_cost, 9)
+        switches = 0
+        previous_phase = None
+        for hour in hours:
+            if not hour.selected:
+                continue
+            phase = int(hour.phases)
+            if previous_phase is not None and phase != previous_phase:
+                switches += 1
+            previous_phase = phase
+        return (
+            selected,
+            round(total_energy, 9),
+            round(total_free, 9),
+            round(total_paid, 9),
+            round(total_cost, 9),
+            switches,
+        )
 
     for spec in scenarios:
         exact = run_scenario(spec, False)
         fast = run_scenario(spec, True)
 
-        assert fast == exact, spec["name"]
+        # The array DP may choose a different but equally optimal
+        # tie-break solution. Compare the actual optimization result,
+        # not the incidental choice between equal-cost schedules.
+        assert fast[1:] == exact[1:], spec["name"]
