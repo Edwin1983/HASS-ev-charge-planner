@@ -486,7 +486,7 @@ class EVPlanner:
         self._log_plan(plan)
         perf_end = perf_counter()
 
-        self.logger.debug(
+        self.logger.info(
             "EV Planner PERF: "
             f"total={(perf_end - perf_start) * 1000.0:.1f} ms "
             f"| validate={(perf_after_validate - perf_start) * 1000.0:.1f} ms "
