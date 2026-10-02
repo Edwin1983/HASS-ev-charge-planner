@@ -235,6 +235,7 @@ class QuarterHourOptimizer:
                         (
                             action.energy_ticks,
                             action.cost,
+                            candidate_state,
                             candidate_state * width + action.energy_ticks,
                             action_code,
                         )
@@ -363,6 +364,7 @@ class QuarterHourOptimizer:
                     for (
                         action_ticks,
                         action_cost,
+                        candidate_state,
                         candidate_index_offset,
                         action_code,
                     ) in transition_actions[state]:
