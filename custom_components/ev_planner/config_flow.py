@@ -92,9 +92,16 @@ class EVPlannerConfigFlow(
     ) -> FlowResult:
         """Handle reconfiguration of the planner input entities."""
         if user_input is not None:
+            entry = self._get_reconfigure_entry()
+            remaining_options = {
+                key: value
+                for key, value in entry.options.items()
+                if key not in user_input
+            }
             return self.async_update_reload_and_abort(
-                self._get_reconfigure_entry(),
+                entry,
                 data_updates=user_input,
+                options=remaining_options,
             )
 
         current = self._get_reconfigure_entry().data
