@@ -51,7 +51,13 @@ class PriceReader:
     # Publieke API
     ##########################################################################
 
-    def read(self) -> PriceData:
+    def read(
+        self,
+        now: datetime | None = None,
+    ) -> PriceData:
+
+        if now is None:
+            now = datetime.now().astimezone()
 
         forecast = self._read_forecast()
 
@@ -64,7 +70,8 @@ class PriceReader:
         )
 
         hours = self._remove_past(
-            hours
+            hours,
+            now,
         )
 
         hours = self._sort(
@@ -76,7 +83,8 @@ class PriceReader:
         )
 
         data = self._calculate_statistics(
-            hours
+            hours,
+            now,
         )
 
         self.logger.debug(
@@ -246,14 +254,27 @@ class PriceReader:
 
         hours = []
 
+        fallback_interval_minutes = self._infer_interval_minutes(
+            forecast
+        )
+
         index = 0
 
-        for item in forecast:
+        for item_index, item in enumerate(forecast):
 
             try:
 
+                next_start = None
+
+                if item_index + 1 < len(forecast):
+                    next_start = self._parse_start_date(
+                        forecast[item_index + 1]
+                    )
+
                 hour = self._create_hour(
-                    item
+                    item,
+                    fallback_end=next_start,
+                    fallback_interval_minutes=fallback_interval_minutes,
                 )
 
 
@@ -303,6 +324,66 @@ class PriceReader:
 
         return hours
 
+    def _infer_interval_minutes(
+        self,
+        forecast: list[dict[str, Any]],
+    ) -> int:
+        """Infer the forecast interval from consecutive start dates."""
+
+        starts = []
+
+        for item in forecast:
+            try:
+                start = self._parse_start_date(item)
+            except (TypeError, ValueError):
+                continue
+
+            starts.append(start)
+
+        intervals = []
+
+        for previous, current in zip(starts, starts[1:]):
+            delta_minutes = (
+                current - previous
+            ).total_seconds() / 60.0
+
+            if delta_minutes > 0:
+                intervals.append(delta_minutes)
+
+        if not intervals:
+            return 60
+
+        return max(1, int(round(min(intervals))))
+
+    def _parse_start_date(
+        self,
+        item: dict[str, Any],
+    ) -> datetime:
+        """Parse a Zonneplan start_date for interval inference."""
+
+        if not isinstance(item, dict):
+            raise TypeError("Prijsrecord is geen dictionary.")
+
+        raw_date = item.get("start_date")
+
+        if raw_date is None:
+            raise ValueError("Ontbrekende start_date.")
+
+        if isinstance(raw_date, datetime):
+            start = raw_date
+        elif isinstance(raw_date, str):
+            try:
+                start = datetime.fromisoformat(raw_date)
+            except (TypeError, ValueError) as err:
+                raise ValueError("Ongeldige start_date.") from err
+        else:
+            raise TypeError("start_date heeft geen geldig type.")
+
+        if start.tzinfo is None:
+            raise ValueError("start_date is niet timezone-aware.")
+
+        return start
+
     ##########################################################################
     # Eén Hour-object maken
     ##########################################################################
@@ -310,6 +391,8 @@ class PriceReader:
     def _create_hour(
         self,
         item: dict[str, Any],
+        fallback_end: datetime | None = None,
+        fallback_interval_minutes: int = 60,
     ) -> Hour:
 
 
@@ -393,7 +476,12 @@ class PriceReader:
         )
 
         if raw_end_date is None:
-            end = start + timedelta(hours=1)
+            if fallback_end is not None and fallback_end > start:
+                end = fallback_end
+            else:
+                end = start + timedelta(
+                    minutes=fallback_interval_minutes
+                )
 
         elif isinstance(
             raw_end_date,
@@ -592,14 +680,8 @@ class PriceReader:
     def _remove_past(
         self,
         hours: list[Hour],
+        now: datetime,
     ) -> list[Hour]:
-
-
-        now = (
-            datetime
-            .now()
-            .astimezone()
-        )
 
 
         result = []
@@ -701,6 +783,7 @@ class PriceReader:
     def _calculate_statistics(
         self,
         hours: list[Hour],
+        now: datetime,
     ) -> PriceData:
 
 
@@ -709,11 +792,7 @@ class PriceReader:
 
         data.hours = hours
 
-        data.generated = (
-            datetime
-            .now()
-            .astimezone()
-        )
+        data.generated = now
 
         if not hours:
 
