@@ -1523,15 +1523,6 @@ class EVPlanner:
                     existing = bucket.get(energy_k)
                     if existing is None or cost < existing:
                         bucket[energy_k] = cost
-                        parent_bucket = parent_layer.get(state_id)
-                        if parent_bucket is None:
-                            parent_bucket = {}
-                            parent_layer[state_id] = parent_bucket
-                        parent_bucket[energy_k] = (
-                            state_id,
-                            energy_k,
-                            ("skip",),
-                        )
 
                     if remaining <= 0.000001:
                         continue
@@ -1787,7 +1778,19 @@ class EVPlanner:
 
         for index in range(count - 1, -1, -1):
             parent_layer = parent_layers[index]
-            parent = parent_layer[current_state][current_energy_key]
+            parent_bucket = parent_layer.get(current_state)
+
+            if parent_bucket is None:
+                # No explicit predecessor means this transition was a skip:
+                # state and energy are unchanged.
+                actions[index] = ("skip",)
+                continue
+
+            parent = parent_bucket.get(current_energy_key)
+            if parent is None:
+                # Skip transitions are intentionally not stored.
+                actions[index] = ("skip",)
+                continue
 
             parent_state, parent_energy_key, action = parent
 
