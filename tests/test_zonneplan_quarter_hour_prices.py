@@ -48,6 +48,91 @@ def test_negative_quarter_hour_price_is_preserved():
     assert hours[0].price_raw == -500000.0
 
 
+def test_missing_quarter_hour_end_date_uses_next_start_and_interval_for_last():
+    attributes = {
+        "forecast": [
+            {
+                "start_date": "2026-09-25T16:00:00+02:00",
+                "price_tax_included": {"amount": 1000000},
+            },
+            {
+                "start_date": "2026-09-25T16:15:00+02:00",
+                "price_tax_included": {"amount": 2000000},
+            },
+            {
+                "start_date": "2026-09-25T16:30:00+02:00",
+                "price_tax_included": {"amount": 3000000},
+            },
+        ]
+    }
+
+    reader = PriceReader(DummyApp(attributes), Logger(), "sensor.zonneplan")
+    hours = reader._parse_forecast(attributes["forecast"])
+
+    assert len(hours) == 3
+    assert hours[0].end == datetime.fromisoformat(
+        "2026-09-25T16:15:00+02:00"
+    )
+    assert hours[1].end == datetime.fromisoformat(
+        "2026-09-25T16:30:00+02:00"
+    )
+    assert hours[2].end == datetime.fromisoformat(
+        "2026-09-25T16:45:00+02:00"
+    )
+
+
+def test_price_reader_remove_past_uses_supplied_now():
+    reader = PriceReader(DummyApp({"forecast": []}), Logger(), "sensor.zonneplan")
+    hours = [
+        Hour(
+            start=datetime.fromisoformat("2026-09-25T16:00:00+02:00"),
+            end=datetime.fromisoformat("2026-09-25T16:15:00+02:00"),
+            price=0.1,
+        ),
+        Hour(
+            start=datetime.fromisoformat("2026-09-25T16:15:00+02:00"),
+            end=datetime.fromisoformat("2026-09-25T16:30:00+02:00"),
+            price=0.2,
+        ),
+    ]
+
+    now = datetime.fromisoformat("2026-09-25T16:10:00+02:00")
+    remaining = reader._remove_past(hours, now)
+
+    assert len(remaining) == 2
+
+    now = datetime.fromisoformat("2026-09-25T16:15:00+02:00")
+    remaining = reader._remove_past(hours, now)
+
+    assert len(remaining) == 1
+    assert remaining[0].start.minute == 15
+
+
+def test_solcast_read_returns_explicit_intervals():
+    app = DummyApp(
+        {
+            "detailedForecast": [
+                {
+                    "period_start": "2026-09-25T16:00:00+02:00",
+                    "pv_estimate": 4.0,
+                }
+            ]
+        }
+    )
+    reader = SolcastReader(
+        app,
+        Logger(),
+        "sensor.solcast",
+        "sensor.solcast_tomorrow",
+    )
+
+    today, interval_minutes = reader._read_today()
+
+    assert len(today) == 1
+    assert interval_minutes == 30
+    assert not hasattr(reader, "_forecast_interval_minutes")
+
+
 def test_legacy_hourly_format_is_still_parsed():
     attributes = {
         "forecast": [
