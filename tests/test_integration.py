@@ -87,12 +87,12 @@ async def test_full_integration_setup_and_unload(hass):
     assert isinstance(dashboard_response, dict)
 
     states = hass.states
-    assert states.get("sensor.ev_planner_state") is not None
-    assert states.get("sensor.ev_planner_data") is not None
-    assert states.get("sensor.ev_planner_desired_charge_current") is not None
-    assert states.get("sensor.ev_planner_desired_phases") is not None
-    assert states.get("binary_sensor.ev_planner_charging_allowed") is not None
-    assert states.get("switch.ev_planner_smart_charging") is not None
+    assert states.get("sensor.ev_charge_planner_state") is not None
+    assert states.get("sensor.ev_charge_planner_data") is not None
+    assert states.get("sensor.ev_charge_planner_desired_charge_current") is not None
+    assert states.get("sensor.ev_charge_planner_desired_phases") is not None
+    assert states.get("binary_sensor.ev_charge_planner_charging_allowed") is not None
+    assert states.get("switch.ev_charge_planner_smart_charging") is not None
     assert states.get("select.ev_charge_planner_departure_day") is not None
     assert states.get("select.ev_charge_planner_planner_mode") is not None
     controller = entry.runtime_data
@@ -259,7 +259,7 @@ async def test_full_planning_chain(hass):
     await hass.services.async_call(
         "switch",
         "turn_on",
-        {"entity_id": "switch.ev_planner_smart_charging"},
+        {"entity_id": "switch.ev_charge_planner_smart_charging"},
         blocking=True,
     )
     await hass.async_block_till_done()
@@ -273,19 +273,19 @@ async def test_full_planning_chain(hass):
     assert controller.last_plan.energy_planned_kwh > 0
     assert controller.scheduler.plan is controller.last_plan
 
-    data_state = hass.states.get("sensor.ev_planner_data")
+    data_state = hass.states.get("sensor.ev_charge_planner_data")
     assert data_state is not None
     assert data_state.attributes["decisions"]
     assert data_state.attributes["energy_planned_kwh"] > 0
 
-    charge_current = hass.states.get("sensor.ev_planner_desired_charge_current")
-    phases = hass.states.get("sensor.ev_planner_desired_phases")
+    charge_current = hass.states.get("sensor.ev_charge_planner_desired_charge_current")
+    phases = hass.states.get("sensor.ev_charge_planner_desired_phases")
     assert charge_current is not None
     assert phases is not None
     assert 0 <= int(charge_current.state) <= 16
     assert int(phases.state) in {0, 1, 3}
 
-    state = hass.states.get("sensor.ev_planner_state")
+    state = hass.states.get("sensor.ev_charge_planner_state")
     assert state is not None
     assert state.state not in {
         "Geen prijsdata",
