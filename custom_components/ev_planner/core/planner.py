@@ -182,6 +182,14 @@ MAX_PHASE_SWITCHES_HARD_CAP = 8
 CURRENT_TIEBREAK_EPSILON = 0.000000001
 MEMORY_DIAGNOSTIC_INTERVAL = 8
 
+# Compact predecessor encoding for direct DP reconstruction.
+PARENT_ACTION_SHIFT = 16
+PARENT_STATE_MASK = 0xFF
+PARENT_ACTION_MASK = 0xFF
+PARENT_ACTION_FULL = 1
+PARENT_ACTION_FINISH = 64
+PARENT_PHASE_3 = 32
+
 
 def _process_rss_mb() -> float:
     """Return the current Python process RSS in MB for diagnostics."""
@@ -1589,10 +1597,8 @@ class EVPlanner:
                             parent_bucket = {}
                             parent_layer[state_id] = parent_bucket
                         parent_bucket[energy_k] = (
-                            state_id,
-                            energy_k,
-                            ("skip",),
-                        )
+                            energy_k << PARENT_ACTION_SHIFT
+                        ) | (state_id << 8)
 
                     if remaining <= 0.000001:
                         continue
@@ -1634,10 +1640,15 @@ class EVPlanner:
                                 if parent_bucket is None:
                                     parent_bucket = {}
                                     parent_layer[out_state] = parent_bucket
+                                action_code = (
+                                    PARENT_ACTION_FULL
+                                    | (PARENT_PHASE_3 if phase == 3 else 0)
+                                    | int(current_a)
+                                )
                                 parent_bucket[new_energy_key] = (
-                                    state_id,
-                                    energy_k,
-                                    ("full", phase, current_a),
+                                    (energy_k << PARENT_ACTION_SHIFT)
+                                    | (state_id << 8)
+                                    | action_code
                                 )
                             else:
                                 profile["full_no_update"] += 1
@@ -1731,15 +1742,15 @@ class EVPlanner:
                             if parent_bucket is None:
                                 parent_bucket = {}
                                 parent_layer[out_state] = parent_bucket
+                            action_code = (
+                                PARENT_ACTION_FINISH
+                                | (PARENT_PHASE_3 if phase == 3 else 0)
+                                | int(best_current)
+                            )
                             parent_bucket[new_key] = (
-                                state_id,
-                                energy_k,
-                                (
-                                    "finish",
-                                    phase,
-                                    best_current,
-                                    finish_amount,
-                                ),
+                                (energy_k << PARENT_ACTION_SHIFT)
+                                | (state_id << 8)
+                                | action_code
                             )
 
                         profile["finish_ms"] += (perf_counter() - finish_start) * 1000.0
@@ -1918,7 +1929,23 @@ class EVPlanner:
             parent_layer = parent_layers[index]
             parent = parent_layer[current_state][current_energy_key]
 
-            parent_state, parent_energy_key, action = parent
+            parent_energy_key = parent >> PARENT_ACTION_SHIFT
+            parent_state = (parent >> 8) & PARENT_STATE_MASK
+            action_code = parent & PARENT_ACTION_MASK
+
+            if action_code == 0:
+                action = ("skip",)
+            else:
+                phase = 3 if action_code & PARENT_PHASE_3 else 1
+                current_a = action_code & 31
+                if action_code & PARENT_ACTION_FINISH:
+                    finish_amount = (
+                        float(current_energy_key - parent_energy_key)
+                        / ENERGY_SCALE
+                    )
+                    action = ("finish", phase, current_a, finish_amount)
+                else:
+                    action = ("full", phase, current_a)
 
             actions[index] = action
 
