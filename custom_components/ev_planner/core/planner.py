@@ -184,11 +184,14 @@ MEMORY_DIAGNOSTIC_INTERVAL = 8
 
 # Compact predecessor encoding for direct DP reconstruction.
 PARENT_ACTION_SHIFT = 16
+PARENT_STATE_SHIFT = 8
 PARENT_STATE_MASK = 0xFF
 PARENT_ACTION_MASK = 0xFF
-PARENT_ACTION_FULL = 1
-PARENT_ACTION_FINISH = 64
-PARENT_PHASE_3 = 32
+PARENT_ACTION_TYPE_MASK = 0xC0
+PARENT_ACTION_FULL = 0x40
+PARENT_ACTION_FINISH = 0x80
+PARENT_PHASE_3 = 0x20
+PARENT_CURRENT_MASK = 0x1F
 
 
 def _process_rss_mb() -> float:
@@ -1647,7 +1650,7 @@ class EVPlanner:
                                 )
                                 parent_bucket[new_energy_key] = (
                                     (energy_k << PARENT_ACTION_SHIFT)
-                                    | (state_id << 8)
+                                    | (state_id << PARENT_STATE_SHIFT)
                                     | action_code
                                 )
                             else:
@@ -1930,14 +1933,14 @@ class EVPlanner:
             parent = parent_layer[current_state][current_energy_key]
 
             parent_energy_key = parent >> PARENT_ACTION_SHIFT
-            parent_state = (parent >> 8) & PARENT_STATE_MASK
+            parent_state = (parent >> PARENT_STATE_SHIFT) & PARENT_STATE_MASK
             action_code = parent & PARENT_ACTION_MASK
 
             if action_code == 0:
                 action = ("skip",)
             else:
                 phase = 3 if action_code & PARENT_PHASE_3 else 1
-                current_a = action_code & 31
+                current_a = action_code & PARENT_CURRENT_MASK
                 if action_code & PARENT_ACTION_FINISH:
                     finish_amount = (
                         float(current_energy_key - parent_energy_key)
