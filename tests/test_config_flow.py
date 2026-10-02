@@ -82,3 +82,40 @@ async def test_options_flow_updates_entry(hass):
 
     assert result["type"] == "create_entry"
     assert result["data"][CONF_ENTITY_PRICES] == "sensor.other_price_sensor"
+
+
+@pytest.mark.usefixtures("enable_custom_integrations")
+async def test_reconfigure_removes_overridden_options(hass):
+    """Test that reconfigure removes options for updated data keys."""
+    old_options = {
+        **config_data(),
+        CONF_ENTITY_PRICES: "sensor.old_price_sensor",
+    }
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="EV Charge Planner",
+        data=config_data(),
+        options=old_options,
+        unique_id="reconfigure-options-test",
+    )
+    entry.add_to_hass(hass)
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": "reconfigure", "entry_id": entry.entry_id},
+    )
+    assert result["type"] == "form"
+    assert result["step_id"] == "reconfigure"
+
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        user_input=config_data(),
+    )
+
+    assert result["type"] == "abort"
+    assert result["reason"] == "reconfigure_successful"
+
+    updated_entry = hass.config_entries.async_get_entry(entry.entry_id)
+    assert updated_entry is not None
+    assert updated_entry.data == config_data()
+    assert updated_entry.options == {}
