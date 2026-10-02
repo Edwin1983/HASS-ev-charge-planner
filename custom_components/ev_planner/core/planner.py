@@ -1490,6 +1490,7 @@ class EVPlanner:
         def advance_layer(
             prev_layer,
             index,
+            prune_unreachable=True,
         ):
             next_layer = {}
             parent_layer = {}
@@ -1558,7 +1559,10 @@ class EVPlanner:
                     energy = float(energy_k) / ENERGY_SCALE
                     remaining = target - energy
 
-                    if energy + suffix_max_energy[index] < target - 0.000001:
+                    if (
+                        prune_unreachable
+                        and energy + suffix_max_energy[index] < target - 0.000001
+                    ):
                         continue
 
                     # Skip.
@@ -1734,6 +1738,7 @@ class EVPlanner:
             current_layer, parent_layer = advance_layer(
                 current_layer,
                 index,
+                prune_unreachable=True,
             )
             parent_layers.append(parent_layer)
 
@@ -1754,6 +1759,36 @@ class EVPlanner:
                 )
 
         last_layer = current_layer
+
+        # Als het volledige doel niet haalbaar was, is de suffix-pruning
+        # hierboven te agressief voor een gedeeltelijk plan: states die het
+        # volledige doel niet meer kunnen halen zijn daar bewust weggegooid.
+        # Herhaal daarom alleen in dit uitzonderlijke geval de DP zonder die
+        # pruning. Zo blijft de normale haalbare route snel, terwijl een
+        # onhaalbaar doel alsnog maximaal wordt benut in plaats van een leeg
+        # plan op te leveren.
+        if not any(
+            energy_k >= int(target * ENERGY_SCALE - 0.5)
+            for energies in last_layer.values()
+            for energy_k in energies
+        ):
+            self.logger.debug(
+                "Volledig doel niet haalbaar; "
+                "DP wordt opnieuw uitgevoerd voor maximaal gedeeltelijk plan."
+            )
+
+            current_layer = start_layer
+            parent_layers = []
+
+            for index in range(count):
+                current_layer, parent_layer = advance_layer(
+                    current_layer,
+                    index,
+                    prune_unreachable=False,
+                )
+                parent_layers.append(parent_layer)
+
+            last_layer = current_layer
 
         ######################################################################
         # Beste eindstate: maximale energie, dan minimale kosten,
