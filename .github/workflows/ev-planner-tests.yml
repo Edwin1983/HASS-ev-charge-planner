@@ -11,6 +11,7 @@ on:
       - experiment/array-dp-fast-loop
       - experiment/dp-memory-profile
       - experiment/ha-planner-fast-loop
+      - experiment/ha-planner-array-hotloop
       - 'release/**'
   pull_request:
     branches:
@@ -26,7 +27,7 @@ on:
 jobs:
   performance-ab:
     name: Performance A/B - ${{ matrix.label }}
-    if: inputs.performance == true || github.ref == 'refs/heads/experiment/array-dp-fast-loop'
+    if: inputs.performance == true || github.ref == 'refs/heads/experiment/array-dp-fast-loop' || github.ref == 'refs/heads/experiment/ha-planner-array-hotloop'
     strategy:
       fail-fast: false
       matrix:
