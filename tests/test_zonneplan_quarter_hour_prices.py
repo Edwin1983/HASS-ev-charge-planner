@@ -31,6 +31,23 @@ def test_zonneplan_quarter_hour_format_is_parsed():
     assert hours[0].price == 0.2
 
 
+def test_negative_quarter_hour_price_is_preserved():
+    attributes = {
+        "forecast": [
+            {
+                "start_date": "2026-09-25T16:00:00+02:00",
+                "end_date": "2026-09-25T16:15:00+02:00",
+                "price_tax_included": {"amount": -500000},
+            }
+        ]
+    }
+    reader = PriceReader(DummyApp(attributes), Logger(), "sensor.zonneplan")
+    hours = reader._parse_forecast(attributes["forecast"])
+    assert len(hours) == 1
+    assert hours[0].price == -0.05
+    assert hours[0].price_raw == -500000.0
+
+
 def test_legacy_hourly_format_is_still_parsed():
     attributes = {
         "forecast": [
@@ -302,6 +319,50 @@ def test_planner_selects_individual_zonneplan_quarters_by_price():
         start + timedelta(minutes=30),
     ]
     assert abs(plan.energy_planned_kwh - 1.38) < 0.000001
+
+
+def test_planner_keeps_partial_plan_when_target_is_unreachable():
+    from custom_components.ev_planner.core.planner import (
+        EVPlanner,
+        PlannerSettings,
+    )
+
+    start = (
+        datetime.now()
+        .astimezone()
+        .replace(second=0, microsecond=0)
+        + timedelta(hours=2)
+    )
+    price_hours = [
+        Hour(start=start, end=start + timedelta(hours=1), price=0.10),
+        Hour(
+            start=start + timedelta(hours=1),
+            end=start + timedelta(hours=2),
+            price=0.50,
+        ),
+    ]
+    planner = EVPlanner(
+        PriceData(hours=price_hours),
+        SolcastData(),
+        PlannerSettings(
+            energy_needed_kwh=10.0,
+            departure_time=start + timedelta(hours=2),
+            max_price=0.20,
+            solar_is_free=False,
+            max_charge_power_kw=3.68,
+            max_phase_switches=8,
+        ),
+        Logger(),
+    )
+
+    plan = planner.create_plan()
+
+    assert not plan.complete
+    assert abs(plan.energy_planned_kwh - 3.68) < 0.000001
+    assert abs(plan.missing_energy_kwh - 6.32) < 0.000001
+    selected = [decision for decision in plan.decisions if decision.selected]
+    assert len(selected) == 1
+    assert selected[0].hour.start == start
 
 
 def test_scheduler_treats_selected_quarters_as_separate_runtime_windows():
