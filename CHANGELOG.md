@@ -13,10 +13,19 @@ All notable changes to EV Charge Planner are documented here.
 ### Fixed
 
 - Planner runs triggered from different services are now serialized with a lock.
+- `create_plan` no longer raises when the price or Solcast sensor has no forecast data; it publishes "Geen prijsdata" / "Geen PV-data" like the other no-data paths.
+- All platforms now report the same device name ("EV Charge Planner").
+- The maximum-phase-switches number is limited to 8, matching the planner's internal hard cap.
+- Added missing `data_description` helper texts to the en/nl translations.
+
+### Cleanup
+
+- Removed ~200 lines of commented-out debug logging from `core/prices.py` (no code change).
 
 ### Tests
 
-- Added `tests/test_planner_fast.py` (fast DP vs. reference DP).
+- Added `tests/test_planner_fast.py` (fast DP vs. reference DP, including negative prices).
+- Added `tests/test_controller_data_errors.py`.
 
 ## [2.0.0] - 2026-10-01
 

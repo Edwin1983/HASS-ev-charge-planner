@@ -8,6 +8,11 @@
           "entity_prices": "Electricity prices",
           "entity_solcast_today": "Solcast today",
           "entity_solcast_tomorrow": "Solcast tomorrow"
+        },
+        "data_description": {
+          "entity_prices": "Select the Home Assistant sensor that provides the electricity price forecast.",
+          "entity_solcast_today": "Select the Solcast sensor containing today's hourly PV forecast.",
+          "entity_solcast_tomorrow": "Select the Solcast sensor containing tomorrow's hourly PV forecast."
         }
       },
       "reconfigure": {
@@ -38,6 +43,11 @@
           "entity_prices": "Electricity prices",
           "entity_solcast_today": "Solcast today",
           "entity_solcast_tomorrow": "Solcast tomorrow"
+        },
+        "data_description": {
+          "entity_prices": "Select the Home Assistant sensor that provides the electricity price forecast.",
+          "entity_solcast_today": "Select the Solcast sensor containing today's hourly PV forecast.",
+          "entity_solcast_tomorrow": "Select the Solcast sensor containing tomorrow's hourly PV forecast."
         }
       }
     }

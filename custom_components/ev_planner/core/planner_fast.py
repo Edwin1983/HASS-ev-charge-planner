@@ -188,9 +188,7 @@ def fast_optimize(
             if amount > target + EPS:
                 break
             cost0 = 0.0 + paid * prices[0] - tiebreak * current_a
-            roots.append(
-                (("full", ph, current_a), PH_IDX[ph], current_a, amount, cost0)
-            )
+            roots.append((("full", ph, current_a), PH_IDX[ph], current_a, amount, cost0))
 
     cands = []  # (kosten, wissel, soort, wortel, ph, j, k)
 
@@ -220,9 +218,7 @@ def fast_optimize(
                 for sw in range(S + 1):
                     val = final[pi, sw]
                     if val < INF:
-                        cands.append(
-                            (cost0 + float(val), sw, "hit", r_index, pi, sw, k_star)
-                        )
+                        cands.append((cost0 + float(val), sw, "hit", r_index, pi, sw, k_star))
 
         if t_rem <= EPS:
             continue
@@ -268,11 +264,7 @@ def fast_optimize(
             incoming = lay[:, pi, :, win].copy()  # (nj, S+1, W)
             np.minimum(incoming[:, 0, :], lay[:, 0, 0, win], out=incoming[:, 0, :])
             if S >= 1:
-                np.minimum(
-                    incoming[:, 1:, :],
-                    lay[:, other, :S, win],
-                    out=incoming[:, 1:, :],
-                )
+                np.minimum(incoming[:, 1:, :], lay[:, other, :S, win], out=incoming[:, 1:, :])
 
             total = incoming + add[:, None, :]
             total = np.where(feas[:, None, :], total, INF)
@@ -283,17 +275,7 @@ def fast_optimize(
                 val = float(sub.flat[flat])
                 if val < INF:
                     jj, kk_i = divmod(flat, sub.shape[1])
-                    cands.append(
-                        (
-                            cost0 + val,
-                            sw,
-                            "finish",
-                            r_index,
-                            ph,
-                            jj + 1,
-                            int(kk[kk_i]),
-                        )
-                    )
+                    cands.append((cost0 + val, sw, "finish", r_index, ph, jj + 1, int(kk[kk_i])))
 
     if not cands:
         return None

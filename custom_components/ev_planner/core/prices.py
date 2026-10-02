@@ -53,130 +53,36 @@ class PriceReader:
 
     def read(self) -> PriceData:
 
-        # self.logger.warning(
-        #     "PRICE DEBUG 01 - read() gestart"
-        # )
-
-        # self.logger.warning(
-        #     "PRICE DEBUG 02 - _read_forecast() aanroepen"
-        # )
-        
         forecast = self._read_forecast()
 
-        # self.logger.warning(
-        #     "PRICE DEBUG 03 - _read_forecast() teruggekeerd"
-        # )
-
-        # self.logger.warning(
-        #     f"PRICE DEBUG 04 - forecast type: "
-        #     f"{type(forecast).__name__}"
-        # )
-
-        # self.logger.warning(
-        #     f"PRICE DEBUG 05 - aantal forecast records: "
-        #     f"{len(forecast)}"
-        # )
-
-        # self.logger.warning(
-        #     "PRICE DEBUG 06 - _parse_forecast() aanroepen"
-        # )
-        
         hours = self._parse_forecast(
             forecast
         )
 
-        # self.logger.warning(
-        #     "PRICE DEBUG 07 - _parse_forecast() teruggekeerd"
-        # )
-
-        # self.logger.warning(
-        #     f"PRICE DEBUG 08 - aantal Hour-objecten: "
-        #     f"{len(hours)}"
-        # )
-
-        # self.logger.warning(
-        #     "PRICE DEBUG 09 - _remove_duplicates() aanroepen"
-        # )
-        
         hours = self._remove_duplicates(
             hours
         )
 
-        # self.logger.warning(
-        #     "PRICE DEBUG 10 - _remove_duplicates() teruggekeerd"
-        # )
-
-        # self.logger.warning(
-        #     f"PRICE DEBUG 11 - aantal uren na duplicates: "
-        #     f"{len(hours)}"
-        # )
-
-        # self.logger.warning(
-        #     "PRICE DEBUG 12 - _remove_past() aanroepen"
-        # )
-        
         hours = self._remove_past(
             hours
         )
 
-        # self.logger.warning(
-        #     "PRICE DEBUG 13 - _remove_past() teruggekeerd"
-        # )
-
-        # self.logger.warning(
-        #     f"PRICE DEBUG 14 - aantal uren na past: "
-        #     f"{len(hours)}"
-        # )
-
-        # self.logger.warning(
-        #     "PRICE DEBUG 15 - _sort() aanroepen"
-        # )
-        
         hours = self._sort(
             hours
         )
 
-        # self.logger.warning(
-        #     "PRICE DEBUG 16 - _sort() teruggekeerd"
-        # )
-
-        # self.logger.warning(
-        #     "PRICE DEBUG 17 - _validate_series() aanroepen"
-        # )
-        
         self._validate_series(
             hours
         )
 
-        # self.logger.warning(
-        #     "PRICE DEBUG 18 - _validate_series() teruggekeerd"
-        # )
-
-        # self.logger.warning(
-        #     "PRICE DEBUG 19 - _calculate_statistics() aanroepen"
-        # )
-        
         data = self._calculate_statistics(
             hours
         )
-
-        # self.logger.warning(
-        #     "PRICE DEBUG 20 - _calculate_statistics() teruggekeerd"
-        # )
-
-        # self.logger.warning(
-        #     f"PRICE DEBUG 21 - PriceData hours: "
-        #     f"{len(data.hours)}"
-        # )
 
         self.logger.debug(
             f"{len(data.hours)} uurprijzen geladen"
         )
 
-        # self.logger.warning(
-        #     "PRICE DEBUG 22 - read() succesvol afgerond"
-        # )
-        
         return data
 
     ##########################################################################
@@ -187,69 +93,27 @@ class PriceReader:
         self,
     ) -> list[dict[str, Any]]:
 
-        # self.logger.warning(
-        #     "PRICE DEBUG 30 - _read_forecast() gestart"
-        # )
-        
         entity_id = self.entity_id
 
-        # self.logger.warning(
-        #     "PRICE DEBUG 32 - get_attributes() aanroepen"
-        # )
-        
         attributes = self.app.get_attributes(
             entity_id
         )
 
-        # self.logger.warning(
-        #     "PRICE DEBUG 33 - get_attributes() teruggekeerd"
-        # )
-
-        # self.logger.warning(
-        #     f"PRICE DEBUG 34 - attributes type: "
-        #     f"{type(attributes).__name__}"
-        # )
-        
         if not isinstance(
             attributes,
             dict,
         ):
 
-            # self.logger.warning(
-            #     "PRICE DEBUG 35 - attributes GEEN dictionary"
-            # )
-        
             raise RuntimeError(
                 "Zonneplan attributes zijn geen dictionary."
             )
 
-        # self.logger.warning(
-        #     "PRICE DEBUG 36 - attributes is dictionary"
-        # )
-
-        # self.logger.warning(
-        #     "PRICE DEBUG 37 - attributes.get('forecast') aanroepen"
-        # )
-        
         forecast = attributes.get(
             "forecast"
         )
 
-        # self.logger.warning(
-        #     "PRICE DEBUG 38 - attributes.get('forecast') teruggekeerd"
-        # )
-        
-        # self.logger.warning(
-        #     f"PRICE DEBUG 39 - forecast type: "
-        #     f"{type(forecast).__name__}"
-        # )
-
         if forecast is None:
 
-            # self.logger.warning(
-            #     "PRICE DEBUG 40 - forecast is None"
-            # )
-        
             raise RuntimeError(
                 "Forecast attribuut ontbreekt."
             )
@@ -259,35 +123,18 @@ class PriceReader:
             list,
         ):
 
-            # self.logger.warning(
-            #     "PRICE DEBUG 41 - forecast GEEN lijst"
-            # )
-        
 
             raise RuntimeError(
                 "Forecast is geen lijst."
             )
 
-        # self.logger.warning(
-        #     "PRICE DEBUG 42 - forecast is lijst"
-        # )
-        
         if not forecast:
 
-            # self.logger.warning(
-            #     "PRICE DEBUG 43 - forecast is leeg"
-            # )
-        
 
             raise RuntimeError(
                 "Forecast bevat geen prijzen."
             )
 
-        # self.logger.warning(
-        #     f"PRICE DEBUG 44 - "
-        #     f"{len(forecast)} forecast records ontvangen"
-        # )
-        
 
         ######################################################################
         # Eerste record controleren
@@ -340,10 +187,6 @@ class PriceReader:
         #     )
 
 
-        # self.logger.warning(
-        #     "PRICE DEBUG 52 - _read_forecast() succesvol afgerond"
-        # )
-        
 
         return forecast
 
@@ -355,10 +198,6 @@ class PriceReader:
         self,
     ) -> float:
 
-        # self.logger.warning(
-        #     "PRICE DEBUG 60 - _current_price() gestart"
-        # )
-        
 
         entity_id = self.entity_id
 
@@ -366,11 +205,6 @@ class PriceReader:
             entity_id
         )
 
-        # self.logger.warning(
-        #     f"PRICE DEBUG 61 - huidige prijs state type: "
-        #     f"{type(value).__name__}"
-        # )
-        
 
         try:
 
@@ -397,10 +231,6 @@ class PriceReader:
 
             return 0.0
 
-        # self.logger.warning(
-        #     "PRICE DEBUG 62 - _current_price() succesvol"
-        # )
-        
 
         return price
 
@@ -413,10 +243,6 @@ class PriceReader:
         forecast: list[dict[str, Any]],
     ) -> list[Hour]:
 
-        # self.logger.warning(
-        #     "PRICE DEBUG 70 - _parse_forecast() gestart"
-        # )
-        
 
         hours = []
 
@@ -424,20 +250,11 @@ class PriceReader:
 
         for item in forecast:
 
-            # self.logger.warning(
-            #     f"PRICE DEBUG 71 - record {index} verwerken"
-            # )
-
             try:
 
                 hour = self._create_hour(
                     item
                 )
-
-                # self.logger.warning(
-                #     f"PRICE DEBUG 72 - record {index} "
-                #     f"succesvol omgezet naar Hour"
-                # )
 
 
                 hours.append(
@@ -483,11 +300,6 @@ class PriceReader:
 
             index += 1
 
-        # self.logger.warning(
-        #     f"PRICE DEBUG 73 - _parse_forecast() klaar, "
-        #     f"{len(hours)} Hour-objecten gemaakt"
-        # )
-
 
         return hours
 
@@ -499,10 +311,6 @@ class PriceReader:
         self,
         item: dict[str, Any],
     ) -> Hour:
-
-        # self.logger.warning(
-        #     "PRICE DEBUG 80 - _create_hour() gestart"
-        # )
 
 
         if not isinstance(
@@ -518,11 +326,6 @@ class PriceReader:
             "start_date"
         )
 
-        # self.logger.warning(
-        #     f"PRICE DEBUG 81 - start_date type: "
-        #     f"{type(raw_date).__name__}"
-        # )
-
         if raw_date is None:
 
             raise ValueError(
@@ -535,10 +338,6 @@ class PriceReader:
         ):
 
             start = raw_date
-
-            # self.logger.warning(
-            #     "PRICE DEBUG 82 - start_date is datetime"
-            # )
 
 
         else:
@@ -725,10 +524,6 @@ class PriceReader:
 
             sustainability_score = 0.0
 
-        # self.logger.warning(
-        #     "PRICE DEBUG 84 - Hour() object aanmaken"
-        # )
-
 
         hour = Hour(
 
@@ -749,10 +544,6 @@ class PriceReader:
             hour_index=-1,
         )
 
-        # self.logger.warning(
-        #     "PRICE DEBUG 85 - Hour() object succesvol"
-        # )
-
 
         return hour
 
@@ -764,10 +555,6 @@ class PriceReader:
         self,
         hours: list[Hour],
     ) -> list[Hour]:
-
-        # self.logger.warning(
-        #     "PRICE DEBUG 90 - _remove_duplicates() gestart"
-        # )
 
 
         unique = {}
@@ -800,11 +587,6 @@ class PriceReader:
                 f"uur(en) verwijderd."
             )
 
-        # self.logger.warning(
-        #     f"PRICE DEBUG 91 - _remove_duplicates() klaar: "
-        #     f"{len(result)} uren"
-        # )
-
 
         return result
 
@@ -817,10 +599,6 @@ class PriceReader:
         hours: list[Hour],
     ) -> list[Hour]:
 
-        # self.logger.warning(
-        #     "PRICE DEBUG 100 - _remove_past() gestart"
-        # )
-
 
         now = (
             datetime
@@ -828,10 +606,6 @@ class PriceReader:
             .astimezone()
         )
 
-        # self.logger.warning(
-        #     f"PRICE DEBUG 101 - now: {now}"
-        # )
-        
 
         result = []
 
@@ -855,11 +629,6 @@ class PriceReader:
                 f"uur(en) verwijderd."
             )
 
-        # self.logger.warning(
-        #     f"PRICE DEBUG 102 - _remove_past() klaar: "
-        #     f"{len(result)} uren"
-        # )
-
 
         return result
 
@@ -871,10 +640,6 @@ class PriceReader:
         self,
         hours: list[Hour],
     ) -> list[Hour]:
-
-        # self.logger.warning(
-        #     "PRICE DEBUG 110 - _sort() gestart"
-        # )
 
 
         hours.sort(
@@ -889,10 +654,6 @@ class PriceReader:
 
             index += 1
 
-        # self.logger.warning(
-        #     "PRICE DEBUG 111 - _sort() klaar"
-        # )
-
 
         return hours
 
@@ -905,16 +666,8 @@ class PriceReader:
         hours: list[Hour],
     ) -> None:
 
-        # self.logger.warning(
-        #     "PRICE DEBUG 120 - _validate_series() gestart"
-        # )
-
 
         if len(hours) < 2:
-
-            # self.logger.warning(
-            #     "PRICE DEBUG 121 - minder dan 2 uren"
-            # )
 
 
             return
@@ -945,10 +698,6 @@ class PriceReader:
 
             index += 1
 
-        # self.logger.warning(
-        #     "PRICE DEBUG 122 - _validate_series() klaar"
-        # )
-
 
     ##########################################################################
     # Statistieken
@@ -959,16 +708,8 @@ class PriceReader:
         hours: list[Hour],
     ) -> PriceData:
 
-        # self.logger.warning(
-        #     "PRICE DEBUG 130 - _calculate_statistics() gestart"
-        # )
-
 
         data = PriceData()
-
-        # self.logger.warning(
-        #     "PRICE DEBUG 131 - PriceData() aangemaakt"
-        # )
 
 
         data.hours = hours
@@ -987,18 +728,10 @@ class PriceReader:
 
             return data
 
-        # self.logger.warning(
-        #     "PRICE DEBUG 132 - uren aanwezig"
-        # )
-
 
         data.current_price = (
             self._current_price()
         )
-
-        # self.logger.warning(
-        #     "PRICE DEBUG 133 - current_price berekend"
-        # )
 
 
         first_hour = hours[0]
@@ -1027,10 +760,6 @@ class PriceReader:
 
                 highest_price = price
 
-        # self.logger.warning(
-        #     "PRICE DEBUG 134 - prijsstatistieken berekend"
-        # )
-
 
         data.cheapest_price = (
             cheapest_price
@@ -1050,10 +779,6 @@ class PriceReader:
                 len(hours) - 1
             ].end
         )
-
-        # self.logger.warning(
-        #     "PRICE DEBUG 135 - PriceData gevuld"
-        # )
 
 
         self.logger.debug(
@@ -1089,10 +814,6 @@ class PriceReader:
             f"  geldig tot  : "
             f"{data.valid_until}"
         )
-
-        # self.logger.warning(
-        #     "PRICE DEBUG 136 - _calculate_statistics() succesvol"
-        # )
 
 
         return data

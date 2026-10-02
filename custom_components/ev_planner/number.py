@@ -160,7 +160,8 @@ class EVPlannerMaxPhaseSwitches(EVPlannerNumberBase):
     _attr_translation_key = "maximum_phase_switches"
     _attr_icon = "mdi:swap-horizontal"
     _attr_native_min_value = 0
-    _attr_native_max_value = 100
+    # De planner begrenst dit intern op 8 (MAX_PHASE_SWITCHES_HARD_CAP).
+    _attr_native_max_value = 8
     _attr_native_step = 1
     _attr_native_unit_of_measurement = "switches"
     _attr_mode = NumberMode.BOX

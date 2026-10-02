@@ -8,6 +8,11 @@
           "entity_prices": "Elektriciteitsprijzen",
           "entity_solcast_today": "Solcast vandaag",
           "entity_solcast_tomorrow": "Solcast morgen"
+        },
+        "data_description": {
+          "entity_prices": "Sensor met de Zonneplan-uur- of kwartierprijzen (attribuut 'forecast').",
+          "entity_solcast_today": "Solcast-sensor met de PV-voorspelling voor vandaag.",
+          "entity_solcast_tomorrow": "Solcast-sensor met de PV-voorspelling voor morgen."
         }
       },
       "reconfigure": {
@@ -38,6 +43,11 @@
           "entity_prices": "Elektriciteitsprijzen",
           "entity_solcast_today": "Solcast vandaag",
           "entity_solcast_tomorrow": "Solcast morgen"
+        },
+        "data_description": {
+          "entity_prices": "Sensor met de Zonneplan-uur- of kwartierprijzen (attribuut 'forecast').",
+          "entity_solcast_today": "Solcast-sensor met de PV-voorspelling voor vandaag.",
+          "entity_solcast_tomorrow": "Solcast-sensor met de PV-voorspelling voor morgen."
         }
       }
     }

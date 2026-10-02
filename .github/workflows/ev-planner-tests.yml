@@ -31,7 +31,7 @@ jobs:
           - label: baseline
             ref: 150cc128c5a59f0b6315495424d270a329542d6f
           - label: candidate
-            ref: release/v2.0.0-beta.1-fast
+            ref: experiment/quarter-hour-dp
     runs-on: ubuntu-latest
 
     env:
@@ -59,8 +59,8 @@ jobs:
       - name: Use current benchmark test
         if: matrix.label == 'baseline'
         run: |
-          git fetch origin release/v2.0.0-beta.1-fast:refs/remotes/origin/release/v2.0.0-beta.1-fast
-          git show origin/release/v2.0.0-beta.1-fast:tests/test_zonneplan_quarter_hour_prices.py > tests/test_zonneplan_quarter_hour_prices.py
+          git fetch origin experiment/quarter-hour-dp:refs/remotes/origin/experiment/quarter-hour-dp
+          git show origin/experiment/quarter-hour-dp:tests/test_zonneplan_quarter_hour_prices.py > tests/test_zonneplan_quarter_hour_prices.py
 
       - name: Run benchmark
         run: |

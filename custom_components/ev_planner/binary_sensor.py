@@ -63,8 +63,8 @@ class EVPlannerChargingAllowedBinarySensor(BinarySensorEntity):
 
         return {
             "identifiers": {(DOMAIN, self._entry.entry_id)},
-            "name": "EV Planner",
-            "manufacturer": "EV Planner",
+            "name": "EV Charge Planner",
+            "manufacturer": "EV Charge Planner",
             "model": "EV Smart Charging",
         }
 

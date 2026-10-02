@@ -792,7 +792,15 @@ class EVPlannerController:
         # Electricity prices
         # ------------------------------------------------------------------
 
-        price_data = self.prices.read()
+        try:
+            price_data = self.prices.read()
+
+        except Exception as err:
+            self.logger.warning(f"Prijsdata kon niet worden gelezen: {err}")
+
+            self._publish_planner_state("Geen prijsdata")
+
+            return None
 
         if not price_data.hours:
             self.logger.warning("Geen prijsdata beschikbaar.")
@@ -805,7 +813,15 @@ class EVPlannerController:
         # Solcast
         # ------------------------------------------------------------------
 
-        solcast_data = self.solcast.read()
+        try:
+            solcast_data = self.solcast.read()
+
+        except Exception as err:
+            self.logger.warning(f"Solcast-data kon niet worden gelezen: {err}")
+
+            self._publish_planner_state("Geen PV-data")
+
+            return None
 
         if solcast_data is None:
             self.logger.warning("Geen Solcast-data beschikbaar.")

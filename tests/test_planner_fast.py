@@ -25,7 +25,7 @@ def _case(rnd: random.Random):
             Hour(
                 start=begin,
                 end=begin + timedelta(minutes=step),
-                price=round(rnd.uniform(0.08, 0.40), rnd.choice([2, 4])),
+                price=round(rnd.uniform(-0.05, 0.40), rnd.choice([2, 4])),
                 pv_estimate=rnd.choice([0.0, 0.0, rnd.uniform(0, 2.0)]),
             )
         )
