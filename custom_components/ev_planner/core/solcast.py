@@ -77,24 +77,28 @@ class SolcastReader:
 
     def read(
         self,
+        now: datetime | None = None,
     ) -> SolcastData:
+
+        if now is None:
+            now = datetime.now().astimezone()
 
         self.logger.debug(
             "Lezen Solcast voorspelling gestart."
         )
 
-        today = self._read_today()
+        today, today_interval_minutes = self._read_today()
 
-        tomorrow = self._read_tomorrow()
+        tomorrow, tomorrow_interval_minutes = self._read_tomorrow()
 
         today_hours = self._parse_forecast(
             today,
-            getattr(self, "_forecast_interval_minutes", 60),
+            today_interval_minutes,
         )
 
         tomorrow_hours = self._parse_forecast(
             tomorrow,
-            getattr(self, "_tomorrow_forecast_interval_minutes", 60),
+            tomorrow_interval_minutes,
         )
 
         hours = self._merge(
@@ -107,7 +111,8 @@ class SolcastReader:
         )
 
         hours = self._remove_past(
-            hours
+            hours,
+            now,
         )
 
         hours = self._sort(
@@ -119,7 +124,8 @@ class SolcastReader:
         )
 
         data = self._calculate_statistics(
-            hours
+            hours,
+            now,
         )
 
         self.logger.debug(
@@ -134,7 +140,7 @@ class SolcastReader:
 
     def _read_today(
         self,
-    ) -> list[dict[str, Any]]:
+    ) -> tuple[list[dict[str, Any]], int]:
 
         entity_id = self.entity_today
 
@@ -147,12 +153,12 @@ class SolcastReader:
         )
 
         if forecast is not None:
-            self._forecast_interval_minutes = 30
+            interval_minutes = 30
         else:
             forecast = attributes.get(
                 "detailedHourly"
             )
-            self._forecast_interval_minutes = 60
+            interval_minutes = 60
 
         if forecast is None:
 
@@ -171,10 +177,10 @@ class SolcastReader:
 
         self.logger.debug(
             f"{len(forecast)} Solcast records vandaag "
-            f"({self._forecast_interval_minutes} minuten)."
+            f"({interval_minutes} minuten)."
         )
 
-        return forecast
+        return forecast, interval_minutes
 
     ##########################################################################
     # Morgen uitlezen
@@ -182,7 +188,7 @@ class SolcastReader:
 
     def _read_tomorrow(
         self,
-    ) -> list[dict[str, Any]]:
+    ) -> tuple[list[dict[str, Any]], int]:
 
         entity_id = self.entity_tomorrow
 
@@ -195,12 +201,12 @@ class SolcastReader:
         )
 
         if forecast is not None:
-            self._tomorrow_forecast_interval_minutes = 30
+            interval_minutes = 30
         else:
             forecast = attributes.get(
                 "detailedHourly"
             )
-            self._tomorrow_forecast_interval_minutes = 60
+            interval_minutes = 60
 
         if forecast is None:
 
@@ -208,7 +214,7 @@ class SolcastReader:
                 "Geen Solcast data voor morgen."
             )
 
-            return []
+            return [], interval_minutes
 
         if not isinstance(
             forecast,
@@ -219,14 +225,14 @@ class SolcastReader:
                 "Solcast morgen is geen lijst."
             )
 
-            return []
+            return [], interval_minutes
 
         self.logger.debug(
             f"{len(forecast)} Solcast records morgen "
-            f"({self._tomorrow_forecast_interval_minutes} minuten)."
+            f"({interval_minutes} minuten)."
         )
 
-        return forecast
+        return forecast, interval_minutes
 
     ##########################################################################
     # Forecast parser
@@ -558,13 +564,8 @@ class SolcastReader:
     def _remove_past(
         self,
         hours: list[Hour],
+        now: datetime,
     ) -> list[Hour]:
-
-        now = (
-            datetime
-            .now()
-            .astimezone()
-        )
 
         result = []
 
@@ -694,17 +695,14 @@ class SolcastReader:
     def _calculate_statistics(
         self,
         hours: list[Hour],
+        now: datetime,
     ) -> SolcastData:
 
         data = SolcastData()
 
         data.hours = hours
 
-        data.generated = (
-            datetime
-            .now()
-            .astimezone()
-        )
+        data.generated = now
 
         ######################################################################
         # Geen data
@@ -721,12 +719,6 @@ class SolcastReader:
         ######################################################################
         # Datums
         ######################################################################
-
-        now = (
-            datetime
-            .now()
-            .astimezone()
-        )
 
         today = now.date()
 
