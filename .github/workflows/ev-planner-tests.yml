@@ -27,7 +27,7 @@ on:
 jobs:
   performance-ab:
     name: Performance A/B - ${{ matrix.label }}
-    if: inputs.performance == true || github.ref == 'refs/heads/experiment/array-dp-fast-loop' || github.ref == 'refs/heads/experiment/ha-planner-array-hotloop'
+    if: inputs.performance == true || github.ref == 'refs/heads/experiment/array-dp-fast-loop'
     strategy:
       fail-fast: false
       matrix:
@@ -68,6 +68,51 @@ jobs:
       - name: Run benchmark
         run: |
           python -m pytest -q tests/test_quarter_hour_optimizer_performance.py::test_57kwh_quarter_hour_dp_performance -s
+
+  performance-ab-array-hotloop:
+    name: Performance A/B - array-hotloop ${{ matrix.label }}
+    if: github.ref == 'refs/heads/experiment/ha-planner-array-hotloop'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: array-dp-fast-loop
+            ref: experiment/array-dp-fast-loop
+          - label: array-hotloop
+            ref: experiment/ha-planner-array-hotloop
+    runs-on: ubuntu-latest
+
+    env:
+      PYTHONPATH: .
+      EV_PLANNER_RUN_PERFORMANCE: "1"
+      EV_PLANNER_RUN_PROFILE: "0"
+
+    steps:
+      - name: Checkout benchmark revision
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ matrix.ref }}
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements_test.txt
+
+      - name: Install test dependencies
+        run: python -m pip install -r requirements_test.txt
+
+      - name: Use current benchmark test
+        run: |
+          git fetch origin experiment/array-dp:refs/remotes/origin/experiment/array-dp
+          git show origin/experiment/array-dp:tests/test_quarter_hour_optimizer_performance.py > tests/test_quarter_hour_optimizer_performance.py
+
+      - name: Run benchmark
+        run: |
+          python -m pytest -q tests/test_quarter_hour_optimizer_performance.py::test_57kwh_quarter_hour_dp_performance -s
+
 
   production-planner-ab:
     name: Production planner A/B - ${{ matrix.label }}
