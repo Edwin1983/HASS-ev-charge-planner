@@ -24,12 +24,12 @@ def _controller(prices, solcast):
 
 
 class _Raises:
-    def read(self):
+    def read(self, now):
         raise RuntimeError("Forecast attribuut ontbreekt.")
 
 
 class _Empty:
-    def read(self):
+    def read(self, now):
         return SimpleNamespace(hours=[])
 
 
@@ -41,7 +41,7 @@ def test_missing_price_data_does_not_raise():
 
 
 def test_missing_solcast_data_does_not_raise():
-    prices = SimpleNamespace(read=lambda: SimpleNamespace(hours=[object()]))
+    prices = SimpleNamespace(read=lambda now: SimpleNamespace(hours=[object()]))
     controller = _controller(prices, _Raises())
 
     assert controller.create_plan() is None
