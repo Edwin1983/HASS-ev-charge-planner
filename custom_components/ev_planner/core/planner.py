@@ -1419,6 +1419,10 @@ class EVPlanner:
         # when a real amount is needed.
         ENERGY_SCALE = 1000000000.0
 
+        # Shared sentinel for a winning skip predecessor. Using one immutable
+        # object avoids allocating a tuple for every skip update.
+        SKIP_PARENT = ()
+
         # Compact integer state id:
         # 0 = no active phase yet
         # odd ids = 1-phase with switch count encoded
@@ -1523,6 +1527,11 @@ class EVPlanner:
                     existing = bucket.get(energy_k)
                     if existing is None or cost < existing:
                         bucket[energy_k] = cost
+                        parent_bucket = parent_layer.get(state_id)
+                        if parent_bucket is None:
+                            parent_bucket = {}
+                            parent_layer[state_id] = parent_bucket
+                        parent_bucket[energy_k] = SKIP_PARENT
 
                     if remaining <= 0.000001:
                         continue
@@ -1781,14 +1790,17 @@ class EVPlanner:
             parent_bucket = parent_layer.get(current_state)
 
             if parent_bucket is None:
-                # No explicit predecessor means this transition was a skip:
-                # state and energy are unchanged.
-                actions[index] = ("skip",)
-                continue
+                raise ValueError(
+                    "DP-reconstructie mist een predecessor bucket."
+                )
 
             parent = parent_bucket.get(current_energy_key)
             if parent is None:
-                # Skip transitions are intentionally not stored.
+                raise ValueError(
+                    "DP-reconstructie mist een predecessor voor de state."
+                )
+
+            if parent is SKIP_PARENT:
                 actions[index] = ("skip",)
                 continue
 
