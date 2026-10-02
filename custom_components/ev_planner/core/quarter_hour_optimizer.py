@@ -19,6 +19,7 @@ The optimizer does not control Home Assistant or a charger.
 from __future__ import annotations
 
 from array import array
+from bisect import bisect_right
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 import os
@@ -239,6 +240,14 @@ class QuarterHourOptimizer:
                             action_code,
                         )
                     )
+            # Action energies are monotonically increasing (1F currents
+            # followed by 3F currents). Keep a parallel energy-only list so
+            # the hot loop can find the affordable prefix in C-level bisect
+            # code and avoid testing every remaining action individually.
+            transition_energy_ticks = [
+                [item[0] for item in transition_actions[state]]
+                for state in range(_STATE_COUNT)
+            ]
 
             for state in range(_STATE_COUNT):
                 energy_list = active[state]
@@ -360,15 +369,19 @@ class QuarterHourOptimizer:
                             next_costs[next_index] = base_cost
                             parent[next_index] = _SKIP_ACTION
 
-                    for (
-                        action_ticks,
-                        action_cost,
-                        candidate_state,
-                        action_code,
-                    ) in transition_actions[state]:
-                        if action_ticks > remaining_ticks:
-                            continue
-
+                    transitions = transition_actions[state]
+                    action_energies = transition_energy_ticks[state]
+                    action_limit = bisect_right(
+                        action_energies,
+                        remaining_ticks,
+                    )
+                    for action_index in range(action_limit):
+                        (
+                            action_ticks,
+                            action_cost,
+                            candidate_state,
+                            action_code,
+                        ) = transitions[action_index]
                         candidate_energy = energy_ticks + action_ticks
                         candidate_cost = base_cost + action_cost
                         next_index = candidate_state * width + candidate_energy
