@@ -37,15 +37,33 @@ async def async_setup_entry(
             "is_on": False,
         }
 
-    async_add_entities(
-        [
-            EVPlannerSmartChargingSwitch(
+    entities: list[SwitchEntity] = [
+        EVPlannerSmartChargingSwitch(
+            entry=entry,
+            store=store,
+            stored_data=stored_data,
+        ),
+    ]
+
+    # Alleen als de optionele laadregeling is ingesteld.
+    manager = getattr(entry.runtime_data, "charge_manager", None)
+
+    if manager is not None:
+        entities.extend(
+            EVPlannerChargeToggleSwitch(
                 entry=entry,
-                store=store,
-                stored_data=stored_data,
-            ),
-        ]
-    )
+                manager=manager,
+                key=key,
+                icon=icon,
+            )
+            for key, icon in (
+                ("enabled", "mdi:ev-plug-type2"),
+                ("dry_run", "mdi:test-tube"),
+                ("feedback", "mdi:scale-balance"),
+            )
+        )
+
+    async_add_entities(entities)
 
 
 class EVPlannerSmartChargingSwitch(SwitchEntity):
@@ -82,8 +100,8 @@ class EVPlannerSmartChargingSwitch(SwitchEntity):
             "identifiers": {
                 (DOMAIN, self._entry.entry_id),
             },
-            "name": "EV Planner",
-            "manufacturer": "EV Planner",
+            "name": "EV Charge Planner",
+            "manufacturer": "EV Charge Planner",
             "model": "EV Smart Charging",
         }
 
@@ -125,3 +143,50 @@ class EVPlannerSmartChargingSwitch(SwitchEntity):
 
         self.async_write_ha_state()
 
+
+class EVPlannerChargeToggleSwitch(SwitchEntity):
+    """Schakelaar voor de laadregeling (actief, dry-run, terugkoppeling)."""
+
+    _attr_has_entity_name = True
+
+    def __init__(
+        self,
+        entry: ConfigEntry,
+        manager: Any,
+        key: str,
+        icon: str,
+    ) -> None:
+        """Initialize the toggle."""
+        self._entry = entry
+        self._manager = manager
+        self._key = key
+        self._attr_icon = icon
+        self._attr_translation_key = f"charge_{key}"
+        self._attr_unique_id = f"{entry.entry_id}_charge_{key}"
+
+    @property
+    def device_info(self):
+        """Return EV Planner device information."""
+        return {
+            "identifiers": {
+                (DOMAIN, self._entry.entry_id),
+            },
+            "name": "EV Charge Planner",
+            "manufacturer": "EV Charge Planner",
+            "model": "EV Smart Charging",
+        }
+
+    @property
+    def is_on(self) -> bool:
+        """Return the toggle state."""
+        return bool(self._manager.toggles[self._key])
+
+    async def async_turn_on(self, **kwargs) -> None:
+        """Turn the toggle on."""
+        await self._manager.async_set_toggle(self._key, True)
+        self.async_write_ha_state()
+
+    async def async_turn_off(self, **kwargs) -> None:
+        """Turn the toggle off."""
+        await self._manager.async_set_toggle(self._key, False)
+        self.async_write_ha_state()

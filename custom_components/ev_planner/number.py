@@ -19,6 +19,15 @@ from .const import (
     DOMAIN,
     NATIVE_ENERGY_NEEDED,
     NATIVE_MAX_CHARGE_POWER,
+    DEFAULT_PROGRESS_THRESHOLD_KWH,
+    FORECAST_PRICE_MARKUP,
+    DEFAULT_EXTRA_CHARGE_PRICE_CT,
+    NATIVE_EXTRA_CHARGE_PRICE,
+    NATIVE_FORECAST_MARKUP,
+    NATIVE_MAX_ENERGY_NEEDED,
+    NATIVE_MAX_PAUSES,
+    NATIVE_PROGRESS_THRESHOLD,
+    MAX_PAUSES_UNLIMITED,
     NATIVE_MAX_PHASE_SWITCHES,
     NATIVE_MAX_PRICE,
     NATIVE_MIN_PV_KWH,
@@ -36,6 +45,11 @@ async def async_setup_entry(
             EVPlannerEnergyNeeded(hass, entry),
             EVPlannerMaxPrice(hass, entry),
             EVPlannerMaxPhaseSwitches(hass, entry),
+            EVPlannerMaxPauses(hass, entry),
+            EVPlannerProgressThreshold(hass, entry),
+            EVPlannerForecastMarkup(hass, entry),
+            EVPlannerMaxEnergyNeeded(hass, entry),
+            EVPlannerExtraChargePrice(hass, entry),
             EVPlannerMinPv(hass, entry),
             EVPlannerMaxChargePower(hass, entry),
         ]
@@ -97,7 +111,7 @@ class EVPlannerEnergyNeeded(EVPlannerNumberBase):
 
     _attr_translation_key = "energy_needed"
     _attr_icon = "mdi:battery-plus"
-    _attr_native_min_value = 0.1
+    _attr_native_min_value = 0.0
     _attr_native_max_value = 100.0
     _attr_native_step = 0.1
     _attr_native_unit_of_measurement = "kWh"
@@ -110,6 +124,46 @@ class EVPlannerEnergyNeeded(EVPlannerNumberBase):
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
         await self._restore_or_legacy(10.0, CONF_ENTITY_ENERGY_NEEDED)
+
+
+class EVPlannerMaxEnergyNeeded(EVPlannerNumberBase):
+    """Maximum charging energy (0 = same as the minimum)."""
+
+    _attr_translation_key = "max_energy_needed"
+    _attr_icon = "mdi:battery-plus-outline"
+    _attr_native_min_value = 0.0
+    _attr_native_max_value = 100.0
+    _attr_native_step = 0.1
+    _attr_native_unit_of_measurement = "kWh"
+    _attr_mode = NumberMode.SLIDER
+
+    def __init__(self, hass, entry):
+        super().__init__(hass, entry)
+        self._attr_unique_id = f"{entry.entry_id}_{NATIVE_MAX_ENERGY_NEEDED}"
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        await self._restore_or_legacy(0.0, "")
+
+
+class EVPlannerExtraChargePrice(EVPlannerNumberBase):
+    """Price limit (ct/kWh) for charging beyond the minimum."""
+
+    _attr_translation_key = "extra_charge_price"
+    _attr_icon = "mdi:cash-fast"
+    _attr_native_min_value = 0.0
+    _attr_native_max_value = 50.0
+    _attr_native_step = 0.1
+    _attr_native_unit_of_measurement = "ct/kWh"
+    _attr_mode = NumberMode.BOX
+
+    def __init__(self, hass, entry):
+        super().__init__(hass, entry)
+        self._attr_unique_id = f"{entry.entry_id}_{NATIVE_EXTRA_CHARGE_PRICE}"
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        await self._restore_or_legacy(DEFAULT_EXTRA_CHARGE_PRICE_CT, "")
 
 
 class EVPlannerMaxPrice(EVPlannerNumberBase):
@@ -160,7 +214,8 @@ class EVPlannerMaxPhaseSwitches(EVPlannerNumberBase):
     _attr_translation_key = "maximum_phase_switches"
     _attr_icon = "mdi:swap-horizontal"
     _attr_native_min_value = 0
-    _attr_native_max_value = 100
+    # De planner begrenst dit intern op 8 (MAX_PHASE_SWITCHES_HARD_CAP).
+    _attr_native_max_value = 8
     _attr_native_step = 1
     _attr_native_unit_of_measurement = "switches"
     _attr_mode = NumberMode.BOX
@@ -172,6 +227,67 @@ class EVPlannerMaxPhaseSwitches(EVPlannerNumberBase):
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
         await self._restore_or_legacy(8.0, CONF_ENTITY_MAX_PHASE_SWITCHES)
+
+
+class EVPlannerMaxPauses(EVPlannerNumberBase):
+    """Maximum number of pauses between charging periods."""
+
+    _attr_translation_key = "maximum_pauses"
+    _attr_icon = "mdi:pause-circle-outline"
+    _attr_native_min_value = 0
+    # De hoogste waarde betekent: geen limiet.
+    _attr_native_max_value = MAX_PAUSES_UNLIMITED
+    _attr_native_step = 1
+    _attr_native_unit_of_measurement = "pauses"
+    _attr_mode = NumberMode.BOX
+
+    def __init__(self, hass, entry):
+        super().__init__(hass, entry)
+        self._attr_unique_id = f"{entry.entry_id}_{NATIVE_MAX_PAUSES}"
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        await self._restore_or_legacy(float(MAX_PAUSES_UNLIMITED), "")
+
+
+class EVPlannerProgressThreshold(EVPlannerNumberBase):
+    """Deviation (kWh) during charging at which the charge control re-plans."""
+
+    _attr_translation_key = "progress_threshold"
+    _attr_icon = "mdi:chart-line-variant"
+    _attr_native_min_value = 0.1
+    _attr_native_max_value = 3.0
+    _attr_native_step = 0.1
+    _attr_native_unit_of_measurement = "kWh"
+    _attr_mode = NumberMode.BOX
+
+    def __init__(self, hass, entry):
+        super().__init__(hass, entry)
+        self._attr_unique_id = f"{entry.entry_id}_{NATIVE_PROGRESS_THRESHOLD}"
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        await self._restore_or_legacy(DEFAULT_PROGRESS_THRESHOLD_KWH, "")
+
+
+class EVPlannerForecastMarkup(EVPlannerNumberBase):
+    """Markup (ct/kWh) added to forecast prices."""
+
+    _attr_translation_key = "forecast_markup"
+    _attr_icon = "mdi:cash-plus"
+    _attr_native_min_value = 0.0
+    _attr_native_max_value = 20.0
+    _attr_native_step = 0.1
+    _attr_native_unit_of_measurement = "ct/kWh"
+    _attr_mode = NumberMode.BOX
+
+    def __init__(self, hass, entry):
+        super().__init__(hass, entry)
+        self._attr_unique_id = f"{entry.entry_id}_{NATIVE_FORECAST_MARKUP}"
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        await self._restore_or_legacy(FORECAST_PRICE_MARKUP * 100, "")
 
 
 class EVPlannerMinPv(EVPlannerNumberBase):

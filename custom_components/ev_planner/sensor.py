@@ -43,14 +43,23 @@ async def async_setup_entry(
     if entry.runtime_data is None:
         raise RuntimeError("EV Charge Planner runtime data is not initialized")
 
-    async_add_entities(
-        [
-            EVPlannerStateSensor(hass=hass, entry=entry),
-            EVPlannerDataSensor(hass=hass, entry=entry),
-            EVPlannerChargeCurrentSensor(hass=hass, entry=entry),
-            EVPlannerPhasesSensor(hass=hass, entry=entry),
-        ]
-    )
+    entities: list[SensorEntity] = [
+        EVPlannerStateSensor(hass=hass, entry=entry),
+        EVPlannerDataSensor(hass=hass, entry=entry),
+        EVPlannerChargeCurrentSensor(hass=hass, entry=entry),
+        EVPlannerPhasesSensor(hass=hass, entry=entry),
+    ]
+
+    # Alleen als de optionele laadregeling is ingesteld.
+    if getattr(entry.runtime_data, "charge_manager", None) is not None:
+        entities.extend(
+            [
+                EVPlannerChargeControlSensor(hass=hass, entry=entry),
+                EVPlannerEnergyDeviationSensor(hass=hass, entry=entry),
+            ]
+        )
+
+    async_add_entities(entities)
 
 
 class EVPlannerBaseSensor(SensorEntity):
@@ -76,8 +85,8 @@ class EVPlannerBaseSensor(SensorEntity):
 
         return {
             "identifiers": {(DOMAIN, self._entry.entry_id)},
-            "name": "EV Planner",
-            "manufacturer": "EV Planner",
+            "name": "EV Charge Planner",
+            "manufacturer": "EV Charge Planner",
             "model": "EV Smart Charging",
         }
 
@@ -187,3 +196,56 @@ class EVPlannerPhasesSensor(EVPlannerBaseSensor):
         if decision is None:
             return 0
         return int(decision.get("phases", 0))
+
+
+class EVPlannerChargeControlSensor(EVPlannerBaseSensor):
+    """Status van de laadregeling (wat doet de regeling nu?)."""
+
+    _attr_translation_key = "charge_control"
+    _attr_icon = "mdi:ev-plug-type2"
+
+    def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
+        """Initialize the charge control sensor."""
+        super().__init__(hass=hass, entry=entry)
+        self._attr_unique_id = f"{entry.entry_id}_charge_control"
+
+    @property
+    def _manager(self):
+        return self._controller.charge_manager
+
+    @property
+    def native_value(self) -> str:
+        """Return what the charge control is doing."""
+        return str(self._manager.regulator.status.detail)[:255]
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return charge control details."""
+        return self._manager.status_attributes()
+
+
+class EVPlannerEnergyDeviationSensor(EVPlannerBaseSensor):
+    """Verschil tussen geplande en werkelijk geladen energie (laatste blok)."""
+
+    _attr_translation_key = "energy_deviation"
+    _attr_icon = "mdi:delta"
+    _attr_native_unit_of_measurement = "kWh"
+
+    def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
+        """Initialize the energy deviation sensor."""
+        super().__init__(hass=hass, entry=entry)
+        self._attr_unique_id = f"{entry.entry_id}_energy_deviation"
+
+    @property
+    def _manager(self):
+        return self._controller.charge_manager
+
+    @property
+    def native_value(self) -> float | None:
+        """Return actual minus planned energy of the last evaluated block."""
+        return self._manager.energy_attributes().get("last_deviation_kwh")
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return the energy feedback summary."""
+        return self._manager.energy_attributes()

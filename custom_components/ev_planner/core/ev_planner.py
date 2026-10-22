@@ -55,7 +55,13 @@ De planner levert alleen de benodigde informatie aan Home Assistant.
 
 from __future__ import annotations
 
+import copy
+import dataclasses
+import functools
+import threading
+
 from datetime import datetime, time, timedelta
+from typing import NamedTuple
 
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_send
@@ -70,6 +76,7 @@ from ..const import (
     CONF_ENTITY_PLANNER_MODE,
     CONF_ENTITY_PV_ROUNDING,
     CONF_ENTITY_PRICES,
+    CONF_ENTITY_PRICE_FORECAST,
     CONF_ENTITY_SOLAR_ENABLED,
     CONF_ENTITY_SOLCAST_TODAY,
     CONF_ENTITY_SOLCAST_TOMORROW,
@@ -78,6 +85,14 @@ from ..const import (
     NATIVE_DEPARTURE_DAY,
     NATIVE_ENERGY_NEEDED,
     NATIVE_MAX_CHARGE_POWER,
+    DEFAULT_PROGRESS_THRESHOLD_KWH,
+    NATIVE_FORECAST_MARKUP,
+    NATIVE_MAX_ENERGY_NEEDED,
+    NATIVE_EXTRA_CHARGE_PRICE,
+    DEFAULT_EXTRA_CHARGE_PRICE_CT,
+    NATIVE_MAX_PAUSES,
+    NATIVE_PROGRESS_THRESHOLD,
+    MAX_PAUSES_UNLIMITED,
     NATIVE_MAX_PHASE_SWITCHES,
     NATIVE_MAX_PRICE,
     NATIVE_MIN_PV_KWH,
@@ -90,6 +105,8 @@ from ..const import (
     DEFAULT_ENTITY_PLANNER_MODE,
     DEFAULT_ENTITY_PV_ROUNDING,
     DEFAULT_ENTITY_PRICES,
+    DEFAULT_ENTITY_PRICE_FORECAST,
+    FORECAST_PRICE_MARKUP,
     DEFAULT_ENTITY_SOLAR_ENABLED,
     DEFAULT_ENTITY_SOLCAST_TODAY,
     DEFAULT_ENTITY_SOLCAST_TOMORROW,
@@ -110,6 +127,25 @@ from .solcast import SolcastReader
 from .status import EVStatusManager
 
 
+class DesiredCharge(NamedTuple):
+    """Wat de planner op dit moment wil (voor de optionele laadregeling)."""
+
+    allowed: bool
+    phases: int
+    current_a: int
+
+
+def _locked(method):
+    """Serialiseer planner-runs: services draaien in executor-threads."""
+
+    @functools.wraps(method)
+    def wrapper(self, *args, **kwargs):
+        with self._plan_lock:
+            return method(self, *args, **kwargs)
+
+    return wrapper
+
+
 class EVPlannerController:
     """
     Centrale controller van de EV Planner.
@@ -120,6 +156,35 @@ class EVPlannerController:
     De controller heeft GEEN verantwoordelijkheid voor de charger.
     """
 
+    # Klasse-defaults: ook geldig voor instanties zonder __init__ (tests).
+    energy_override_kwh: float | None = None
+    charge_manager = None
+
+    # Tot wanneer de prijzen reikten toen het huidige plan werd gemaakt, en
+    # het vertrek van dat plan. Zo is te zien of het plan op een onvolledige
+    # prijshorizon (bv. morgen nog niet gepubliceerd) is gebaseerd.
+    plan_prices_until: datetime | None = None
+    plan_forecast_hours: int = 0
+    plan_departure: datetime | None = None
+
+    # Instellingen (tijd, dag) waarmee plan_departure is bepaald, en of een
+    # automatische herplanning de oorspronkelijke vertrekdatum moet houden.
+    _departure_inputs: tuple | None = None
+    _keep_departure: bool = False
+
+    # Wordt aangeroepen (vanuit de planner-thread) zodra de vertrekdatum van
+    # het plan verandert; __init__.py gebruikt dit om hem op te slaan.
+    departure_anchor_changed = None
+
+    # Totaal-doel van de lopende laadsessie (gezet door de laadregeling), om
+    # uit de resterende energie (override) het al geladen deel te halen.
+    energy_delivered_kwh: float | None = None
+
+    # (minimaal, maximaal) nog te laden energie van de laatste instellingen.
+    _plan_bounds: tuple | None = None
+    _extra_retry_after: datetime | None = None
+    _last_horizon_check: datetime | None = None
+
     def __init__(
         self,
         hass,
@@ -128,6 +193,9 @@ class EVPlannerController:
         entry_id=None,
     ):
         self.logger = logger
+
+        # Reentrant: replan() roept create_plan() aan.
+        self._plan_lock = threading.RLock()
 
         self.config = config or {}
 
@@ -217,6 +285,11 @@ class EVPlannerController:
                 CONF_ENTITY_PRICES,
                 DEFAULT_ENTITY_PRICES,
             ),
+            forecast_entity_id=self.config.get(
+                CONF_ENTITY_PRICE_FORECAST,
+                DEFAULT_ENTITY_PRICE_FORECAST,
+            ),
+            forecast_markup=FORECAST_PRICE_MARKUP,
         )
 
         self.solcast = SolcastReader(
@@ -287,6 +360,13 @@ class EVPlannerController:
             },
         }
         self.charging_allowed = False
+
+        # Door de laadregeling gezette benodigde energie (kWh). None = de
+        # ingestelde waarde gebruiken; 0 = doel bereikt, niets meer plannen.
+        self.energy_override_kwh: float | None = None
+
+        # Optionele laadregeling (charge_manager.ChargeManager).
+        self.charge_manager = None
 
         self.logger.debug("EV Planner controller geïnitialiseerd.")
 
@@ -492,6 +572,179 @@ class EVPlannerController:
         )
         return max(0, int(value))
 
+    def _entity_energy_limits(self) -> tuple[float, float] | None:
+        """(minimum, maximum) uit de number-entiteiten; max >= min."""
+
+        raw_min = self._native_number_state(
+            NATIVE_ENERGY_NEEDED,
+            self.entities["energy_needed"],
+            10.0,
+        )
+        raw_max = self._native_number_state(
+            NATIVE_MAX_ENERGY_NEEDED,
+            "",
+            0.0,
+        )
+
+        try:
+            minimum = max(0.0, float(raw_min))
+            maximum = max(minimum, float(raw_max))
+        except (TypeError, ValueError):
+            self.logger.warning(
+                f"Ongeldige benodigde energie: {raw_min} / {raw_max}"
+            )
+            return None
+
+        if minimum != minimum or maximum != maximum:
+            return None
+
+        return minimum, maximum
+
+    def _energy_bounds(self) -> tuple[float, float] | None:
+        """Nog te laden energie: (minimaal, maximaal)."""
+
+        limits = self._entity_energy_limits()
+
+        if limits is None:
+            return None
+
+        minimum, maximum = limits
+
+        delivered = self.energy_delivered_kwh
+
+        if delivered is not None:
+            delivered = max(0.0, float(delivered))
+
+            return (
+                max(0.0, minimum - delivered),
+                max(0.0, maximum - delivered),
+            )
+
+        override = self.energy_override_kwh
+
+        if override is None:
+            return minimum, maximum
+
+        try:
+            remaining = float(override)
+        except (TypeError, ValueError):
+            self.logger.warning(f"Ongeldige benodigde energie: {override}")
+            return None
+
+        return remaining, remaining
+
+    def get_entity_energy_target(self) -> float | None:
+        """Doel waarop de laadregeling toetst: het minimum."""
+
+        limits = self._entity_energy_limits()
+
+        if limits is None:
+            return None
+
+        minimum, maximum = limits
+
+        # Alleen een maximum ingesteld: alles is extra, doel = maximum.
+        target = minimum if minimum > 0 else maximum
+
+        return target if target > 0 else None
+
+    def get_entity_energy_goal(self) -> float | None:
+        """Einddoel van de sessie: het maximum (of het minimum)."""
+
+        limits = self._entity_energy_limits()
+
+        if limits is None:
+            return None
+
+        return limits[1] if limits[1] > 0 else None
+
+    def get_extra_charge_price(self) -> float:
+        """Prijslimiet (EUR/kWh) voor laden boven het minimum."""
+
+        value = self._native_number_state(
+            NATIVE_EXTRA_CHARGE_PRICE,
+            "",
+            DEFAULT_EXTRA_CHARGE_PRICE_CT,
+        )
+
+        if value != value:
+            value = DEFAULT_EXTRA_CHARGE_PRICE_CT
+
+        return min(50.0, max(0.0, float(value))) / 100
+
+    def get_forecast_markup(self) -> float:
+        """Opslag (EUR/kWh) op voorspelde prijzen."""
+
+        value = self._native_number_state(
+            NATIVE_FORECAST_MARKUP,
+            "",
+            FORECAST_PRICE_MARKUP * 100,
+        )
+
+        if value != value:
+            return FORECAST_PRICE_MARKUP
+
+        return min(20.0, max(0.0, float(value))) / 100
+
+    def departure_anchor_data(self) -> dict:
+        """Vertrekdatum van het huidige plan, om op te slaan."""
+
+        inputs = self._departure_inputs
+
+        if self.plan_departure is None or not inputs:
+            return {}
+
+        return {
+            "departure": self.plan_departure.isoformat(),
+            "clock": inputs[0].isoformat(),
+            "day": inputs[1],
+        }
+
+    def restore_departure_anchor(self, data) -> None:
+        """Herstel de vertrekdatum na een herstart (fouten worden genegeerd)."""
+
+        try:
+            departure = datetime.fromisoformat(data["departure"])
+            clock = time.fromisoformat(data["clock"])
+            day = str(data["day"])
+        except (KeyError, TypeError, ValueError):
+            return
+
+        if departure.tzinfo is None:
+            return
+
+        self.plan_departure = departure
+        self._departure_inputs = (clock, day)
+
+    def get_progress_threshold_kwh(self) -> float:
+        """Afwijking (kWh) tijdens het laden waarbij de regeling bijstuurt."""
+
+        value = self._native_number_state(
+            NATIVE_PROGRESS_THRESHOLD,
+            "",
+            DEFAULT_PROGRESS_THRESHOLD_KWH,
+        )
+
+        if value != value or value <= 0:
+            return DEFAULT_PROGRESS_THRESHOLD_KWH
+
+        return min(3.0, max(0.1, float(value)))
+
+    def _get_max_pauses(self) -> int | None:
+        """Maximum pauses between charging periods; None = no limit."""
+
+        value = self._native_number_state(
+            NATIVE_MAX_PAUSES,
+            "",
+            float(MAX_PAUSES_UNLIMITED),
+        )
+        pauses = max(0, int(value))
+
+        if pauses >= MAX_PAUSES_UNLIMITED:
+            return None
+
+        return pauses
+
     def _get_max_charge_power_kw(self) -> float:
         """Return the maximum charging power used by the planner."""
 
@@ -526,21 +779,24 @@ class EVPlannerController:
         # Benodigde energie
         # ------------------------------------------------------------------
 
-        raw_energy = self._native_number_state(
-            NATIVE_ENERGY_NEEDED,
-            self.entities["energy_needed"],
-            10.0,
-        )
+        bounds = self._energy_bounds()
 
-        try:
-            energy_needed_kwh = float(raw_energy)
-        except (TypeError, ValueError):
-            self.logger.warning(f"Ongeldige benodigde energie: {raw_energy}")
+        if bounds is None:
             return None
 
-        if energy_needed_kwh <= 0:
-            self.logger.warning("Benodigde energie moet groter zijn dan 0 kWh.")
+        min_remaining, max_remaining = bounds
+
+        if max_remaining <= 0:
+            self.logger.debug("Benodigde energie is 0 kWh: niets te plannen.")
             return None
+
+        self._plan_bounds = bounds
+
+        # Minimum al gehaald, maar nog ruimte tot het maximum: alleen
+        # extra laden met gratis PV of zeer goedkope stroom.
+        cheap_only = min_remaining <= 1e-9
+
+        energy_needed_kwh = max_remaining if cheap_only else min_remaining
 
         # ------------------------------------------------------------------
         # Maximale prijs
@@ -564,6 +820,9 @@ class EVPlannerController:
         if max_price < 0:
             self.logger.warning("Maximale elektriciteitsprijs kan niet negatief zijn.")
             return None
+
+        if cheap_only:
+            max_price = min(max_price, self.get_extra_charge_price())
 
         # ------------------------------------------------------------------
         # Minimale PV
@@ -659,6 +918,8 @@ class EVPlannerController:
                 self.logger.warning(f"Ongeldige vertrektijd: {raw_departure}")
                 return None
 
+        inputs = (departure_clock, departure_day)
+
         if departure_day == "Vandaag":
             departure_date = now.date()
         else:
@@ -669,6 +930,24 @@ class EVPlannerController:
             departure_clock,
             tzinfo=now.tzinfo,
         )
+
+        # Automatische herplanning: de vertrekdatum van de bestaande
+        # planning blijft gelden zolang de gebruiker tijd/dag niet wijzigde
+        # en het vertrek nog niet geweest is. Anders zou "Morgen" op de
+        # dag van vertrek opnieuw naar de volgende dag verschuiven.
+        if (
+            self._keep_departure
+            and self.plan_departure is not None
+            and self._departure_inputs == inputs
+            and self.plan_departure > now
+        ):
+            departure_datetime = self.plan_departure
+            self.logger.debug(
+                "Automatische herplanning: oorspronkelijk vertrek "
+                f"{departure_datetime:%d-%m-%Y %H:%M} blijft gelden."
+            )
+
+        self._pending_departure_inputs = inputs
 
         # ------------------------------------------------------------------
         # PlannerSettings
@@ -683,6 +962,7 @@ class EVPlannerController:
                 solar_is_free=True,
                 max_charge_power_kw=self._get_max_charge_power_kw(),
                 max_phase_switches=max_phase_switches,
+                max_pauses=self._get_max_pauses(),
                 planner_mode=planner_mode,
                 pv_rounding=pv_rounding,
             )
@@ -715,6 +995,7 @@ class EVPlannerController:
     # Planning
     ##########################################################################
 
+    @_locked
     def create_plan(
         self,
         now: datetime | None = None,
@@ -751,6 +1032,19 @@ class EVPlannerController:
             return None
 
         # ------------------------------------------------------------------
+        # Doel bereikt (gezet door de laadregeling): niets meer plannen
+        # ------------------------------------------------------------------
+
+        if self.energy_override_kwh is not None and self.energy_override_kwh <= 0:
+            self.logger.info("Doel bereikt: geen laadplanning meer nodig.")
+            self.scheduler.clear_plan()
+            self.last_plan = None
+            self.last_plan_time = None
+            self._publish_plan_data()
+            self._publish_planner_state("Doel bereikt")
+            return None
+
+        # ------------------------------------------------------------------
         # Planner instellingen
         # ------------------------------------------------------------------
 
@@ -774,7 +1068,25 @@ class EVPlannerController:
         # Electricity prices
         # ------------------------------------------------------------------
 
-        price_data = self.prices.read()
+        try:
+            # Definitieve prijzen eerst; voorspelde prijzen alleen voor de
+            # uren daarna (of voor alles als de definitieve prijzen niet
+            # te lezen zijn). final_until blijft het einde van de
+            # definitieve prijzen, zodat het plan wordt ververst zodra
+            # die prijzen echt binnenkomen.
+            try:
+                self.prices.forecast_markup = self.get_forecast_markup()
+            except Exception:  # noqa: BLE001 - dan blijft de vorige opslag gelden
+                pass
+
+            price_data, final_until = self.prices.read_with_forecast()
+
+        except Exception as err:
+            self.logger.warning(f"Prijsdata kon niet worden gelezen: {err}")
+
+            self._publish_planner_state("Geen prijsdata")
+
+            return None
 
         if not price_data.hours:
             self.logger.warning("Geen prijsdata beschikbaar.")
@@ -787,7 +1099,15 @@ class EVPlannerController:
         # Solcast
         # ------------------------------------------------------------------
 
-        solcast_data = self.solcast.read()
+        try:
+            solcast_data = self.solcast.read()
+
+        except Exception as err:
+            self.logger.warning(f"Solcast-data kon niet worden gelezen: {err}")
+
+            self._publish_planner_state("Geen PV-data")
+
+            return None
 
         if solcast_data is None:
             self.logger.warning("Geen Solcast-data beschikbaar.")
@@ -809,17 +1129,53 @@ class EVPlannerController:
         # als de andere faalscenario's hieronder.
         # ------------------------------------------------------------------
 
+        min_remaining, max_remaining = self._plan_bounds or (
+            settings.energy_needed_kwh,
+            settings.energy_needed_kwh,
+        )
+        cheap_only = min_remaining <= 1e-9
+
+        if cheap_only and (
+            self._extra_retry_after is not None and now < self._extra_retry_after
+        ):
+            self._publish_planner_state("Geen extra laadmomenten")
+            return None
+
+        # Een tweede planner-run (voor extra energie) gebruikt eigen kopieën.
+        extra_inputs = None
+        if not cheap_only and max_remaining > min_remaining + 0.05:
+            extra_inputs = (
+                copy.deepcopy(price_data),
+                copy.deepcopy(solcast_data),
+            )
+
+        # Extra laden is optioneel: geen waarschuwing als er niets gevonden wordt.
+        run_logger = (
+            Logger(debug=self.logger._debug) if cheap_only else self.logger
+        )
+
         planner = EVPlanner(
             prices=price_data,
             solcast=solcast_data,
             settings=settings,
-            logger=self.logger,
+            logger=run_logger,
         )
 
         try:
             plan = planner.create_plan()
 
         except Exception as err:
+            if cheap_only:
+                # Extra laden is optioneel: een rustige melding en later opnieuw.
+                self._extra_retry_after = now + self.EXTRA_RETRY_INTERVAL
+                self.logger.debug(f"Geen extra laadplan mogelijk: {err}")
+                self.scheduler.clear_plan()
+                self.last_plan = None
+                self.last_plan_time = None
+                self._publish_plan_data()
+                self._publish_planner_state("Geen extra laadmomenten")
+                return None
+
             self.logger.error(
                 f"Onverwachte fout tijdens het maken van het laadplan: {err}"
             )
@@ -850,11 +1206,55 @@ class EVPlannerController:
             return None
 
         # ------------------------------------------------------------------
+        # Extra energie tot het maximum (gratis PV / zeer goedkoop)
+        # ------------------------------------------------------------------
+
+        if cheap_only:
+            if plan.energy_planned_kwh <= 0.001:
+                self._extra_retry_after = now + self.EXTRA_RETRY_INTERVAL
+                self.logger.info(
+                    "Minimum bereikt en geen gratis of zeer goedkope "
+                    "laadmomenten voor extra energie."
+                )
+                self.scheduler.clear_plan()
+                self.last_plan = None
+                self.last_plan_time = None
+                self._publish_plan_data()
+                self._publish_planner_state("Geen extra laadmomenten")
+                return None
+
+            self._extra_retry_after = None
+            plan = dataclasses.replace(
+                plan,
+                energy_needed_kwh=0.0,
+                missing_energy_kwh=0.0,
+                complete=True,
+                extra_energy_kwh=float(plan.energy_planned_kwh),
+            )
+
+        elif extra_inputs is not None:
+            plan = self._plan_with_extra(
+                plan, settings, extra_inputs, min_remaining, max_remaining
+            )
+
+        # ------------------------------------------------------------------
         # Nieuwe planning opslaan
         # ------------------------------------------------------------------
 
         self.last_plan = plan
         self.last_plan_time = now
+        self.plan_prices_until = final_until
+        self.plan_forecast_hours = price_data.forecast_hours
+        self.plan_departure = settings.departure_time
+        self._departure_inputs = getattr(
+            self, "_pending_departure_inputs", None
+        )
+
+        if self.departure_anchor_changed is not None:
+            try:
+                self.departure_anchor_changed()
+            except Exception:  # noqa: BLE001 - opslaan mag plannen niet breken
+                pass
 
         self.scheduler.set_plan(plan)
 
@@ -884,6 +1284,7 @@ class EVPlannerController:
     # Update
     ##########################################################################
 
+    @_locked
     def update(
         self,
         now: datetime | None = None,
@@ -940,6 +1341,17 @@ class EVPlannerController:
                 return
 
         # ------------------------------------------------------------------
+        # Plan verversen als er nieuwe prijzen zijn bijgekomen
+        # ------------------------------------------------------------------
+
+        elif self._new_prices_available(now):
+            self.logger.info(
+                "Nieuwe prijzen beschikbaar tot na de vorige prijshorizon: "
+                "planning wordt vernieuwd."
+            )
+            self.replan_keep_previous(now)
+
+        # ------------------------------------------------------------------
         # Scheduler update
         # ------------------------------------------------------------------
 
@@ -968,6 +1380,7 @@ class EVPlannerController:
     # Planning wissen
     ##########################################################################
 
+    @_locked
     def clear_plan(self) -> None:
         """
         Verwijdert de huidige planning volledig.
@@ -990,6 +1403,7 @@ class EVPlannerController:
     # Opnieuw plannen
     ##########################################################################
 
+    @_locked
     def replan(
         self,
         now: datetime | None = None,
@@ -1004,6 +1418,8 @@ class EVPlannerController:
             now = datetime.now().astimezone()
 
         self.scheduler.clear_plan()
+
+        self._extra_retry_after = None
 
         self.last_plan = None
         self.last_plan_time = None
@@ -1028,6 +1444,242 @@ class EVPlannerController:
     ##########################################################################
     # Fasewisselingen
     ##########################################################################
+
+    ##########################################################################
+    # Alleen-lezen koppeling voor de optionele laadregeling
+    ##########################################################################
+
+    def get_desired_charge(
+        self,
+        now: datetime | None = None,
+    ) -> DesiredCharge:
+        """
+        Wat de planner op dit moment wil.
+
+        Alleen-lezen en zonder lock: wordt vanuit de event loop aangeroepen
+        en mag dus nooit wachten op een lopende planning.
+        """
+        if now is None:
+            now = datetime.now().astimezone()
+
+        decision = self._get_current_decision(now)
+        allowed = bool(self.scheduler.charging_allowed(now))
+
+        if decision is None or not allowed:
+            return DesiredCharge(False, 0, 0)
+
+        return DesiredCharge(
+            True,
+            int(decision.phases),
+            int(decision.charge_current_a),
+        )
+
+    def get_plan_decisions(self) -> list[tuple[datetime, datetime, float]]:
+        """(start, einde, energie in kWh) van alle geselecteerde beslissingen."""
+        plan = self.last_plan
+
+        if plan is None:
+            return []
+
+        return [
+            (
+                decision.hour.start,
+                decision.hour.end,
+                float(decision.energy_kwh),
+            )
+            for decision in plan.decisions
+            if decision.selected
+        ]
+
+    def energy_needed_entity_id(self) -> str | None:
+        """Entity-id van de number met de benodigde energie."""
+        return self._native_entity_id(
+            "number",
+            NATIVE_ENERGY_NEEDED,
+            self.entities["energy_needed"],
+        )
+
+    def energy_needed_entity_ids(self) -> list[str]:
+        """Minimum- en maximum-number (beide worden na afloop op 0 gezet)."""
+        result = []
+        for suffix, legacy in (
+            (NATIVE_ENERGY_NEEDED, self.entities["energy_needed"]),
+            (NATIVE_MAX_ENERGY_NEEDED, None),
+        ):
+            entity_id = self._native_entity_id("number", suffix, legacy)
+            if entity_id:
+                result.append(entity_id)
+        return result
+
+    def get_entity_energy_needed(self) -> float | None:
+        """De ingestelde benodigde energie, zonder correctie van de regeling."""
+        raw = self._native_number_state(
+            NATIVE_ENERGY_NEEDED,
+            self.entities["energy_needed"],
+            10.0,
+        )
+
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            return None
+
+        return value if value > 0 else None
+
+    @_locked
+    def replan_keep_previous(
+        self,
+        now: datetime | None = None,
+    ) -> ChargingPlan | None:
+        """
+        Herplan, maar behoud de vorige planning als dat mislukt.
+
+        Gewone replan() wist eerst het plan. Voor de automatische
+        bijsturing is dat te riskant: een tijdelijk probleem met prijs- of
+        PV-data zou dan een lopende laadsessie zonder plan achterlaten.
+        Een doel dat bereikt is (override 0) telt NIET als mislukking.
+        """
+        previous_plan = self.last_plan
+        previous_time = self.last_plan_time
+
+        self._keep_departure = True
+        try:
+            plan = self.replan(now)
+        finally:
+            self._keep_departure = False
+
+        goal_reached = (
+            self.energy_override_kwh is not None and self.energy_override_kwh <= 0
+        )
+
+        if plan is None and previous_plan is not None and not goal_reached:
+            self.last_plan = previous_plan
+            self.last_plan_time = previous_time
+            self.scheduler.set_plan(previous_plan)
+            self._publish_plan_data()
+            self.logger.warning(
+                "Herplannen mislukt: de vorige planning blijft actief."
+            )
+
+        return plan
+
+    PRICE_HORIZON_CHECK_INTERVAL = timedelta(minutes=5)
+    EXTRA_RETRY_INTERVAL = timedelta(minutes=5)
+
+    def _plan_with_extra(
+        self,
+        plan: ChargingPlan,
+        settings: PlannerSettings,
+        inputs: tuple,
+        minimum: float,
+        maximum: float,
+    ) -> ChargingPlan:
+        """
+        Probeer boven het minimum extra energie te plannen.
+
+        Tweede run: doel = maximum, maar alleen met gratis PV of slots
+        onder de prijslimiet voor extra laden. Haalt die run minstens het
+        minimum, dan wordt hij het plan; anders blijft het minimumplan.
+        """
+
+        if plan.missing_energy_kwh > 0.001:
+            return plan
+
+        extra_settings = copy.copy(settings)
+        extra_settings.energy_needed_kwh = float(maximum)
+        extra_settings.max_price = min(
+            float(settings.max_price), self.get_extra_charge_price()
+        )
+
+        prices, solcast = inputs
+
+        try:
+            extra_plan = EVPlanner(
+                prices=prices,
+                solcast=solcast,
+                settings=extra_settings,
+                logger=Logger(debug=self.logger._debug),
+            ).create_plan()
+        except Exception as err:  # noqa: BLE001 - extra is optioneel
+            self.logger.debug(f"Extra energie niet gepland: {err}")
+            return plan
+
+        if extra_plan is None or extra_plan.energy_planned_kwh < minimum - 1e-6:
+            return plan
+
+        extra = max(0.0, float(extra_plan.energy_planned_kwh) - minimum)
+
+        self.logger.info(
+            f"Extra laden ingepland: {extra:.2f} kWh boven het minimum "
+            f"van {minimum:.2f} kWh (maximum {maximum:.2f} kWh)."
+        )
+
+        return dataclasses.replace(
+            extra_plan,
+            energy_needed_kwh=float(minimum),
+            missing_energy_kwh=0.0,
+            complete=True,
+            extra_energy_kwh=extra,
+        )
+
+    def prices_cover_departure(self) -> bool | None:
+        """True als de prijzen van het huidige plan tot het vertrek reiken."""
+        if self.plan_prices_until is None or self.plan_departure is None:
+            return None
+
+        return self.plan_prices_until >= self.plan_departure
+
+    def _new_prices_available(self, now: datetime) -> bool:
+        """
+        Zijn er sinds het maken van het plan prijzen bijgekomen terwijl dat
+        plan de prijzen tot het vertrek nog niet dekte?
+
+        De Zonneplan-prijzen van morgen verschijnen pas in de loop van de
+        dag. Een plan dat eerder is gemaakt, kent die uren niet en zou
+        anders blijven staan tot iemand herplant.
+
+        Maximaal eens per 5 minuten gecontroleerd; zo wordt een mislukte
+        herplanning niet elke ronde opnieuw geprobeerd.
+        """
+        if self.prices_cover_departure() is not False:
+            return False
+
+        last = self._last_horizon_check
+        if last is not None and now - last < self.PRICE_HORIZON_CHECK_INTERVAL:
+            return False
+
+        self._last_horizon_check = now
+
+        try:
+            current_until = self.prices.read().valid_until
+        except Exception:
+            return False
+
+        return (
+            current_until is not None
+            and self.plan_prices_until is not None
+            and current_until > self.plan_prices_until
+        )
+
+    def _count_plan_pauses(self, plan: ChargingPlan | None) -> int:
+        """Aantal pauzes tussen laadmomenten in het plan."""
+
+        if plan is None or not plan.decisions:
+            return 0
+
+        pauses = 0
+        previous_end = None
+
+        for decision in sorted(plan.decisions, key=lambda d: d.hour.start):
+            if not decision.selected:
+                continue
+
+            if previous_end is not None and decision.hour.start > previous_end:
+                pauses += 1
+
+            previous_end = decision.hour.end
+
+        return pauses
 
     def _count_plan_phase_switches(
         self,
@@ -1123,6 +1775,9 @@ class EVPlannerController:
             "free_energy_kwh": float(decision.free_energy_kwh),
             "paid_energy_kwh": float(decision.paid_energy_kwh),
             "price": float(decision.price),
+            "price_is_forecast": bool(
+                getattr(decision.hour, "is_forecast", False)
+            ),
             "cost": float(decision.cost),
             # Planneradvies.
             #
@@ -1166,17 +1821,28 @@ class EVPlannerController:
 
         return {
             "energy_needed_kwh": float(plan.energy_needed_kwh),
+            "extra_energy_kwh": float(getattr(plan, "extra_energy_kwh", 0.0)),
             "energy_planned_kwh": float(plan.energy_planned_kwh),
             "missing_energy_kwh": float(plan.missing_energy_kwh),
             "free_energy_kwh": float(plan.free_energy_kwh),
             "paid_energy_kwh": float(plan.paid_energy_kwh),
             "estimated_cost": float(plan.estimated_cost),
             "complete": bool(plan.complete),
+            "prices_valid_until": (
+                self.plan_prices_until.isoformat()
+                if self.plan_prices_until is not None
+                else None
+            ),
+            "prices_cover_departure": self.prices_cover_departure(),
+            "forecast_prices_used": self.plan_forecast_hours > 0,
+            "forecast_price_slots": self.plan_forecast_hours,
             "departure_time": (plan.departure_time.isoformat()),
             "max_price": float(plan.max_price),
             "charging_windows": len(plan.decisions),
             "phase_switches": int(phase_switches),
             "max_phase_switches": int(max_phase_switches),
+            "pauses": int(self._count_plan_pauses(plan)),
+            "max_pauses": self._get_max_pauses(),
             "total_charging_minutes": float(total_charging_minutes),
             "decisions": decisions,
         }

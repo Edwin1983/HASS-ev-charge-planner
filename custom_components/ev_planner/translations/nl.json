@@ -8,6 +8,11 @@
           "entity_prices": "Elektriciteitsprijzen",
           "entity_solcast_today": "Solcast vandaag",
           "entity_solcast_tomorrow": "Solcast morgen"
+        },
+        "data_description": {
+          "entity_prices": "Sensor met de Zonneplan-uur- of kwartierprijzen (attribuut 'forecast').",
+          "entity_solcast_today": "Solcast-sensor met de PV-voorspelling voor vandaag.",
+          "entity_solcast_tomorrow": "Solcast-sensor met de PV-voorspelling voor morgen."
         }
       },
       "reconfigure": {
@@ -37,7 +42,36 @@
         "data": {
           "entity_prices": "Elektriciteitsprijzen",
           "entity_solcast_today": "Solcast vandaag",
-          "entity_solcast_tomorrow": "Solcast morgen"
+          "entity_solcast_tomorrow": "Solcast morgen",
+          "charger_mode_entity": "Lader-modus sensor (optioneel)",
+          "charger_connected_states": "Waarden voor 'auto aangesloten'",
+          "charger_charging_states": "Waarden voor 'laden'",
+          "charger_startable_states": "Waarden waarin het laden gestart kan worden",
+          "charger_current_entity": "Laadstroom number (optioneel)",
+          "charger_start_entity": "Start/stop schakelaar",
+          "charger_stop_entity": "Stopknop of -schakelaar",
+          "charger_phase_entity": "Fasewissel number",
+          "charger_phase_one_value": "Fasewissel-waarde voor 1 fase",
+          "charger_phase_three_value": "Fasewissel-waarde voor 3 fasen",
+          "charger_energy_entity": "Lader energiesensor (kWh)",
+          "entity_price_forecast": "Voorspelde prijzen (optioneel)"
+        },
+        "data_description": {
+          "entity_prices": "Sensor met de Zonneplan-uur- of kwartierprijzen (attribuut 'forecast').",
+          "entity_solcast_today": "Solcast-sensor met de PV-voorspelling voor vandaag.",
+          "entity_solcast_tomorrow": "Solcast-sensor met de PV-voorspelling voor morgen.",
+          "charger_mode_entity": "Alleen als zowel de modus-sensor als de laadstroom zijn ingesteld, is de laadregeling beschikbaar. Leeg laten om alleen de planner te gebruiken.",
+          "charger_connected_states": "Kommagescheiden lijst met modus-waarden. Standaard: connected_requesting,connected_charging,connected_finished",
+          "charger_charging_states": "Kommagescheiden lijst met modus-waarden. Standaard: connected_charging",
+          "charger_startable_states": "Kommagescheiden lijst met modus-waarden. Standaard: connected_requesting,connected_finished",
+          "charger_current_entity": "Number-entiteit die de maximale laadstroom in ampere instelt.",
+          "charger_start_entity": "Schakelaar die het laden start. Zonder schakelaar wordt aangenomen dat de lader zelf start zodra er een stroom is ingesteld.",
+          "charger_stop_entity": "Knop (indrukken) of schakelaar (uitzetten) die het laden stopt. Standaard wordt de startschakelaar uitgezet.",
+          "charger_phase_entity": "Number-entiteit die tussen 1 en 3 fasen wisselt. Leeg laten als de lader niet van fase kan wisselen.",
+          "charger_phase_one_value": "Waarde van de fase-number die 1 fase betekent (standaard 32).",
+          "charger_phase_three_value": "Waarde van de fase-number die 3 fasen betekent (standaard 0).",
+          "charger_energy_entity": "Totaal- of sessie-energiesensor van de lader. Schakelt de terugkoppeling tussen geplande en werkelijk geladen energie in.",
+          "entity_price_forecast": "Sensor met het attribuut 'raw_forecast' (start, end, value in EUR/kWh). Wordt alleen gebruikt voor uren waarvan de definitieve prijs nog niet bekend is. Leeg laten = uitschakelen."
         }
       }
     }
@@ -81,6 +115,12 @@
       },
       "desired_phases": {
         "name": "Gewenste fase"
+      },
+      "charge_control": {
+        "name": "Laadregeling"
+      },
+      "energy_deviation": {
+        "name": "Energieafwijking (laatste blok)"
       }
     },
     "binary_sensor": {
@@ -90,7 +130,7 @@
     },
     "number": {
       "energy_needed": {
-        "name": "Benodigde energie"
+        "name": "Minimaal benodigde energie"
       },
       "maximum_grid_price": {
         "name": "Maximale netprijs"
@@ -98,11 +138,26 @@
       "maximum_phase_switches": {
         "name": "Maximaal aantal fasewisselingen"
       },
+      "maximum_pauses": {
+        "name": "Maximaal aantal pauzes"
+      },
+      "progress_threshold": {
+        "name": "Drempel laadvoortgang"
+      },
       "minimum_pv_solar_only": {
         "name": "Minimale PV voor alleen zonneladen"
       },
       "maximum_charging_power": {
         "name": "Maximaal laadvermogen"
+      },
+      "forecast_markup": {
+        "name": "Opslag voorspelde prijzen"
+      },
+      "max_energy_needed": {
+        "name": "Maximaal benodigde energie"
+      },
+      "extra_charge_price": {
+        "name": "Prijslimiet extra laden"
       }
     },
     "select": {
@@ -124,6 +179,15 @@
     "switch": {
       "smart_charging": {
         "name": "Slim laden"
+      },
+      "charge_enabled": {
+        "name": "Laadregeling actief"
+      },
+      "charge_dry_run": {
+        "name": "Laadregeling dry-run"
+      },
+      "charge_feedback": {
+        "name": "Laadregeling energie-terugkoppeling"
       }
     }
   }

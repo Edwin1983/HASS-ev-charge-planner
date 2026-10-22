@@ -43,7 +43,7 @@ ENTITIES = {
     # ----------------------------------------------------------------------
 
     "prices":
-        "sensor.zonneplan_current_electricity_tariff",
+        "sensor.zonneplan_current_quarter_hourly_electricity_tariff",
 
 
     # ----------------------------------------------------------------------
@@ -90,16 +90,6 @@ MAX_POWER_3PH = (
 
 PHASE_CHANGE_POWER = 3.8
 
-##############################################################################
-# Solcast modi
-##############################################################################
-
-SOLCAST_SAFE = "Veilig"
-
-SOLCAST_NORMAL = "Normaal"
-
-SOLCAST_MAX = "Maximaal zon"
-
 
 ##############################################################################
 # Logging
@@ -108,4 +98,3 @@ SOLCAST_MAX = "Maximaal zon"
 DEBUG = True
 
 LOG_PREFIX = "[EV Planner]"
-
