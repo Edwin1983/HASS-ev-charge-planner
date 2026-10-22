@@ -18,6 +18,7 @@ from homeassistant.core import (
 )
 from homeassistant.exceptions import ServiceValidationError
 
+from .charge_manager import ChargeManager, ChargerEntities
 from .const import DOMAIN, PLATFORMS
 from .core.ev_planner import EVPlannerController
 from .core.logger import Logger
@@ -121,9 +122,28 @@ async def _async_handle_replan(call: ServiceCall) -> None:
     await _run(call.hass, _get_controller(call.hass, call), "replan")
 
 
+async def _async_reset_energy_needed(
+    hass: HomeAssistant, controller: EVPlannerController
+) -> None:
+    """Set the energy-needed number back to 0 kWh."""
+    for entity_id in controller.energy_needed_entity_ids():
+        await hass.services.async_call(
+            "number",
+            "set_value",
+            {"entity_id": entity_id, "value": 0},
+            blocking=True,
+        )
+
+
 async def _async_handle_clear_plan(call: ServiceCall) -> None:
     """Handle the clear_plan action."""
-    await _run(call.hass, _get_controller(call.hass, call), "clear_plan")
+    controller = _get_controller(call.hass, call)
+    await _run(call.hass, controller, "clear_plan")
+    manager = getattr(controller, "charge_manager", None)
+    if manager is not None:
+        await manager.async_reset_session()
+    else:
+        await _async_reset_energy_needed(call.hass, controller)
 
 
 async def _async_handle_status(call: ServiceCall) -> dict:
@@ -187,10 +207,38 @@ async def async_setup_entry(
     )
     entry.runtime_data = controller
 
+    # De oorspronkelijke vertrekdatum van het plan overleeft een herstart.
+    from homeassistant.helpers.storage import Store
+
+    departure_store = Store(hass, 1, f"{DOMAIN}_departure_{entry.entry_id}")
+    controller.restore_departure_anchor(await departure_store.async_load())
+
+    def _departure_changed() -> None:
+        hass.loop.call_soon_threadsafe(
+            departure_store.async_delay_save,
+            controller.departure_anchor_data,
+            1,
+        )
+
+    controller.departure_anchor_changed = _departure_changed
+
+    # Optionele laadregeling: alleen actief als de lader is ingesteld.
+    charge_manager = await _async_create_charge_manager(
+        hass,
+        entry,
+        controller,
+        merged_config,
+    )
+    controller.charge_manager = charge_manager
+
     await hass.config_entries.async_forward_entry_setups(
         entry,
         PLATFORMS,
     )
+
+    if charge_manager is not None:
+        await charge_manager.async_start()
+        entry.async_on_unload(charge_manager.async_stop)
 
     entry.async_on_unload(
         entry.add_update_listener(_async_update_listener)
@@ -198,6 +246,33 @@ async def async_setup_entry(
 
     _LOGGER.info("EV Charge Planner native integratie geladen.")
     return True
+
+
+async def _async_create_charge_manager(
+    hass: HomeAssistant,
+    entry: EVPlannerConfigEntry,
+    controller: EVPlannerController,
+    config: dict[str, Any],
+) -> ChargeManager | None:
+    """Maak de laadregeling als de verplichte lader-entiteiten zijn ingesteld."""
+    entities = ChargerEntities.from_config(config)
+
+    if entities is None:
+        return None
+
+    from homeassistant.helpers.storage import Store
+
+    manager = ChargeManager(
+        hass,
+        controller,
+        entities,
+        store=Store(hass, 1, f"{DOMAIN}_charge_manager_{entry.entry_id}"),
+        logger=controller.logger,
+    )
+
+    await manager.async_load()
+
+    return manager
 
 
 async def _async_update_listener(

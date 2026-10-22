@@ -5,7 +5,7 @@ Slimme EV-laadplanner.
 
 Combineert:
 
-- uurprijzen
+- uur- en kwartierprijzen
 - Solcast PV-voorspelling
 - benodigde hoeveelheid energie
 - maximale prijs
@@ -26,20 +26,6 @@ Home Assistant entities en dictionaries horen hier niet thuis.
 
 De daadwerkelijke bediening van de laadpaal gebeurt
 door Home Assistant / de runtime-laag.
-
-Pyscript-compatibele versie.
-
-Belangrijk:
-
-- geen generator expressions
-- geen properties
-- geen property-aanroepen
-- geen list comprehensions
-- geen Hour.duration()
-- geen SolcastData.get_hour()
-- geen class-level dataclass defaults voor PlannerSettings
-- expliciete numerieke conversies
-- uitsluitend gewone Python-methodes
 
 
 LAADLOGICA
@@ -116,9 +102,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from math import ceil
+import resource
 
 from .logger import Logger
 from .solar import apply_solar_only
+from . import planner_fast
 
 from .models import Hour
 from .models import PriceData
@@ -191,6 +180,20 @@ MAX_PHASE_SWITCHES_HARD_CAP = 8
 # NOOIT een echte prijsafweging kan omdraaien -- het breekt alleen
 # gevallen waarin de kosten al exact identiek zijn.
 CURRENT_TIEBREAK_EPSILON = 0.000000001
+MEMORY_DIAGNOSTIC_INTERVAL = 8
+
+
+def _process_rss_mb() -> float:
+    """Return the current Python process RSS in MB for diagnostics."""
+    try:
+        with open("/proc/self/status", encoding="utf-8") as status_file:
+            for line in status_file:
+                if line.startswith("VmRSS:"):
+                    return float(line.split()[1]) / 1024.0
+    except (OSError, ValueError):
+        pass
+
+    return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024.0
 
 
 ##############################################################################
@@ -201,11 +204,6 @@ CURRENT_TIEBREAK_EPSILON = 0.000000001
 class PlannerSettings:
     """
     Instellingen voor één laadopdracht.
-
-    Bewust geen dataclass.
-
-    Alle waarden worden expliciet geconverteerd naar gewone
-    Python-objecten zodat Pyscript hiermee kan werken.
     """
 
     def __init__(
@@ -219,6 +217,7 @@ class PlannerSettings:
         max_phase_switches: int = 2,
         planner_mode: str = PLANNER_MODE_NORMAL,
         pv_rounding: str = PV_ROUNDING_DOWN,
+        max_pauses: int | None = None,
     ) -> None:
 
         self.energy_needed_kwh = float(energy_needed_kwh)
@@ -237,6 +236,10 @@ class PlannerSettings:
 
         self.planner_mode = str(planner_mode)
         self.pv_rounding = str(pv_rounding)
+
+        # Maximaal aantal pauzes (onderbrekingen) tussen laadmomenten.
+        # None = onbeperkt.
+        self.max_pauses = None if max_pauses is None else int(max_pauses)
 
         self._validate()
 
@@ -281,6 +284,9 @@ class PlannerSettings:
 
         if self.max_phase_switches < 0:
             raise ValueError("max_phase_switches mag niet negatief zijn.")
+
+        if self.max_pauses is not None and self.max_pauses < 0:
+            raise ValueError("max_pauses mag niet negatief zijn.")
 
         if self.planner_mode not in (PLANNER_MODE_NORMAL, PLANNER_MODE_SOLAR_ONLY):
             raise ValueError("Ongeldige planner_mode.")
@@ -345,6 +351,9 @@ class ChargingPlan:
     departure_time: datetime
 
     max_price: float
+
+    # Energie boven het minimum (alleen uit gratis PV of zeer goedkope slots).
+    extra_energy_kwh: float = 0.0
 
 
 ##############################################################################
@@ -608,14 +617,66 @@ class EVPlanner:
             tariff_group=str(price_hour.tariff_group),
             sustainability_score=float(price_hour.sustainability_score),
             hour_index=int(price_hour.hour_index),
+            is_forecast=bool(price_hour.is_forecast),
         )
 
         if solar_hour is not None:
-            hour.pv_estimate = float(solar_hour.pv_estimate)
+            ##################################################################
+            # Een Solcast-record kan een uur beslaan terwijl PriceReader
+            # inmiddels kwartierslots levert. Verdeel de PV-prognose
+            # daarom evenredig over de overlap, zodat dezelfde
+            # zonnestroom niet vier keer wordt meegenomen.
+            ##################################################################
 
-            hour.pv_estimate10 = float(solar_hour.pv_estimate10)
+            price_start = price_hour.start
+            price_end = price_hour.end
 
-            hour.pv_estimate90 = float(solar_hour.pv_estimate90)
+            solar_start = solar_hour.start
+            solar_end = solar_hour.end
+
+            overlap_start = max(
+                price_start,
+                solar_start,
+            )
+
+            overlap_end = min(
+                price_end,
+                solar_end,
+            )
+
+            overlap_seconds = (
+                overlap_end - overlap_start
+            ).total_seconds()
+
+            solar_seconds = (
+                solar_end - solar_start
+            ).total_seconds()
+
+            fraction = 0.0
+
+            if (
+                overlap_seconds > 0
+                and solar_seconds > 0
+            ):
+                fraction = (
+                    overlap_seconds
+                    / solar_seconds
+                )
+
+            hour.pv_estimate = (
+                float(solar_hour.pv_estimate)
+                * fraction
+            )
+
+            hour.pv_estimate10 = (
+                float(solar_hour.pv_estimate10)
+                * fraction
+            )
+
+            hour.pv_estimate90 = (
+                float(solar_hour.pv_estimate90)
+                * fraction
+            )
 
         else:
             hour.pv_estimate = 0.0
@@ -721,17 +782,50 @@ class EVPlanner:
                 tariff_group=str(source_hour.tariff_group),
                 sustainability_score=float(source_hour.sustainability_score),
                 hour_index=int(source_hour.hour_index),
+                is_forecast=bool(source_hour.is_forecast),
             )
 
             ##################################################################
-            # Solcastgegevens behouden
+            # Solcastgegevens proportioneel afschalen
+            #
+            # PV-waarden zijn energie voor het volledige broninterval.
+            # Als het interval door NU of vertrek wordt afgekapt,
+            # mag niet de volledige oorspronkelijke PV-energie aan het
+            # kortere laadvenster worden toegekend.
             ##################################################################
 
-            partial_hour.pv_estimate = float(source_hour.pv_estimate)
+            source_duration_seconds = (
+                source_hour.end - source_hour.start
+            ).total_seconds()
 
-            partial_hour.pv_estimate10 = float(source_hour.pv_estimate10)
+            partial_duration_seconds = (
+                new_end - new_start
+            ).total_seconds()
 
-            partial_hour.pv_estimate90 = float(source_hour.pv_estimate90)
+            fraction = 0.0
+
+            if source_duration_seconds > 0:
+                fraction = (
+                    partial_duration_seconds
+                    / source_duration_seconds
+                )
+
+            if fraction < 0.0:
+                fraction = 0.0
+            elif fraction > 1.0:
+                fraction = 1.0
+
+            partial_hour.pv_estimate = (
+                float(source_hour.pv_estimate) * fraction
+            )
+
+            partial_hour.pv_estimate10 = (
+                float(source_hour.pv_estimate10) * fraction
+            )
+
+            partial_hour.pv_estimate90 = (
+                float(source_hour.pv_estimate90) * fraction
+            )
 
             filtered_hours.append(partial_hour)
 
@@ -1009,46 +1103,10 @@ class EVPlanner:
 
         return float(power * duration)
 
-    def _hour_free_energy(
-        self,
-        hour: Hour,
-        phases: int,
-    ) -> float:
-        """
-        Maximaal bruikbare GRATIS (zon-)energie in dit uur bij deze
-        faseconfiguratie. Nooit meer dan de Solcast-voorspelling en
-        nooit meer dan de capaciteit van de gekozen fase.
-        """
-
-        cap = self._hour_max_energy(
-            hour,
-            phases,
-        )
-
-        if cap <= 0:
-            return 0.0
-
-        pv = float(hour.pv_estimate)
-
-        if pv < 0:
-            pv = 0.0
-
-        if self.settings.planner_mode == PLANNER_MODE_SOLAR_ONLY and pv < float(
-            self.settings.min_pv_kwh
-        ):
-            pv = 0.0
-
-        if pv > cap:
-            pv = cap
-
-        return float(pv)
-
     ##########################################################################
     # Gezamenlijke optimalisatie: uren, fase, stroom en venster
     # tegelijk
     #
-    # VOLLEDIGE HERBOUW (native Home Assistant integratie, geen
-    # Pyscript-compatibiliteit meer nodig).
     #
     # HARDE FYSIEKE REGELS
     #
@@ -1154,6 +1212,7 @@ class EVPlanner:
     def _optimize_hours(
         self,
         hours: list[Hour],
+        allow_partial: bool = False,
     ) -> None:
         """
         Bepaalt in één keer, gezamenlijk: welke uren geladen worden,
@@ -1167,6 +1226,14 @@ class EVPlanner:
 
         if not hours:
             return
+
+        diagnostic_rss_before = _process_rss_mb()
+        self.logger.debug(
+            "EV Planner production DP START: "
+            f"rss={diagnostic_rss_before:.1f} MB, "
+            f"hours={len(hours)}, "
+            f"target={float(self.settings.energy_needed_kwh):.2f} kWh"
+        )
 
         ######################################################################
         # Chronologische kopie
@@ -1222,6 +1289,19 @@ class EVPlanner:
         max_price = float(self.settings.max_price)
 
         ######################################################################
+        # Maximaal aantal pauzes. Een pauze is een reeks overgeslagen slots
+        # tussen twee laadmomenten; voor het eerste en na het laatste
+        # laadmoment telt niet. Meer pauzes dan er in het venster passen
+        # (elke pauze heeft een laadslot ervoor en erna nodig) is geen
+        # beperking.
+        ######################################################################
+
+        max_pauses = self.settings.max_pauses
+
+        if max_pauses is not None and max_pauses >= (count - 1) // 2:
+            max_pauses = None
+
+        ######################################################################
         # Per uur, per fase: beschikbare duur, zonvermogen, geldige
         # stroomsterktes en de daarbij horende volledige-uur
         # hoeveelheden (bedrag, gratis, betaald).
@@ -1234,7 +1314,7 @@ class EVPlanner:
         prices = []
 
         # full_options[(index, phase)] = list van
-        # (current_a, amount_kwh, free_kwh, paid_kwh), oplopend van
+        # (current_a, amount_kwh, amount_key, free_kwh, paid_kwh), oplopend van
         # laag naar hoog vermogen.
         full_options = {}
 
@@ -1242,6 +1322,17 @@ class EVPlanner:
             1: self._valid_currents(1),
             3: self._valid_currents(3),
         }
+
+        power_by_phase_current = {
+            1: {},
+            3: {},
+        }
+
+        for phase in (1, 3):
+            for current_a in valid_currents_by_phase[phase]:
+                power_by_phase_current[phase][current_a] = (
+                    self._actual_power_for_current(current_a, phase)
+                )
 
         for index in range(count):
             hour = ordered_hours[index]
@@ -1259,10 +1350,7 @@ class EVPlanner:
 
                 if duration > 0:
                     for current_a in valid_currents_by_phase[phase]:
-                        power = self._actual_power_for_current(
-                            current_a,
-                            phase,
-                        )
+                        power = power_by_phase_current[phase][current_a]
 
                         amount = float(power * duration)
 
@@ -1290,16 +1378,43 @@ class EVPlanner:
                         if prices[index] > max_price and paid > 0.000001:
                             continue
 
+                        amount_key = int(
+                            amount * 1000000000.0 + 0.5
+                        )
+
                         options.append(
                             (
                                 current_a,
                                 amount,
+                                amount_key,
                                 free,
                                 paid,
                             )
                         )
 
                 full_options[(index, phase)] = options
+
+        ######################################################################
+        # Veilige bovengrens voor resterende energie.
+        #
+        # Deze suffixsom negeert prijs- en fasewisselbeperkingen en
+        # veronderstelt overal maximaal 3-fasenvermogen. Daardoor is het
+        # uitsluitend een noodzakelijke haalbaarheidsgrens: een state die
+        # hiermee het doel niet meer kan halen, kan nooit deel uitmaken
+        # van een complete planning. Het verwijderen van zulke states
+        # verandert dus de optimale oplossing niet.
+        ######################################################################
+
+        suffix_max_energy = [0.0] * (count + 1)
+
+        for index in range(count - 1, -1, -1):
+            suffix_max_energy[index] = (
+                suffix_max_energy[index + 1]
+                + self._hour_max_energy(
+                    ordered_hours[index],
+                    3,
+                )
+            )
 
         ######################################################################
         # Dynamic programming.
@@ -1315,74 +1430,242 @@ class EVPlanner:
         #       | ("finish", fase, stroom_A, bedrag_kwh)
         ######################################################################
 
+        ######################################################################
+        # Snelle route: dichte numpy-DP op het energierooster.
+        #
+        # Levert hetzelfde optimum als de DP hieronder, maar veel sneller
+        # en met veel minder geheugen. Geeft None terug (-> oude DP) als
+        # numpy ontbreekt, het rooster niet past, er geen compleet plan
+        # bestaat of de interne controle faalt.
+        ######################################################################
+
+        if planner_fast.available() and not allow_partial:
+            try:
+                fast_actions = planner_fast.fast_optimize(
+                    seconds=[
+                        (hour.end - hour.start).total_seconds()
+                        for hour in ordered_hours
+                    ],
+                    durations=durations,
+                    prices=prices,
+                    pv_rates=pv_rates,
+                    full_options=full_options,
+                    valid_currents=valid_currents_by_phase,
+                    power_table=power_by_phase_current,
+                    target=target,
+                    max_switches=max_switches,
+                    max_price=max_price,
+                    voltage=VOLTAGE_V,
+                    tiebreak=CURRENT_TIEBREAK_EPSILON,
+                    max_pauses=max_pauses,
+                )
+            except Exception as err:  # noqa: BLE001 - altijd terugvallen
+                self.logger.warning(
+                    f"Snelle planner mislukt, oude DP wordt gebruikt: {err}"
+                )
+                fast_actions = None
+
+            # Extra vangnet: de snelle route controleert de limiet zelf al;
+            # bij twijfel rekent de exacte DP.
+            if (
+                fast_actions is not None
+                and max_pauses is not None
+                and self._count_pauses(fast_actions) > max_pauses
+            ):
+                fast_actions = None
+
+            if fast_actions is not None:
+                self._apply_actions(
+                    ordered_hours,
+                    fast_actions,
+                    durations,
+                    pv_rates,
+                )
+                self.logger.debug("GEZAMENLIJKE OPTIMALISATIE: snelle route")
+                self._warn_if_partial(ordered_hours, target, max_switches, max_price)
+                return
+
         NONE_PHASE = 0
 
+        # DP energy keys are integer nano-kWh. Convert back to kWh only
+        # when a real amount is needed.
+        ENERGY_SCALE = 1000000000.0
 
-        ENERGY_DECIMALS = 9
+        # Compact integer state id:
+        # 0 = no active phase yet
+        # odd ids = 1-phase with switch count encoded
+        # even ids = 3-phase with switch count encoded.
+        start_state = 0
 
-        def energy_key(value):
+        # State ids are tiny (0..18 with the hard cap of 8 switches).
+        # Decode phase/switch count once instead of doing integer
+        # arithmetic for every DP state in every layer.
+        max_state_id = 2 + (max_switches * 2)
+        stride = max_state_id + 1
 
-            return round(
-                value,
-                ENERGY_DECIMALS,
+        # Met een pauzelimiet wordt aan elke basisstate een laag toegevoegd
+        # per (aantal pauzes, "vorige slot geladen"). Zonder limiet blijft
+        # alles zoals voorheen (een laag).
+        track_pauses = max_pauses is not None
+        pause_layers = (2 * (max_pauses + 1)) if track_pauses else 1
+
+        phase_by_state = [NONE_PHASE] * (stride * pause_layers)
+        switches_by_state = [0] * (stride * pause_layers)
+        pauses_by_state = [0] * (stride * pause_layers)
+        charged_by_state = [False] * (stride * pause_layers)
+
+        for layer in range(pause_layers):
+            offset = layer * stride
+            for switches in range(max_switches + 1):
+                phase_by_state[offset + 1 + (switches * 2)] = 1
+                phase_by_state[offset + 2 + (switches * 2)] = 3
+                switches_by_state[offset + 1 + (switches * 2)] = switches
+                switches_by_state[offset + 2 + (switches * 2)] = switches
+            for base in range(stride):
+                switches_by_state[offset + base] = (
+                    0 if base == 0 else (base - 1) // 2
+                )
+                pauses_by_state[offset + base] = layer // 2
+                charged_by_state[offset + base] = bool(layer % 2)
+
+        ######################################################################
+        # Directe predecessor-DP.
+        #
+        # Checkpoint-reconstructie is bewust volledig verwijderd.
+        #
+        # De DP bewaart nu tijdens de eerste en enige optimalisatierun
+        # rechtstreeks de predecessor voor iedere overlevende candidate.
+        # Daardoor is achteraf geen tweede DP-run nodig om het plan te
+        # reconstrueren.
+        #
+        # Dit gebruikt meer geheugen dan de checkpointvariant, maar voorkomt
+        # de extra rekentijd en -- belangrijker -- dat de reconstructie een
+        # tweede keer exact dezelfde complexe DP moet uitvoeren.
+        ######################################################################
+
+        def advance_layer(
+            prev_layer,
+            index,
+        ):
+            next_layer = {}
+            parent_layer = {}
+
+            price = prices[index]
+            options_by_phase = (
+                None,
+                full_options[(index, 1)],
+                None,
+                full_options[(index, 3)],
             )
 
-        start_state = (
-            NONE_PHASE,
-            0,
-        )
-
-        layers = [
-            {
-                start_state: {
-                    energy_key(0.0): (
-                        0.0,
-                        None,
-                        None,
-                        None,
-                    )
-                }
-            }
-        ]
-
-        for index in range(count):
-            prev_layer = layers[index]
-
-            next_layer = {}
-
-            def ensure(
-                state,
+            def set_candidate(
+                bucket,
+                energy_key,
+                candidate_cost,
             ):
+                try:
+                    existing = bucket[energy_key]
+                except KeyError:
+                    existing = None
 
-                if state not in next_layer:
-                    next_layer[state] = {}
+                if existing is None or candidate_cost < existing:
+                    bucket[energy_key] = candidate_cost
+                    return True
 
-                return next_layer[state]
+                return False
 
-            for state, energies in prev_layer.items():
-                phase_prev, switches_prev = state
+            for state_id, energies in prev_layer.items():
+                phase_prev = phase_by_state[state_id]
+                switches_prev = switches_by_state[state_id]
+                pauses_prev = pauses_by_state[state_id]
+                base_prev = state_id % stride
 
-                for energy_k, (
-                    cost,
-                    _parent_state,
-                    _parent_energy,
-                    _action,
-                ) in energies.items():
-                    remaining = target - energy_k
+                # Toestand na een overgeslagen slot: niet (meer) aan het laden.
+                if track_pauses:
+                    skip_state = base_prev + stride * (2 * pauses_prev)
+                else:
+                    skip_state = state_id
 
-                    ##############################################################
-                    # Overslaan: altijd toegestaan, ook als het doel
-                    # al bereikt is.
-                    ##############################################################
+                # Een laadslot na een pauze (na een eerder laadslot) telt
+                # als een extra pauze.
+                resumes = (
+                    track_pauses
+                    and phase_prev != NONE_PHASE
+                    and not charged_by_state[state_id]
+                )
+                pauses_new = pauses_prev + (1 if resumes else 0)
 
-                    bucket = ensure(state)
+                if track_pauses and pauses_new > max_pauses:
+                    charge_allowed = False
+                else:
+                    charge_allowed = True
 
-                    existing = bucket.get(energy_k)
+                phase_data = []
 
-                    if existing is None or cost < existing[0]:
-                        bucket[energy_k] = (
-                            cost,
-                            state,
+                for phase in (1, 3):
+                    if not charge_allowed:
+                        break
+
+                    if phase_prev == NONE_PHASE:
+                        switches_new = 0
+                    elif phase_prev == phase:
+                        switches_new = switches_prev
+                    else:
+                        switches_new = switches_prev + 1
+
+                    if switches_new > max_switches:
+                        continue
+
+                    if phase == 1:
+                        out_state = 1 + (switches_new * 2)
+                    else:
+                        out_state = 2 + (switches_new * 2)
+
+                    if track_pauses:
+                        out_state += stride * (2 * pauses_new + 1)
+
+                    out_bucket = next_layer.get(out_state)
+                    if out_bucket is None:
+                        out_bucket = {}
+                        next_layer[out_state] = out_bucket
+
+                    phase_data.append(
+                        (
+                            phase,
+                            out_state,
+                            out_bucket,
+                            options_by_phase[phase],
+                        )
+                    )
+
+                for energy_k, cost in energies.items():
+                    energy = float(energy_k) / ENERGY_SCALE
+                    remaining = target - energy
+
+                    # Een toestand die het doel nooit meer kan halen mag
+                    # alleen weggegooid worden zolang we een COMPLEET plan
+                    # zoeken. In de deelplan-ronde (allow_partial) blijven
+                    # ze bestaan: dan zoeken we de maximaal haalbare energie.
+                    if (
+                        not allow_partial
+                        and energy + suffix_max_energy[index] < target - 0.000001
+                    ):
+                        continue
+
+                    # Skip.
+                    bucket = next_layer.setdefault(skip_state, {})
+
+                    if set_candidate(
+                        bucket,
+                        energy_k,
+                        cost,
+                    ):
+                        parent_bucket = parent_layer.setdefault(
+                            skip_state,
+                            {},
+                        )
+                        parent_bucket[energy_k] = (
+                            state_id,
                             energy_k,
                             ("skip",),
                         )
@@ -1390,117 +1673,92 @@ class EVPlanner:
                     if remaining <= 0.000001:
                         continue
 
-                    for phase in (1, 3):
-                        if phase_prev == NONE_PHASE:
-                            switches_new = 0
-
-                        elif phase_prev == phase:
-                            switches_new = switches_prev
-
-                        else:
-                            switches_new = switches_prev + 1
-
-                        if switches_new > max_switches:
-                            continue
-
-                        out_state = (
-                            phase,
-                            switches_new,
-                        )
-
-                        ##########################################################
-                        # Optie: vol uur op een van de geldige
-                        # stroomsterktes.
-                        ##########################################################
-
+                    for (
+                        phase,
+                        out_state,
+                        out_bucket,
+                        options,
+                    ) in phase_data:
+                        # Volledig uur.
                         for (
                             current_a,
                             amount,
+                            amount_key,
                             free,
                             paid,
-                        ) in full_options[(index, phase)]:
+                        ) in options:
                             if amount > remaining + 0.000001:
-                                continue
+                                break
 
-                            new_energy = energy_k + amount
+                            new_energy_key = energy_k + amount_key
 
                             new_cost = (
                                 cost
-                                + paid * prices[index]
+                                + paid * price
                                 - CURRENT_TIEBREAK_EPSILON * current_a
                             )
 
-                            new_key = energy_key(new_energy)
-
-                            out_bucket = ensure(out_state)
-
-                            existing = out_bucket.get(new_key)
-
-                            if existing is None or new_cost < existing[0]:
-                                out_bucket[new_key] = (
-                                    new_cost,
-                                    state,
+                            if set_candidate(
+                                out_bucket,
+                                new_energy_key,
+                                new_cost,
+                            ):
+                                parent_bucket = parent_layer.setdefault(
+                                    out_state,
+                                    {},
+                                )
+                                parent_bucket[new_energy_key] = (
+                                    state_id,
                                     energy_k,
-                                    (
-                                        "full",
-                                        phase,
-                                        current_a,
-                                    ),
+                                    ("full", phase, current_a),
                                 )
 
-                        ##########################################################
-                        # Optie: dit uur maakt de planning af (mag
-                        # gecomprimeerd zijn). Kies de LAAGSTE
-                        # geldige stroom die de resterende
-                        # hoeveelheid binnen de beschikbare duur kan
-                        # leveren -- dat maximaliseert de
-                        # zonopvangst (langst mogelijke venster) en
-                        # geeft een exacte, niet-afgeronde
-                        # hoeveelheid.
-                        ##########################################################
-
+                        # Finish.
                         duration = durations[index]
 
                         if duration <= 0:
                             continue
 
                         pv_rate = pv_rates[index]
-
                         price_ok_currents = valid_currents_by_phase[phase]
 
-                        best_current = None
-
-                        for current_a in price_ok_currents:
-                            power = self._actual_power_for_current(
-                                current_a,
-                                phase,
-                            )
-
-                            if prices[index] > max_price:
-                                ####################################################
-                                # Boven de maximumprijs mag dit volledige
-                                # uur alleen worden gebruikt wanneer de
-                                # volledige laadenergie door PV wordt
-                                # gedekt. Het uur blijft daarbij volledig
-                                # actief; alleen het eerste en laatste
-                                # actieve uur mogen onvolledig zijn.
-                                ####################################################
-
-                                if free < amount - 0.000001:
-                                    continue
-
-                            if power * duration >= remaining - 0.000001:
-                                best_current = current_a
-
-                                break
-
-                        if best_current is None:
+                        if not price_ok_currents:
                             continue
 
-                        power = self._actual_power_for_current(
-                            best_current,
-                            phase,
+                        minimum_current = int(price_ok_currents[0])
+                        maximum_current = int(price_ok_currents[-1])
+
+                        required_current = int(
+                            ceil(
+                                (
+                                    (remaining - 0.000001)
+                                    * 1000.0
+                                )
+                                / (
+                                    VOLTAGE_V
+                                    * float(phase)
+                                    * duration
+                                )
+                            )
                         )
+
+                        if required_current < minimum_current:
+                            required_current = minimum_current
+
+                        if required_current > maximum_current:
+                            continue
+
+                        best_current = required_current
+                        power = power_by_phase_current[phase][best_current]
+
+                        if price > max_price:
+                            free_energy = min(
+                                pv_rate,
+                                power,
+                            ) * duration
+
+                            if free_energy < power * duration - 0.000001:
+                                continue
 
                         finish_duration = remaining / power
 
@@ -1522,20 +1780,27 @@ class EVPlanner:
                         if finish_paid < 0:
                             finish_paid = 0.0
 
-                        new_energy = energy_k + finish_amount
+                        new_energy = (
+                            float(energy_k) / ENERGY_SCALE
+                        ) + finish_amount
 
                         new_cost = cost + finish_paid * prices[index]
 
-                        new_key = energy_key(new_energy)
+                        new_key = int(
+                            new_energy * ENERGY_SCALE + 0.5
+                        )
 
-                        out_bucket = ensure(out_state)
-
-                        existing = out_bucket.get(new_key)
-
-                        if existing is None or new_cost < existing[0]:
-                            out_bucket[new_key] = (
-                                new_cost,
-                                state,
+                        if set_candidate(
+                            out_bucket,
+                            new_key,
+                            new_cost,
+                        ):
+                            parent_bucket = parent_layer.setdefault(
+                                out_state,
+                                {},
+                            )
+                            parent_bucket[new_key] = (
+                                state_id,
                                 energy_k,
                                 (
                                     "finish",
@@ -1545,14 +1810,46 @@ class EVPlanner:
                                 ),
                             )
 
-            layers.append(next_layer)
+            return next_layer, parent_layer
+
+        start_layer = {
+            start_state: {
+                0: 0.0,
+            }
+        }
+
+        current_layer = start_layer
+        parent_layers = []
+
+        for index in range(count):
+            current_layer, parent_layer = advance_layer(
+                current_layer,
+                index,
+            )
+            parent_layers.append(parent_layer)
+
+            if (
+                (index + 1) % MEMORY_DIAGNOSTIC_INTERVAL == 0
+                or index == count - 1
+            ):
+                rss = _process_rss_mb()
+                state_count = sum(
+                    len(bucket)
+                    for bucket in current_layer.values()
+                )
+                self.logger.debug(
+                    "EV Planner production DP slot="
+                    f"{index + 1}: rss={rss:.1f} MB, "
+                    f"states={state_count}, "
+                    f"parent_layers={len(parent_layers)}"
+                )
+
+        last_layer = current_layer
 
         ######################################################################
         # Beste eindstate: maximale energie, dan minimale kosten,
         # dan minimale fasewisselingen.
         ######################################################################
-
-        last_layer = layers[count]
 
         best_state = None
 
@@ -1562,34 +1859,61 @@ class EVPlanner:
 
         best_switches = None
 
-        for state, energies in last_layer.items():
-            _phase, switches = state
+        # Selectie: eerst maximale energie, dan laagste kosten.
+        #
+        # Alle COMPLETE plannen (energie binnen 1e-6 kWh van het doel)
+        # gelden daarbij als even veel energie. Anders wint een plan dat
+        # toevallig 1 micro-kWh boven het doel uitkomt van een goedkoper
+        # plan dat exact op het doel zit.
+        target_key = int(target * ENERGY_SCALE + 0.5)
+        complete_margin_key = int(0.000001 * ENERGY_SCALE)
+        best_effective_key = None
 
-            for energy_k, (
-                cost,
-                _p,
-                _pe,
-                _a,
-            ) in energies.items():
+        for state_id, energies in last_layer.items():
+            switches = switches_by_state[state_id]
+
+            for energy_k, cost in energies.items():
+                if energy_k >= target_key - complete_margin_key:
+                    effective_key = target_key
+                else:
+                    effective_key = energy_k
+
                 if (
                     best_state is None
-                    or energy_k > best_energy_key + 0.000001
+                    or effective_key > best_effective_key
                     or (
-                        abs(energy_k - best_energy_key) <= 0.000001 and cost < best_cost
+                        effective_key == best_effective_key
+                        and cost < best_cost
                     )
                     or (
-                        abs(energy_k - best_energy_key) <= 0.000001
+                        effective_key == best_effective_key
                         and abs(cost - best_cost) <= 0.000001
                         and switches < best_switches
                     )
                 ):
-                    best_state = state
-
+                    best_state = state_id
                     best_energy_key = energy_k
-
+                    best_effective_key = effective_key
                     best_cost = cost
-
                     best_switches = switches
+
+        diagnostic_rss_after = _process_rss_mb()
+        self.logger.debug(
+            "EV Planner production DP END: "
+            f"rss={diagnostic_rss_after:.1f} MB, "
+            f"delta={diagnostic_rss_after - diagnostic_rss_before:.1f} MB, "
+            f"parent_layers={len(parent_layers)}"
+        )
+
+        # Geen compleet plan gevonden (of alleen een door pruning toevallig
+        # overgebleven onvolledig plan): zoek dan opnieuw zonder pruning
+        # naar het maximaal haalbare deelplan.
+        if not allow_partial and (
+            best_state is None
+            or float(best_energy_key) / ENERGY_SCALE < target - 0.001
+        ):
+            self._optimize_hours(hours, allow_partial=True)
+            return
 
         if best_state is None:
             for hour in ordered_hours:
@@ -1604,42 +1928,43 @@ class EVPlanner:
 
             return
 
-        if best_energy_key < target - 0.001:
+        if float(best_energy_key) / ENERGY_SCALE < target - 0.001:
             self.logger.warning(
                 "Laadopdracht kan niet volledig worden ingepland. "
                 f"Benodigd: {target:.2f} kWh, maximaal haalbaar: "
-                f"{best_energy_key:.2f} kWh binnen het "
+                f"{float(best_energy_key) / ENERGY_SCALE:.2f} kWh binnen het "
                 f"fasewisselbudget ({max_switches}) en de "
                 f"maximumprijs (EUR{max_price:.3f})."
             )
 
         ######################################################################
-        # Terugleiden welke actie bij elk uur hoort.
+        # Directe reconstructie.
+        #
+        # Iedere parent_layer hoort bij precies één DP-overgang. Er wordt
+        # niets opnieuw berekend. We volgen de parent-keten vanaf de gekozen
+        # eindstate terug naar de start.
         ######################################################################
 
         actions = [None] * count
 
-        state = best_state
+        current_state = best_state
+        current_energy_key = best_energy_key
 
-        energy_k = best_energy_key
+        for index in range(count - 1, -1, -1):
+            parent_layer = parent_layers[index]
+            parent = parent_layer[current_state][current_energy_key]
 
-        index = count
+            parent_state, parent_energy_key, action = parent
 
-        while index > 0:
-            (
-                _cost,
-                parent_state,
-                parent_energy,
-                action,
-            ) = layers[index][state][energy_k]
+            actions[index] = action
 
-            actions[index - 1] = action
+            current_state = parent_state
+            current_energy_key = parent_energy_key
 
-            state = parent_state
-
-            energy_k = parent_energy
-
-            index -= 1
+        if current_state != start_state or current_energy_key != 0:
+            raise ValueError(
+                "DP-reconstructie eindigt niet bij de startstate."
+            )
 
         ######################################################################
         # Acties toepassen op de Hour-objecten.
@@ -1657,7 +1982,71 @@ class EVPlanner:
         # hierboven.
         ######################################################################
 
-        for index in range(count):
+        self._apply_actions(
+            ordered_hours,
+            actions,
+            durations,
+            pv_rates,
+        )
+
+        best_phase = phase_by_state[best_state]
+        best_switches = switches_by_state[best_state]
+
+        self.logger.debug(
+            "GEZAMENLIJKE OPTIMALISATIE: "
+            f"{float(best_energy_key) / ENERGY_SCALE:.3f}/{target:.3f} kWh, "
+            f"kosten EUR{best_cost:.4f}, "
+            f"eindfase={best_phase}, "
+            f"wisselingen={best_switches}"
+        )
+
+    @staticmethod
+    def _count_pauses(actions) -> int:
+        """Aantal pauzes tussen laadmomenten in een actielijst."""
+        pauses = 0
+        started = False
+        paused = False
+
+        for action in actions:
+            if action is None or action[0] == "skip":
+                if started:
+                    paused = True
+                continue
+
+            if started and paused:
+                pauses += 1
+
+            started = True
+            paused = False
+
+        return pauses
+
+    def _warn_if_partial(self, ordered_hours, target, max_switches, max_price) -> None:
+        """Meld een deelplan (zelfde melding als het DP-pad)."""
+        planned = sum(
+            float(hour.charge_energy) for hour in ordered_hours if hour.selected
+        )
+        if planned <= 0.000001:
+            self.logger.warning("Geen enkele haalbare laadplanning gevonden.")
+        elif planned < target - 0.001:
+            self.logger.warning(
+                "Laadopdracht kan niet volledig worden ingepland. "
+                f"Benodigd: {target:.2f} kWh, maximaal haalbaar: "
+                f"{planned:.2f} kWh binnen het "
+                f"fasewisselbudget ({max_switches}) en de "
+                f"maximumprijs (EUR{max_price:.3f})."
+            )
+
+    def _apply_actions(
+        self,
+        ordered_hours,
+        actions,
+        durations,
+        pv_rates,
+    ) -> None:
+        """Schrijf een actielijst naar de Hour-objecten."""
+
+        for index in range(len(ordered_hours)):
             hour = ordered_hours[index]
 
             action = actions[index]
@@ -1754,14 +2143,6 @@ class EVPlanner:
             hour.free_energy = float(free)
 
             hour.paid_energy = float(paid)
-
-        self.logger.debug(
-            "GEZAMENLIJKE OPTIMALISATIE: "
-            f"{best_energy_key:.3f}/{target:.3f} kWh, "
-            f"kosten EUR{best_cost:.4f}, "
-            f"eindfase={best_state[0]}, "
-            f"wisselingen={best_state[1]}"
-        )
 
     ##########################################################################
     # Werkelijk laadvermogen

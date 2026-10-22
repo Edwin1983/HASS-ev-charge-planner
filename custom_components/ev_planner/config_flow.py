@@ -8,10 +8,24 @@ from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import selector
 
 from .const import (
+    CHARGER_DEFAULTS,
+    CONF_CHARGER_CHARGING_STATES,
+    CONF_CHARGER_CONNECTED_STATES,
+    CONF_CHARGER_CURRENT_ENTITY,
+    CONF_CHARGER_ENERGY_ENTITY,
+    CONF_CHARGER_MODE_ENTITY,
+    CONF_CHARGER_PHASE_ENTITY,
+    CONF_CHARGER_PHASE_ONE_VALUE,
+    CONF_CHARGER_PHASE_THREE_VALUE,
+    CONF_CHARGER_START_ENTITY,
+    CONF_CHARGER_STARTABLE_STATES,
+    CONF_CHARGER_STOP_ENTITY,
     CONF_ENTITY_PRICES,
+    CONF_ENTITY_PRICE_FORECAST,
     CONF_ENTITY_SOLCAST_TODAY,
     CONF_ENTITY_SOLCAST_TOMORROW,
     DEFAULT_ENTITY_PRICES,
+    DEFAULT_ENTITY_PRICE_FORECAST,
     DEFAULT_ENTITY_SOLCAST_TODAY,
     DEFAULT_ENTITY_SOLCAST_TOMORROW,
     DOMAIN,
@@ -23,6 +37,20 @@ _DEFAULTS = {
     CONF_ENTITY_SOLCAST_TODAY: DEFAULT_ENTITY_SOLCAST_TODAY,
     CONF_ENTITY_SOLCAST_TOMORROW: DEFAULT_ENTITY_SOLCAST_TOMORROW,
 }
+
+
+def _forecast_field(current: dict) -> dict:
+    """Optionele sensor met voorspelde prijzen (leeg = uitgeschakeld)."""
+    value = current.get(CONF_ENTITY_PRICE_FORECAST, DEFAULT_ENTITY_PRICE_FORECAST)
+    selector_ = selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor"))
+    if not value:
+        return {vol.Optional(CONF_ENTITY_PRICE_FORECAST): selector_}
+    return {
+        vol.Optional(
+            CONF_ENTITY_PRICE_FORECAST,
+            description={"suggested_value": value},
+        ): selector_
+    }
 
 
 def _build_schema(defaults: dict[str, str]) -> vol.Schema:
@@ -49,6 +77,71 @@ def _build_schema(defaults: dict[str, str]) -> vol.Schema:
             ),
         }
     )
+
+
+CHARGER_KEYS = (
+    CONF_CHARGER_MODE_ENTITY,
+    CONF_CHARGER_CONNECTED_STATES,
+    CONF_CHARGER_CHARGING_STATES,
+    CONF_CHARGER_STARTABLE_STATES,
+    CONF_CHARGER_CURRENT_ENTITY,
+    CONF_CHARGER_START_ENTITY,
+    CONF_CHARGER_STOP_ENTITY,
+    CONF_CHARGER_PHASE_ENTITY,
+    CONF_CHARGER_PHASE_ONE_VALUE,
+    CONF_CHARGER_PHASE_THREE_VALUE,
+    CONF_CHARGER_ENERGY_ENTITY,
+)
+
+
+def _charger_fields(current: dict) -> dict:
+    """Optionele velden voor de laadregeling (alleen in de opties)."""
+
+    def entity(domain):
+        return selector.EntitySelector(selector.EntitySelectorConfig(domain=domain))
+
+    def text():
+        return selector.TextSelector()
+
+    def number():
+        return selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=-1000,
+                max=1000,
+                step="any",
+                mode=selector.NumberSelectorMode.BOX,
+            )
+        )
+
+    # Eerste keer (nog geen enkel laderveld opgeslagen): vul de voorgestelde
+    # waarden in. Daarna alleen wat de gebruiker heeft opgeslagen, zodat een
+    # bewust leeggemaakt veld leeg blijft.
+    if not any(key in current for key in CHARGER_KEYS):
+        current = {**CHARGER_DEFAULTS, **current}
+
+    def optional(key, sel):
+        # suggested_value (geen default), zodat een veld leeg gemaakt kan worden
+        value = current.get(key)
+        if value is None:
+            return {vol.Optional(key): sel}
+        return {vol.Optional(key, description={"suggested_value": value}): sel}
+
+    fields: dict = {}
+    for key, sel in (
+        (CONF_CHARGER_MODE_ENTITY, entity("sensor")),
+        (CONF_CHARGER_CONNECTED_STATES, text()),
+        (CONF_CHARGER_CHARGING_STATES, text()),
+        (CONF_CHARGER_STARTABLE_STATES, text()),
+        (CONF_CHARGER_CURRENT_ENTITY, entity("number")),
+        (CONF_CHARGER_START_ENTITY, entity("switch")),
+        (CONF_CHARGER_STOP_ENTITY, entity(["button", "switch"])),
+        (CONF_CHARGER_PHASE_ENTITY, entity("number")),
+        (CONF_CHARGER_PHASE_ONE_VALUE, number()),
+        (CONF_CHARGER_PHASE_THREE_VALUE, number()),
+        (CONF_CHARGER_ENERGY_ENTITY, entity("sensor")),
+    ):
+        fields.update(optional(key, sel))
+    return fields
 
 
 class EVPlannerConfigFlow(
@@ -122,7 +215,11 @@ class EVPlannerOptionsFlow(config_entries.OptionsFlow):
     ) -> FlowResult:
         """Manage the options."""
         if user_input is not None:
-            return self.async_create_entry(title="", data=user_input)
+            data = dict(user_input)
+            # Een leeggemaakt veld ontbreekt in de invoer; sla dat expliciet
+            # op, anders zou de standaardwaarde de voorspelling weer aanzetten.
+            data.setdefault(CONF_ENTITY_PRICE_FORECAST, "")
+            return self.async_create_entry(title="", data=data)
 
         current = {
             **self.config_entry.data,
@@ -135,5 +232,7 @@ class EVPlannerOptionsFlow(config_entries.OptionsFlow):
 
         return self.async_show_form(
             step_id="init",
-            data_schema=_build_schema(defaults),
+            data_schema=_build_schema(defaults)
+            .extend(_forecast_field(current))
+            .extend(_charger_fields(current)),
         )

@@ -3,16 +3,6 @@ models.py
 
 Datamodellen voor EV Smart Charging Planner.
 
-Pyscript-compatibele versie.
-
-Belangrijk:
-- Geen @property
-- Geen methodes in dataclasses
-- Geen __str__
-- Geen generator-expressions
-- Geen list/set/dict comprehensions
-- Alleen eenvoudige dataclasses en standaard Python-typen
-
 Deze module bevat uitsluitend data-objecten.
 Logica hoort thuis in planner.py, prices.py, solcast.py
 of andere functionele modules.
@@ -61,6 +51,9 @@ class Hour:
     sustainability_score: float = 0.0
 
     hour_index: int = -1
+
+    # True als de prijs een voorspelling is (nog geen definitieve dagprijs).
+    is_forecast: bool = False
 
     ##########################################################################
     # Solcast
@@ -307,7 +300,14 @@ class PriceData:
 
     generated: Optional[datetime] = None
 
+    # Einde van de definitieve prijzen (zonder voorspelling).
     valid_until: Optional[datetime] = None
+
+    # Einde van de voorspelde prijzen als die zijn aangevuld, anders None.
+    forecast_until: Optional[datetime] = None
+
+    # Aantal voorspelde slots dat is toegevoegd.
+    forecast_hours: int = 0
 
 
 ##############################################################################

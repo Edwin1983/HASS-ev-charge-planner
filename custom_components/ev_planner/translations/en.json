@@ -8,6 +8,11 @@
           "entity_prices": "Electricity prices",
           "entity_solcast_today": "Solcast today",
           "entity_solcast_tomorrow": "Solcast tomorrow"
+        },
+        "data_description": {
+          "entity_prices": "Select the Home Assistant sensor that provides the electricity price forecast.",
+          "entity_solcast_today": "Select the Solcast sensor containing today's hourly PV forecast.",
+          "entity_solcast_tomorrow": "Select the Solcast sensor containing tomorrow's hourly PV forecast."
         }
       },
       "reconfigure": {
@@ -37,7 +42,36 @@
         "data": {
           "entity_prices": "Electricity prices",
           "entity_solcast_today": "Solcast today",
-          "entity_solcast_tomorrow": "Solcast tomorrow"
+          "entity_solcast_tomorrow": "Solcast tomorrow",
+          "charger_mode_entity": "Charger mode sensor (optional)",
+          "charger_connected_states": "States meaning 'car connected'",
+          "charger_charging_states": "States meaning 'charging'",
+          "charger_startable_states": "States in which charging can be started",
+          "charger_current_entity": "Charging current number (optional)",
+          "charger_start_entity": "Start/stop switch",
+          "charger_stop_entity": "Stop button or switch",
+          "charger_phase_entity": "Phase switch number",
+          "charger_phase_one_value": "Phase switch value for 1 phase",
+          "charger_phase_three_value": "Phase switch value for 3 phases",
+          "charger_energy_entity": "Charger energy sensor (kWh)",
+          "entity_price_forecast": "Forecast prices (optional)"
+        },
+        "data_description": {
+          "entity_prices": "Select the Home Assistant sensor that provides the electricity price forecast.",
+          "entity_solcast_today": "Select the Solcast sensor containing today's hourly PV forecast.",
+          "entity_solcast_tomorrow": "Select the Solcast sensor containing tomorrow's hourly PV forecast.",
+          "charger_mode_entity": "Setting both the mode sensor and the current number enables the charge control. Leave empty to only use the planner.",
+          "charger_connected_states": "Comma separated list of mode values. Default: connected_requesting,connected_charging,connected_finished",
+          "charger_charging_states": "Comma separated list of mode values. Default: connected_charging",
+          "charger_startable_states": "Comma separated list of mode values. Default: connected_requesting,connected_finished",
+          "charger_current_entity": "Number entity that sets the maximum charging current in ampere.",
+          "charger_start_entity": "Switch that starts charging. Without one, the charger is assumed to start by itself once a current is set.",
+          "charger_stop_entity": "Button (pressed) or switch (turned off) that stops charging. Defaults to turning off the start switch.",
+          "charger_phase_entity": "Number entity that switches between 1 and 3 phases. Leave empty if the charger cannot switch phases.",
+          "charger_phase_one_value": "Value of the phase number that means 1 phase (default 32).",
+          "charger_phase_three_value": "Value of the phase number that means 3 phases (default 0).",
+          "charger_energy_entity": "Total or session energy sensor of the charger. Enables the planned versus actual energy feedback.",
+          "entity_price_forecast": "Sensor with a 'raw_forecast' attribute (start, end, value in EUR/kWh). Only used for hours whose final price is not known yet. Leave empty to disable."
         }
       }
     }
@@ -81,6 +115,12 @@
       },
       "desired_phases": {
         "name": "Desired phases"
+      },
+      "charge_control": {
+        "name": "Charge control"
+      },
+      "energy_deviation": {
+        "name": "Energy deviation (last block)"
       }
     },
     "binary_sensor": {
@@ -90,7 +130,7 @@
     },
     "number": {
       "energy_needed": {
-        "name": "Energy needed"
+        "name": "Minimum energy needed"
       },
       "maximum_grid_price": {
         "name": "Maximum grid price"
@@ -98,11 +138,26 @@
       "maximum_phase_switches": {
         "name": "Maximum phase switches"
       },
+      "maximum_pauses": {
+        "name": "Maximum pauses"
+      },
+      "progress_threshold": {
+        "name": "Charge progress threshold"
+      },
       "minimum_pv_solar_only": {
         "name": "Minimum PV for solar-only"
       },
       "maximum_charging_power": {
         "name": "Maximum charging power"
+      },
+      "forecast_markup": {
+        "name": "Forecast price markup"
+      },
+      "max_energy_needed": {
+        "name": "Maximum energy needed"
+      },
+      "extra_charge_price": {
+        "name": "Price limit extra charging"
       }
     },
     "select": {
@@ -124,6 +179,15 @@
     "switch": {
       "smart_charging": {
         "name": "Smart charging"
+      },
+      "charge_enabled": {
+        "name": "Charge control active"
+      },
+      "charge_dry_run": {
+        "name": "Charge control dry-run"
+      },
+      "charge_feedback": {
+        "name": "Charge control energy feedback"
       }
     }
   }

@@ -2,11 +2,21 @@
 
 Native Home Assistant custom integration for EV charging planning using electricity prices and PV forecasts.
 
-**Current release: 1.1.3**
+**Current release line: 2.0.0**
 
-## What's new in 1.1.3
+## What's new in 2.0.0
 
-Version 1.1.3 improves backwards compatibility for existing Home Assistant automations while retaining the native Home Assistant entity model introduced in 1.1.0.
+Version 2.0.0 introduces a memory-safe production planner implementation while retaining the native Home Assistant entity model and decision-layer architecture introduced in 1.1.x.
+
+Highlights:
+
+- memory-safe dynamic programming with direct predecessor reconstruction;
+- bounded phase-switch state space with a hard safety cap;
+- native planner mode with immediate replanning when the mode changes;
+- native planner settings and outputs remain available through Home Assistant entities;
+- solar-only planning and PV-current rounding remain supported;
+- compatibility fallbacks for existing installations using the previous `input_*` helpers;
+- the planner remains a decision layer; an optional, separate charge control (disabled by default) can drive the charger, see [Charge control](#charge-control-optional).
 
 Highlights:
 
@@ -21,9 +31,13 @@ Highlights:
 - compatibility fallbacks for existing installations using the previous `input_*` helpers;
 - refined normal-mode and solar-only planning behavior;
 - source-hour-aligned charging windows, with partial intervals only where required at the beginning or end;
-- improved integration and regression test coverage.
+- improved integration and regression test coverage;
+- support for Zonneplan quarter-hour electricity prices;
+- legacy Zonneplan hourly price data remains supported;
+- Solcast half-hourly and hourly forecast data are converted to interval energy correctly;
+- Solcast PV energy is proportionally distributed across quarter-hour price slots so PV is not counted multiple times.
 
-The planner remains a decision layer only: Home Assistant automations are responsible for translating planner outputs into physical charger control.
+The planner remains a decision layer. By default, Home Assistant automations translate planner outputs into physical charger control. Alternatively you can enable the optional [charge control](#charge-control-optional).
 
 ## Dashboard
 
@@ -47,7 +61,7 @@ It combines:
 - a configurable phase-switch budget;
 - the configured maximum charging power.
 
-**EV Charge Planner does not control the physical charger.** It does not switch a charger on/off, set charging current, change phases, or detect whether an EV is connected. Those actions remain Home Assistant automation responsibilities.
+**By default EV Charge Planner does not control the physical charger.** The planner itself never switches a charger on/off, sets charging current or changes phases; those actions remain Home Assistant automation responsibilities unless you configure the optional [charge control](#charge-control-optional), which is a separate component that is disabled until you switch it on.
 
 ## Installation
 
@@ -85,7 +99,9 @@ The integration provides these configurable entities:
 |---|---|---:|
 | Departure time | `time.ev_charge_planner_departure_time` | 23:59 |
 | Departure day | `select.ev_charge_planner_departure_day` | Vandaag |
-| Energy needed | `number.ev_charge_planner_energy_needed` | 10 kWh |
+| Minimum energy needed | `number.ev_charge_planner_energy_needed` | 10 kWh |
+| Maximum energy needed | `number.ev_charge_planner_maximum_energy_needed` | 0 kWh (off) |
+| Price limit extra charging | `number.ev_charge_planner_price_limit_extra_charging` | 5 ct/kWh |
 | Maximum grid price | `number.ev_charge_planner_maximum_grid_price` | 0 ct/kWh |
 | Minimum PV for solar-only | `number.ev_charge_planner_minimum_pv_for_solar_only` | 0 kWh |
 | Maximum phase switches | `number.ev_charge_planner_maximum_phase_switches` | 8 |
@@ -160,11 +176,84 @@ Home Assistant automation
 
 This separation is intentional: the planner is the decision layer, while Home Assistant automations are the physical charger control layer.
 
+## Prices not yet known for tomorrow
+
+Day-ahead prices are often published in the afternoon. A plan made before that only knows the hours up to the end of the known prices. The planner now remembers how far the prices reached; when more prices appear and the plan did not yet cover the departure time, it re-plans automatically (checked at most every 5 minutes). The plan attributes `prices_valid_until` and `prices_cover_departure` show what the plan was based on.
+
+### Maximum pauses
+
+The number entity *Maximum pauses* limits how often a plan may stop and start charging again. A pause is a gap between two charging periods; time before the first and after the last charging period does not count. `0` means one continuous charging block, `1` at most two blocks, and so on. The highest value (10) means no limit. Fewer pauses can cost a little more, and if the target cannot be reached within the limit the planner plans as much as possible. The plan attributes `pauses` and `max_pauses` show the result.
+
+### Forecast prices
+
+In the options you can set an optional *Forecast prices* sensor (default `sensor.energy_price_forecast_eu_nl_current_retail_price`). It must have a `raw_forecast` attribute with records `start`, `end` and `value` (EUR/kWh). Only slots that directly follow the final prices are used, so real prices are never replaced by a forecast. A fixed markup of 2 ct/kWh (`FORECAST_PRICE_MARKUP` in `const.py`) is added to forecast prices, never to final prices. Decisions based on a forecast carry `price_is_forecast: true`, and the plan attributes `forecast_prices_used` / `forecast_price_slots` tell whether a forecast was used. When the real prices are published the plan is recalculated automatically. Clear the field to switch the feature off.
+
+## Charge control (optional)
+
+The charge control is a separate component inside the integration that brings your charger to the state the planner wants (charging allowed, number of phases, charging current). It replaces the typical "charging control" automation, and it also compares what the planner expected to charge with what was actually charged.
+
+It is **only available when you configure the charger entities** in the integration options, and even then it does nothing until you switch it on.
+
+### Configuration
+
+Open the integration options and fill in the charger fields. All fields are optional, but the charge control needs at least the **mode sensor** and the **current number**.
+
+The first time you open the options, the charger fields are pre-filled with suggested values (`sensor.ev_charger_status`, `number.ev_charger_max_current`, `switch.ev_charger_charging`, `button.ev_charger_stop_charging`, the phase switch number with 32 = 1 phase and 0 = 3 phases). **Check them and adjust them to your charger before saving.** Saving the form makes the charge control available, but it stays off (and in dry-run) until you switch it on. The energy sensor is pre-filled with `sensor.ev_charger_session_total_charge`.
+
+| Option | Meaning |
+|---|---|
+| Charger mode sensor | Sensor with the charger state (for example `connected_charging`). |
+| States for connected / charging / startable | Comma separated lists of mode values. Defaults: `connected_requesting,connected_charging,connected_finished` / `connected_charging` / `connected_requesting,connected_finished`. |
+| Charging current number | Number entity that sets the maximum current (A). |
+| Start/stop switch | Switch that starts charging. Without one, the charger is assumed to start by itself once a current is set. |
+| Stop button or switch | Pressed or turned off to stop charging. Defaults to turning off the start switch. |
+| Phase switch number | Number entity that switches between 1 and 3 phases. Leave empty if your charger cannot switch phases. |
+| Phase values | Values of the phase number meaning 1 phase (default 32) and 3 phases (default 0). Any other value is treated as "unknown" and is never switched. |
+| Charger energy sensor | Total or session energy (kWh or Wh). Enables the planned-versus-actual feedback. |
+
+### Switches
+
+| Switch | Default | Meaning |
+|---|---|---|
+| Charge control active | off | Master switch. Off means the charger is left completely alone. |
+| Charge control dry-run | **on** | Only logs what would be done. Run it in dry-run for a few sessions before going live. |
+| Charge control energy feedback | on | Planned-versus-actual correction (needs the energy sensor). |
+
+If you currently use a charging control automation, **disable it before turning the charge control live**, otherwise the two will fight each other.
+
+### How it works
+
+The charge control always takes the smallest safe step and re-reads the planner after every step:
+
+1. charging not allowed: stop, then set the current to 0;
+2. wrong phase: stop first (never switch phases under load), then switch phase, then wait for confirmation;
+3. wrong current: set the current;
+4. everything matches and the charger waits for a start: start.
+
+If the planner changes while a (slow) phase switch is running, the new plan is used immediately, and charging is never started with a phase that no longer matches the plan. Protections: a minimum time between phase switches (120 s), a start cooldown (60 s) with at most 3 start attempts (then it stops and notifies you; it tries again when the car is reconnected), and retry with back-off plus a persistent notification when a command is not confirmed. When the planner is unavailable, the charger is left as it is. When the *Smart Charging* switch is off, the charge control releases the charger.
+
+### Planned versus actual energy
+
+A plan assumes ideal power. In reality a phase switch costs time, the car may limit the current, or the charger may start late. After **every charging block** (a run of consecutive planned slots) the cumulative planned energy is compared with the cumulative energy the charger actually delivered since the plan was made. If the difference is 0.3 kWh or more (in either direction), the plan is recalculated with the **actually remaining** energy.
+
+- A *session* starts when the car is connected (or when you change the "energy needed" value) and ends when the car is disconnected. The remaining energy is always `target - delivered during the session`; the "energy needed" setting itself is never modified.
+- Meter resets (session meters that fall back to 0) are handled.
+- Blocks during which the car was disconnected are not counted as a deviation.
+- At most one automatic re-plan per 5 minutes. If a re-plan fails, the previous plan stays active.
+- When the target is reached, planning stops ("Doel bereikt").
+- Session and meter state survive a Home Assistant restart.
+
+The same comparison also runs **while a block is charging**: after a 3-minute start-up period, a deviation of 0.5 kWh by default (adjustable with the number *Charge progress threshold*, 0.1–3 kWh; confirmed by two consecutive checks) triggers an immediate re-plan of the remaining energy, at most once every 5 minutes. The charger can then keep charging instead of stopping at the end of the planned block. The comparison is made at the time of the last meter reading, so a slow sensor does not count as a shortfall.
+
+The result is visible in the *Energy deviation (last block)* sensor (actual minus planned, in kWh) and its attributes (target, delivered, remaining, number of re-plans).
+
+> The energy sensor measures energy at the charger, while the "energy needed" value is whatever you entered. If you enter battery energy, expect charging losses (often 5–10 %) to show up as a persistent shortfall.
+
 ## Services
 
 ### `ev_planner.update`
 
-Runs one planner update cycle. The integration does not start its own periodic background loop; call this service from your own automation when appropriate.
+Runs one planner update cycle. The planner does not start its own periodic background loop; call this service from your own automation when appropriate. (When the optional charge control is configured, it refreshes the planner itself every 30 seconds.)
 
 ### `ev_planner.create_plan`
 
@@ -176,7 +265,13 @@ For a single configured EV Charge Planner instance, `config_entry_id` is optiona
 
 Clears the current plan and creates a new one.
 
+### Minimum and maximum energy
+
+The planner always secures the **minimum** first, at the usual maximum price. If you also set a **maximum** (above the minimum), extra energy up to that maximum is added only from free PV or from slots at or below *Price limit extra charging* (negative prices count). Without such slots you simply get the minimum. With the charge control, planned-versus-actual checks and the progress check apply to the **minimum** only (extra charging is optional and never triggers corrections). Once the minimum is reached and nothing cheap is available, nothing more is planned and it is checked again every 5 minutes. When the maximum is reached (or on `clear_plan`) both numbers go back to 0. Entity ids may differ slightly if your installation named them differently.
+
 ### `ev_planner.clear_plan`
+
+Also sets *Energy needed* back to 0 kWh and ends the current charging session. The same happens automatically when charging is complete (charge control with energy feedback).
 
 Clears the current plan.
 
@@ -239,12 +334,28 @@ The planning data sensor exposes the plan summary and individual decisions, incl
 
 Individual decisions contain the source hour and the calculated charging settings, including charging current, number of phases and active charging interval.
 
+## Zonneplan quarter-hour prices
+
+The planner supports the current Zonneplan quarter-hour price format. Each price record can contain `start_date`, `end_date` and `price_tax_included.amount`. The amount is converted to €/kWh using Zonneplan's price representation.
+
+### Negative prices and incomplete plans
+
+Negative electricity prices are valid and are planned like any other price; they are the cheapest slots of the day.
+
+If the required energy cannot be delivered (departure too close, too few slots at or below the maximum price, or the phase-switch budget is too tight), the planner does **not** discard the plan. It schedules the maximum energy that is achievable and chooses the cheapest way to do so. The result is marked incomplete: `complete` is false and `missing_energy_kwh` shows how much could not be planned. Only when no slot can be used at all (for example every slot is above the maximum price) is the plan empty.
+
+Quarter-hour prices are treated as individual planning intervals. This means the planner can select some 15-minute periods within an hour while leaving other periods unused when their prices or planning conditions differ.
+
+For backwards compatibility, the previous hourly Zonneplan format using `start_date` and `electricity_price` remains supported. The default price entity is now `sensor.zonneplan_current_quarter_hourly_electricity_tariff`, but the electricity-price entity remains configurable in the integration setup.
+
+When quarter-hour prices are combined with Solcast forecasts, the planner distributes each Solcast forecast interval over the overlapping price intervals. This preserves the original forecast energy instead of counting the same PV forecast multiple times.
+
 ## Data sources
 
 EV Charge Planner currently uses data supplied by other Home Assistant integrations. The recommended setup uses:
 
-- **Solcast** for hourly PV forecasts;
-- an electricity-price integration such as **Zonneplan** for price data.
+- **Solcast** for PV forecasts, supporting both half-hourly `detailedForecast` data and hourly `detailedHourly` data;
+- an electricity-price integration such as **Zonneplan**, supporting both legacy hourly prices and the current quarter-hour price format.
 
 The integration does not hard-code those provider entities. You select the relevant Home Assistant sensors during configuration, so entity names can differ between installations.
 
