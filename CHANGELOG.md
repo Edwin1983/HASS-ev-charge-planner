@@ -1,4 +1,4 @@
-# EV Charge Planner v2.2.0
+# EV Charge Planner v3.0.0
 
 Compared with **v2.1.0**. This release adds an optional, entity-based **charge control**, a **minimum/maximum energy** model, **forecast prices** for hours without a final price, and several planner controls. Everything new is opt-in; with the defaults the planner behaves as in 2.1.0.
 
