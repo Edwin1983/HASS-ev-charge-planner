@@ -30,7 +30,10 @@ def _controller(prices_until, plan_until, departure=DEPARTURE):
     controller.scheduler = SimpleNamespace(update=lambda now: False)
     controller._get_current_decision = lambda now: None
     controller._publish_planner_decision = lambda decision: None
-    controller.status = SimpleNamespace(update=lambda now: None, log_status=lambda: None)
+    controller.status = SimpleNamespace(
+        update=lambda now: None,
+        log_status=lambda: None,
+    )
     controller._publish_charging_allowed = lambda: None
     controller._is_enabled = lambda: True
     return controller

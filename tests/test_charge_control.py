@@ -118,13 +118,24 @@ def _desired(allowed=True, phases=3, current=16):
 
 
 def _state(**kw):
-    base = dict(available=True, connected=True, charging=False, startable=True, current_a=0, phases=3)
+    base = dict(
+        available=True,
+        connected=True,
+        charging=False,
+        startable=True,
+        current_a=0,
+        phases=3,
+    )
     base.update(kw)
     return ChargerState(**base)
 
 
 def _step(desired, state, **kw):
-    args = dict(seconds_since_phase_switch=None, seconds_since_start=None, start_attempts=0)
+    args = dict(
+        seconds_since_phase_switch=None,
+        seconds_since_start=None,
+        start_attempts=0,
+    )
     args.update(kw)
     return decide_next_step(desired, state, RegulatorConfig(), **args)
 
@@ -136,7 +147,10 @@ def test_no_action_when_planner_charger_or_car_missing():
 
 
 def test_phase_switch_never_while_charging():
-    step = _step(Desired(True, 1, 16), _state(charging=True, startable=False, phases=3, current_a=16))
+    step = _step(
+        Desired(True, 1, 16),
+        _state(charging=True, startable=False, phases=3, current_a=16),
+    )
     assert step.action is Action.STOP
 
 
@@ -146,7 +160,11 @@ def test_unknown_phase_is_never_switched():
 
 
 def test_not_allowed_stops_then_zeroes_current():
-    assert _step(Desired(False, 3, 16), _state(charging=True, startable=False, current_a=16)).action is Action.STOP
+    step = _step(
+        Desired(False, 3, 16),
+        _state(charging=True, startable=False, current_a=16),
+    )
+    assert step.action is Action.STOP
     step = _step(Desired(False, 3, 16), _state(current_a=16))
     assert (step.action, step.value) == (Action.SET_CURRENT, 0)
     assert _step(Desired(False, 3, 16), _state(current_a=0)).action is None
@@ -267,7 +285,14 @@ async def test_charger_that_refuses_to_start_is_not_hammered():
     charger = FakeCharger(clock, current=16)
     charger.refuse_start = True
     notes = []
-    reg = _regulator(charger, clock, _desired(), notes=notes, start_cooldown_s=60, max_start_attempts=3)
+    reg = _regulator(
+        charger,
+        clock,
+        _desired(),
+        notes=notes,
+        start_cooldown_s=60,
+        max_start_attempts=3,
+    )
 
     for _ in range(12):
         await reg.reconcile()
@@ -282,7 +307,13 @@ async def test_stall_is_reset_when_car_is_reconnected():
     clock = FakeClock()
     charger = FakeCharger(clock, current=16)
     charger.refuse_start = True
-    reg = _regulator(charger, clock, _desired(), start_cooldown_s=0, max_start_attempts=2)
+    reg = _regulator(
+        charger,
+        clock,
+        _desired(),
+        start_cooldown_s=0,
+        max_start_attempts=2,
+    )
 
     for _ in range(4):
         await reg.reconcile()

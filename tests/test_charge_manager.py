@@ -164,9 +164,15 @@ async def test_charger_without_start_switch_does_not_fail_on_start():
 
 
 def test_energy_sensor_in_wh_is_converted():
-    assert energy_kwh_from_state(SimpleNamespace(state="1500", attributes={"unit_of_measurement": "Wh"})) == 1.5
+    assert energy_kwh_from_state(
+        SimpleNamespace(
+            state="1500", attributes={"unit_of_measurement": "Wh"}
+        )
+    ) == 1.5
     assert energy_kwh_from_state(SimpleNamespace(state="2.5", attributes={})) == 2.5
-    assert energy_kwh_from_state(SimpleNamespace(state="unavailable", attributes={})) is None
+    assert energy_kwh_from_state(
+        SimpleNamespace(state="unavailable", attributes={})
+    ) is None
     assert energy_kwh_from_state(None) is None
 
 
@@ -276,24 +282,45 @@ class InstantCharger:
 
     async def stop_charging(self):
         self.commands.append("stop")
-        self.state = ChargerState(True, True, False, True, self.state.current_a, self.state.phases)
+        self.state = ChargerState(
+            True, True, False, True, self.state.current_a, self.state.phases
+        )
 
     async def start_charging(self):
         self.commands.append("start")
-        self.state = ChargerState(True, True, True, False, self.state.current_a, self.state.phases)
+        self.state = ChargerState(
+            True, True, True, False, self.state.current_a, self.state.phases
+        )
 
     async def set_current(self, amps):
         self.commands.append(f"current={amps}")
-        self.state = ChargerState(True, True, self.state.charging, self.state.startable, amps, self.state.phases)
+        self.state = ChargerState(
+            True,
+            True,
+            self.state.charging,
+            self.state.startable,
+            amps,
+            self.state.phases,
+        )
 
     async def set_phases(self, phases):
         self.commands.append(f"phases={phases}")
-        self.state = ChargerState(True, True, self.state.charging, self.state.startable, self.state.current_a, phases)
+        self.state = ChargerState(
+            True,
+            True,
+            self.state.charging,
+            self.state.startable,
+            self.state.current_a,
+            phases,
+        )
 
 
 def _logger():
     messages = []
-    return Logger(messages.append, messages.append, messages.append, messages.append), messages
+    return (
+        Logger(messages.append, messages.append, messages.append, messages.append),
+        messages,
+    )
 
 
 def _manager(controller=None, charger=None, hass=None, store=None):
@@ -308,7 +335,11 @@ def _manager(controller=None, charger=None, hass=None, store=None):
         _entities(),
         store=store or FakeStore(),
         logger=logger,
-        feedback_config=FeedbackConfig(threshold_kwh=0.3, settle_s=60, min_replan_interval_s=300),
+        feedback_config=FeedbackConfig(
+            threshold_kwh=0.3,
+            settle_s=60,
+            min_replan_interval_s=300,
+        ),
         port=charger,
         regulator_runtime={"sleep": _no_sleep},
     )
@@ -498,7 +529,9 @@ async def test_extra_round_is_scheduled_at_the_next_plan_boundary():
     event_module = types.ModuleType("homeassistant.helpers.event")
     event_module.async_track_point_in_utc_time = fake_track
     sys.modules.setdefault("homeassistant", types.ModuleType("homeassistant"))
-    sys.modules.setdefault("homeassistant.helpers", types.ModuleType("homeassistant.helpers"))
+    sys.modules.setdefault(
+        "homeassistant.helpers", types.ModuleType("homeassistant.helpers")
+    )
     previous = sys.modules.get("homeassistant.helpers.event")
     sys.modules["homeassistant.helpers.event"] = event_module
 

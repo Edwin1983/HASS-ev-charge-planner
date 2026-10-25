@@ -100,7 +100,9 @@ DEFAULT_ENTITY_SOLAR_ENABLED = "input_boolean.alleen_zonneladen"
 DEFAULT_ENTITY_PRICES = "sensor.zonneplan_current_quarter_hourly_electricity_tariff"
 # Opslag (EUR/kWh) op voorspelde prijzen, als marge voor onzekerheid.
 FORECAST_PRICE_MARKUP = 0.02
-DEFAULT_ENTITY_PRICE_FORECAST = "sensor.energy_price_forecast_eu_nl_current_retail_price"
+DEFAULT_ENTITY_PRICE_FORECAST = (
+    "sensor.energy_price_forecast_eu_nl_current_retail_price"
+)
 DEFAULT_ENTITY_SOLCAST_TODAY = "sensor.solcast_pv_forecast_forecast_today"
 DEFAULT_ENTITY_SOLCAST_TOMORROW = "sensor.solcast_pv_forecast_forecast_tomorrow"
 DEFAULT_MAX_CHARGE_POWER_KW = 11.04

@@ -169,7 +169,11 @@ def fast_optimize(
                 new[...] = INF
                 for z in range(Z):
                     zs = z_skip(z)
-                    np.minimum(new[:, :, :, zs, :], prev[:, :, :, z, :], out=new[:, :, :, zs, :])
+                    np.minimum(
+                        new[:, :, :, zs, :],
+                        prev[:, :, :, z, :],
+                        out=new[:, :, :, zs, :],
+                    )
             else:
                 new[...] = prev  # skip
             w = inner_seconds[t - 1] // g
@@ -259,7 +263,9 @@ def fast_optimize(
             if amount > target + HIT_TOL:
                 break
             cost0 = 0.0 + paid * prices[0] - tiebreak * current_a
-            roots.append((("full", ph, current_a), PH_IDX[ph], current_a, amount, cost0))
+            roots.append(
+                (("full", ph, current_a), PH_IDX[ph], current_a, amount, cost0)
+            )
 
     cands = []  # (kosten, wissel, soort, wortel, ph, j, k)
 
@@ -292,7 +298,18 @@ def fast_optimize(
                     for z in range(Z):
                         val = final[pi, sw, z]
                         if val < INF:
-                            cands.append((cost0 + float(val), sw, "hit", r_index, pi, sw, k_star, z))
+                            cands.append(
+                                (
+                                    cost0 + float(val),
+                                    sw,
+                                    "hit",
+                                    r_index,
+                                    pi,
+                                    sw,
+                                    k_star,
+                                    z,
+                                )
+                            )
 
         if t_rem <= EPS:
             continue
@@ -339,7 +356,11 @@ def fast_optimize(
             incoming = lay_ok[:, pi, :, :].copy()  # (nj, S+1, W)
             np.minimum(incoming[:, 0, :], lay[:, 0, 0, 0, win], out=incoming[:, 0, :])
             if S >= 1:
-                np.minimum(incoming[:, 1:, :], lay_ok[:, other, :S, :], out=incoming[:, 1:, :])
+                np.minimum(
+                    incoming[:, 1:, :],
+                    lay_ok[:, other, :S, :],
+                    out=incoming[:, 1:, :],
+                )
 
             total = incoming + add[:, None, :]
             total = np.where(feas[:, None, :], total, INF)
@@ -350,7 +371,18 @@ def fast_optimize(
                 val = float(sub.flat[flat])
                 if val < INF:
                     jj, kk_i = divmod(flat, sub.shape[1])
-                    cands.append((cost0 + val, sw, "finish", r_index, ph, jj + 1, int(kk[kk_i]), 0))
+                    cands.append(
+                        (
+                            cost0 + val,
+                            sw,
+                            "finish",
+                            r_index,
+                            ph,
+                            jj + 1,
+                            int(kk[kk_i]),
+                            0,
+                        )
+                    )
 
     # ------------------------------------------------------------------
     # Hulpfuncties voor selectie en reconstructie
@@ -382,9 +414,16 @@ def fast_optimize(
 
             # overgeslagen slot
             skipped = False
-            z_prevs = [0] if not tracked else ([z_cur, z_cur + 1] if z_cur % 2 == 0 else [])
+            z_prevs = (
+                [0]
+                if not tracked
+                else ([z_cur, z_cur + 1] if z_cur % 2 == 0 else [])
+            )
             for zp in z_prevs:
-                if abs(float(LAY[t - 1, src, pi_cur, sw_cur, zp, k_cur]) - c_cur) <= 1e-12:
+                if (
+                    abs(float(LAY[t - 1, src, pi_cur, sw_cur, zp, k_cur]) - c_cur)
+                    <= 1e-12
+                ):
                     actions[i] = ("skip",)
                     z_cur = zp
                     skipped = True
@@ -475,7 +514,18 @@ def fast_optimize(
                             if v < INF and (best is None or (v, sw) < best):
                                 best = (v, sw)
                 if best is not None:
-                    out.append((a0 + k * e_unit, cost0 + best[0], best[1], "pskip", r_index, 0, 0, k))
+                    out.append(
+                        (
+                            a0 + k * e_unit,
+                            cost0 + best[0],
+                            best[1],
+                            "pskip",
+                            r_index,
+                            0,
+                            0,
+                            k,
+                        )
+                    )
 
             # laatste slot (afgekapt door vertrek) volledig laden
             for ph in (1, 3):
@@ -505,7 +555,18 @@ def fast_optimize(
                             best = (v, sw)
                     if best is not None:
                         cost = cost0 + ((best[0] + c1) - e_a)
-                        out.append((a0 + k * e_unit + amount, cost, best[1], "pfull", r_index, ph, current_a, k))
+                        out.append(
+                            (
+                                a0 + k * e_unit + amount,
+                                cost,
+                                best[1],
+                                "pfull",
+                                r_index,
+                                ph,
+                                current_a,
+                                k,
+                            )
+                        )
         return out
 
     # ------------------------------------------------------------------
@@ -516,7 +577,10 @@ def fast_optimize(
     if cands:
         best_cost = min(c[0] for c in cands)
         pool = [c for c in cands if c[0] <= best_cost + EPS]
-        cost, sw_final, kind, r_index, ph_f, j, k, z_f = min(pool, key=lambda c: (c[1], c[0]))
+        cost, sw_final, kind, r_index, ph_f, j, k, z_f = min(
+            pool,
+            key=lambda c: (c[1], c[0]),
+        )
         expected = target
     else:
         z_f = 0
@@ -536,7 +600,21 @@ def fast_optimize(
     if kind == "finish0":
         res = finish_scalar(0, ph_f, target)
         actions[0] = ("finish", ph_f, res[0], res[1])
-        return actions if _verify(actions, n, durations, prices, pv_rates, power_table, expected, target, S, cost, tiebreak, P) else None
+        verified = _verify(
+            actions,
+            n,
+            durations,
+            prices,
+            pv_rates,
+            power_table,
+            expected,
+            target,
+            S,
+            cost,
+            tiebreak,
+            P,
+        )
+        return actions if verified else None
 
     r_kind, src_v, _a, a0, cost0 = roots[r_index]
     LAY = use_table(src_v)
@@ -568,7 +646,11 @@ def fast_optimize(
             for sw_in in range(S + 1):
                 for z_in in range(Z):
                     v = LAY[m, src, pi_in, sw_in, z_in, k]
-                    if v < INF and sw_in == sw_final and abs(float(v) - (cost - cost0)) <= 1e-9:
+                    if (
+                        v < INF
+                        and sw_in == sw_final
+                        and abs(float(v) - (cost - cost0)) <= 1e-9
+                    ):
                         found = (pi_in, sw_in, z_in, float(v))
                         break
                 if found:
@@ -600,12 +682,38 @@ def fast_optimize(
     if not backtrack(src, t_layer, pi_cur, sw_cur, z_cur, k_cur, c_cur, actions):
         return None
 
-    if not _verify(actions, n, durations, prices, pv_rates, power_table, expected, target, S, cost, tiebreak, P):
+    if not _verify(
+        actions,
+        n,
+        durations,
+        prices,
+        pv_rates,
+        power_table,
+        expected,
+        target,
+        S,
+        cost,
+        tiebreak,
+        P,
+    ):
         return None
     return actions
 
 
-def _verify(actions, n, durations, prices, pv_rates, power_table, expected, target, S, claimed_cost, tiebreak, P=None):
+def _verify(
+    actions,
+    n,
+    durations,
+    prices,
+    pv_rates,
+    power_table,
+    expected,
+    target,
+    S,
+    claimed_cost,
+    tiebreak,
+    P=None,
+):
     """Onafhankelijke controle: energie, fasewissels, pauzes en kosten."""
     total = 0.0
     cost = 0.0
