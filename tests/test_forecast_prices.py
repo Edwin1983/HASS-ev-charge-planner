@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 
 from custom_components.ev_planner.core.logger import Logger
-from custom_components.ev_planner.core.models import PriceData, SolcastData
+from custom_components.ev_planner.core.models import SolcastData
 from custom_components.ev_planner.core.planner import EVPlanner, PlannerSettings
 from custom_components.ev_planner.core.prices import PriceReader
 
@@ -157,7 +157,13 @@ def test_planner_uses_forecast_hours_and_marks_them():
 def test_markup_applies_only_to_forecast_and_is_configurable():
     base = _base()
     app = FakeApp(_final(base, 4, 0.30), _forecast(base, 12, 0.10))
-    reader = PriceReader(app, Logger(), "sensor.final", "sensor.fc", forecast_markup=0.05)
+    reader = PriceReader(
+        app,
+        Logger(),
+        "sensor.final",
+        "sensor.fc",
+        forecast_markup=0.05,
+    )
     data = reader.extend_with_forecast(reader.read())
     assert abs(data.hours[0].price - 0.30) < 1e-9
     assert abs(data.hours[-1].price - 0.15) < 1e-9

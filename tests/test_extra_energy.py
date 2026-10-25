@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import threading
 from datetime import datetime, timedelta
-from types import SimpleNamespace
 
 from custom_components.ev_planner.core.ev_planner import EVPlannerController
 from custom_components.ev_planner.core.logger import Logger

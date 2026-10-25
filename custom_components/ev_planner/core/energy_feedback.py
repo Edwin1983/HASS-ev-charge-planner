@@ -438,7 +438,11 @@ class EnergyFeedback:
 
         # Alleen binnen een lopend (aaneengesloten) blok, na de aanloop.
         block = next(
-            (b for b in self._blocks if b.start.timestamp() <= now_epoch < b.end.timestamp()),
+            (
+                b
+                for b in self._blocks
+                if b.start.timestamp() <= now_epoch < b.end.timestamp()
+            ),
             None,
         )
         if block is None:
@@ -491,7 +495,10 @@ class EnergyFeedback:
             return False
         if (
             self._last_replan_at is not None
-            and now.timestamp() - self._last_replan_at < self.config.min_replan_interval_s
+            and (
+                now.timestamp() - self._last_replan_at
+                < self.config.min_replan_interval_s
+            )
         ):
             return False
         return True
@@ -503,7 +510,10 @@ class EnergyFeedback:
             return False
         if (
             self._last_replan_at is not None
-            and now.timestamp() - self._last_replan_at < self.config.min_replan_interval_s
+            and (
+                now.timestamp() - self._last_replan_at
+                < self.config.min_replan_interval_s
+            )
         ):
             return False
         return True
@@ -532,7 +542,11 @@ class EnergyFeedback:
             "last_deviation_kwh": round(last.deviation_kwh, 3) if last else None,
             "last_skipped_reason": last.skipped_reason if last else None,
             "progress_deviation_kwh": (
-                round(self.last_progress.deviation_kwh, 3) if self.last_progress else None
+                (
+                    round(self.last_progress.deviation_kwh, 3)
+                    if self.last_progress
+                    else None
+                )
             ),
         }
 

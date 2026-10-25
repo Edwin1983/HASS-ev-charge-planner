@@ -52,7 +52,10 @@ def _run(hours, target, max_pauses, use_fast, max_price=1.0, switches=8):
 
 def _pauses(hours):
     return EVPlanner._count_pauses(
-        [("full",) if h.selected else ("skip",) for h in sorted(hours, key=lambda h: h.start)]
+        [
+            ("full",) if h.selected else ("skip",)
+            for h in sorted(hours, key=lambda h: h.start)
+        ]
     )
 
 
@@ -133,7 +136,13 @@ def test_matches_subset_enumeration_reference():
                     # geen laden mogelijk: te duur en geen gratis zon
                     restricted[i] = 999.0
                     restricted_pv[i] = 0.0
-            result = _run(_hours(restricted, pv=restricted_pv), target, None, False, max_price=1.0)
+            result = _run(
+                _hours(restricted, pv=restricted_pv),
+                target,
+                None,
+                False,
+                max_price=1.0,
+            )
             if abs(_energy(result) - target) > 1e-5:
                 continue
             # Alleen plannen die echt het patroon volgen: de DP mag binnen
@@ -229,13 +238,21 @@ def test_fast_path_matches_exact_dp_with_pause_limit():
             infeasible = rnd.random() < 0.3
             capacity = n * (step / 60.0) * 11.04
             target = round(
-                capacity * (rnd.uniform(1.05, 1.5) if infeasible else rnd.uniform(0.1, 0.6)), 2
+                capacity
+                * (
+                    rnd.uniform(1.05, 1.5)
+                    if infeasible
+                    else rnd.uniform(0.1, 0.6)
+                ),
+                2
             )
             max_price = rnd.choice([1.0, 0.30])
             limit = rnd.choice([0, 1, 2, 3])
             switches = rnd.choice([0, 2, 8])
 
-            exact = _run(copy.deepcopy(hours), target, limit, False, max_price, switches)
+            exact = _run(
+                copy.deepcopy(hours), target, limit, False, max_price, switches
+            )
             before = recording.hits
             fast = _run(copy.deepcopy(hours), target, limit, True, max_price, switches)
             used += recording.hits - before
@@ -264,7 +281,15 @@ def _controller(value):
 
 
 def test_controller_maps_the_number_to_a_limit():
-    for raw, expected in ((None, None), (10.0, None), (12.0, None), (0.0, 0), (2.0, 2), (-3.0, 0)):
+    cases = (
+        (None, None),
+        (10.0, None),
+        (12.0, None),
+        (0.0, 0),
+        (2.0, 2),
+        (-3.0, 0),
+    )
+    for raw, expected in cases:
         controller, _ = _controller(raw)
         assert controller._get_max_pauses() == expected
 
@@ -287,7 +312,9 @@ def test_controller_counts_pauses_in_a_plan():
     # slots 0,1 | 3 | 5,6  -> twee pauzes
     plan = SimpleNamespace(decisions=[decision(i) for i in (0, 1, 3, 5, 6)])
     assert controller._count_plan_pauses(plan) == 2
-    assert controller._count_plan_pauses(SimpleNamespace(decisions=[decision(0), decision(1)])) == 0
+    assert controller._count_plan_pauses(
+        SimpleNamespace(decisions=[decision(0), decision(1)])
+    ) == 0
     assert controller._count_plan_pauses(None) == 0
 
 
@@ -298,6 +325,13 @@ def test_controller_reads_and_clamps_the_progress_threshold():
 
 
 def test_controller_reads_and_clamps_the_forecast_markup():
-    for raw, expected in ((None, 0.02), (3.5, 0.035), (0.0, 0.0), (99.0, 0.20), (-4.0, 0.0)):
+    cases = (
+        (None, 0.02),
+        (3.5, 0.035),
+        (0.0, 0.0),
+        (99.0, 0.20),
+        (-4.0, 0.0),
+    )
+    for raw, expected in cases:
         controller, _ = _controller(raw)
         assert abs(controller.get_forecast_markup() - expected) < 1e-9

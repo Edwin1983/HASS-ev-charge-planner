@@ -189,7 +189,9 @@ class HAChargerPort:
 
     # ------------------------------------------------------------------
 
-    async def _call(self, domain: str, service: str, entity_id: str, **data: Any) -> None:
+    async def _call(
+        self, domain: str, service: str, entity_id: str, **data: Any
+    ) -> None:
         await self._hass.services.async_call(
             domain,
             service,

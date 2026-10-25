@@ -52,7 +52,11 @@ def _decision(start_min, end_min, *, selected=True, energy=2.0, phases=3, curren
 
 
 def _settings_controller(override):
-    values = {NATIVE_ENERGY_NEEDED: 12.0, NATIVE_MAX_PRICE: 30.0, NATIVE_MIN_PV_KWH: 0.0}
+    values = {
+        NATIVE_ENERGY_NEEDED: 12.0,
+        NATIVE_MAX_PRICE: 30.0,
+        NATIVE_MIN_PV_KWH: 0.0,
+    }
     states = {"time.dep": "07:00:00", "select.day": "Morgen"}
     return _controller(
         energy_override_kwh=override,
@@ -149,7 +153,8 @@ def test_desired_charge_follows_the_active_decision():
 
 
 def test_desired_charge_is_off_without_decision_or_permission():
-    assert _plan_controller(allowed=False).get_desired_charge(NOW) == DesiredCharge(False, 0, 0)
+    desired = _plan_controller(allowed=False).get_desired_charge(NOW)
+    assert desired == DesiredCharge(False, 0, 0)
     gap = NOW + timedelta(minutes=45)
     assert _plan_controller().get_desired_charge(gap) == DesiredCharge(False, 0, 0)
     assert _controller(
@@ -181,7 +186,9 @@ def _replan_controller(new_plan, override=None):
         energy_override_kwh=override,
         last_plan=previous,
         last_plan_time=NOW - timedelta(hours=1),
-        scheduler=SimpleNamespace(set_plan=lambda plan: restored.setdefault("plan", plan)),
+        scheduler=SimpleNamespace(
+            set_plan=lambda plan: restored.setdefault("plan", plan)
+        ),
         replan=replan,
         _publish_plan_data=lambda: restored.setdefault("published", True),
     )
@@ -249,7 +256,10 @@ def test_changed_departure_time_or_day_overrides_the_kept_date():
     on_departure_day = datetime(2026, 10, 2, 5, 0, tzinfo=timezone.utc)
 
     controller.hass = SimpleNamespace(
-        get_state=lambda entity: {"time.dep": "08:30:00", "select.day": "Morgen"}.get(entity)
+        get_state=lambda entity: {
+            "time.dep": "08:30:00",
+            "select.day": "Morgen",
+        }.get(entity)
     )
     assert controller._get_settings(on_departure_day).departure_time == (
         datetime(2026, 10, 3, 8, 30, tzinfo=timezone.utc)
@@ -288,7 +298,16 @@ def test_departure_anchor_roundtrip_survives_a_restart():
 
 
 def test_restore_ignores_junk_and_empty_data():
-    for junk in (None, {}, {"departure": "x"}, {"departure": "2026-10-02T07:00:00", "clock": "07:00", "day": "Morgen"}):
+    for junk in (
+        None,
+        {},
+        {"departure": "x"},
+        {
+            "departure": "2026-10-02T07:00:00",
+            "clock": "07:00",
+            "day": "Morgen",
+        },
+    ):
         controller = _controller()
         controller.restore_departure_anchor(junk)
         assert controller.plan_departure is None

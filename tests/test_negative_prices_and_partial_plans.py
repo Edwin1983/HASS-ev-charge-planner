@@ -51,7 +51,9 @@ def test_only_hours_below_max_price_are_planned_when_target_is_too_high():
     prices = [0.10, 0.10, 0.50, 0.50, 0.10, 0.50, 0.10, 0.50]
 
     def check(use_fast):
-        hours = _plan(_hours(prices, 60), target=100.0, max_price=0.20, use_fast=use_fast)
+        hours = _plan(
+            _hours(prices, 60), target=100.0, max_price=0.20, use_fast=use_fast
+        )
         selected = [i for i, hour in enumerate(hours) if hour.selected]
         assert selected == [0, 1, 4, 6]
         assert all(abs(hours[i].charge_energy - 11.04) < 1e-9 for i in selected)
@@ -70,7 +72,12 @@ def test_short_time_window_plans_everything_that_fits():
 
 def test_nothing_chargeable_gives_empty_plan_without_error():
     def check(use_fast):
-        hours = _plan(_hours([0.5] * 6, 60), target=10.0, max_price=0.20, use_fast=use_fast)
+        hours = _plan(
+            _hours([0.5] * 6, 60),
+            target=10.0,
+            max_price=0.20,
+            use_fast=use_fast,
+        )
         assert not any(hour.selected for hour in hours)
 
     _each_engine(check)
@@ -78,7 +85,11 @@ def test_nothing_chargeable_gives_empty_plan_without_error():
 
 def test_negative_price_slot_is_used():
     def check(use_fast):
-        hours = _plan(_hours([0.30, -0.10, 0.30, 0.30], 15), target=2.76, use_fast=use_fast)
+        hours = _plan(
+            _hours([0.30, -0.10, 0.30, 0.30], 15),
+            target=2.76,
+            use_fast=use_fast,
+        )
         assert [i for i, hour in enumerate(hours) if hour.selected] == [1]
         assert sum(h.paid_energy * h.price for h in hours if h.selected) < 0
 
@@ -105,7 +116,9 @@ def test_price_reader_keeps_negative_prices():
             "price_tax_included": {"amount": -500000},
         }
     ]
-    reader = PriceReader(_App({"forecast": forecast}, "-0.05"), Logger(), "sensor.zonneplan")
+    reader = PriceReader(
+        _App({"forecast": forecast}, "-0.05"), Logger(), "sensor.zonneplan"
+    )
 
     hours = reader._parse_forecast(forecast)
 
