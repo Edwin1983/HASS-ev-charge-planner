@@ -295,13 +295,23 @@ class InstantCharger:
     async def set_current(self, amps):
         self.commands.append(f"current={amps}")
         self.state = ChargerState(
-            True, True, self.state.charging, self.state.startable, amps, self.state.phases
+            True,
+            True,
+            self.state.charging,
+            self.state.startable,
+            amps,
+            self.state.phases,
         )
 
     async def set_phases(self, phases):
         self.commands.append(f"phases={phases}")
         self.state = ChargerState(
-            True, True, self.state.charging, self.state.startable, self.state.current_a, phases
+            True,
+            True,
+            self.state.charging,
+            self.state.startable,
+            self.state.current_a,
+            phases,
         )
 
 
